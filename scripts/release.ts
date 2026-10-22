@@ -76,8 +76,7 @@ try {
     path.join(destination, "SHA256SUMS"),
     `${checksums.join("\n")}\n`
   );
-  const repository =
-    process.env.GITHUB_REPOSITORY ?? "cypress-io/effectory";
+  const repository = process.env.GITHUB_REPOSITORY ?? "cypress-io/effectory";
   const notes = [
     `Effectory ${version}: local, durable workflows written with Effect.`,
     "",
