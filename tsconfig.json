@@ -1,0 +1,52 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node", "bun"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "allowedUnstableApis": [
+          "effect/cli",
+          "effect/http",
+          "effect/workflow",
+          "effect/cluster",
+          "effect/sql",
+          "@effect/sql-sqlite-bun",
+          "effect/FileSystem",
+          "effect/Path",
+          "effect/Crypto",
+          "effect/process",
+          "effect/PlatformError",
+          "@effect/platform-bun",
+          "effect/rpc"
+        ]
+      }
+    ]
+  },
+  "include": [
+    ".effectory/automations/**/*.ts",
+    "*.config.ts",
+    "packages/**/*.ts",
+    "effectory.run.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts"
+  ],
+  "exclude": [
+    "packages/docs",
+    "packages/cli/test/fixtures/.workspace-*",
+    "packages/runtime/test/runtime-task-fixtures-*"
+  ]
+}

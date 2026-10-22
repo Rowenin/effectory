@@ -1,0 +1,25 @@
+{
+  "name": "@effectory/cli",
+  "version": "0.1.2",
+  "description": "Run and inspect local Effectory automations",
+  "bin": {
+    "effectory": "./src/main.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./commands": "./src/commands.ts"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.5",
+    "@effectory/runtime": "0.1.2",
+    "effect": "4.0.5"
+  },
+  "engines": {
+    "bun": ">=1.4.3",
+    "node": ">=24.11.1"
+  }
+}

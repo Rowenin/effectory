@@ -1,0 +1,22 @@
+{
+  "name": "@effectory/t3",
+  "version": "0.1.2",
+  "description": "Durable T3 Code activities for Effectory",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@effectory/activities": "0.1.2",
+    "@effectory/sdk": "0.1.2",
+    "effect": "4.0.5"
+  },
+  "engines": {
+    "bun": ">=1.4.3",
+    "node": ">=24.11.1"
+  }
+}

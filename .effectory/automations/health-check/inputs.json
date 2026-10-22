@@ -1,0 +1,18 @@
+{
+  "requestId": "local-health-demo-1",
+  "concurrency": 3,
+  "monitors": [
+    {
+      "name": "healthy",
+      "config": { "url": "http://127.0.0.1:4311/healthy", "timeoutMs": 1000 }
+    },
+    {
+      "name": "unhealthy",
+      "config": { "url": "http://127.0.0.1:4311/unhealthy", "timeoutMs": 1000 }
+    },
+    {
+      "name": "slow",
+      "config": { "url": "http://127.0.0.1:4311/slow", "timeoutMs": 1000 }
+    }
+  ]
+}

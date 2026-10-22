@@ -1,0 +1,21 @@
+{
+  "name": "@effectory/sdk",
+  "version": "0.1.2",
+  "description": "Typed Effect automation authoring for Effectory",
+  "files": [
+    "src"
+  ],
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.5",
+    "effect": "4.0.5"
+  },
+  "engines": {
+    "bun": ">=1.4.3",
+    "node": ">=24.11.1"
+  }
+}

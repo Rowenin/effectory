@@ -1,0 +1,57 @@
+{
+  "name": "effectory",
+  "version": "0.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "bun packages/cli/src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "ultracite check . .effectory",
+    "fix": "ultracite fix . .effectory",
+    "verify": "bun run typecheck && bun run check && bun run test && bun run docs:typecheck && bun run docs:build",
+    "prepare": "effect-tsgo patch",
+    "test": "bun test",
+    "docs:dev": "bun run --cwd packages/docs dev",
+    "docs:build": "bun run --cwd packages/docs build",
+    "docs:preview": "bun run --cwd packages/docs preview",
+    "docs:typecheck": "bun run --cwd packages/docs typecheck",
+    "automation": "bun src/cli.ts",
+    "effectory": "bun packages/cli/src/main.ts",
+    "pack": "bun scripts/pack.ts",
+    "dogfood": "bun scripts/dogfood.ts",
+    "release:pack": "bun scripts/release.ts"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "4.0.5",
+    "@effectory/activities": "workspace:*",
+    "@effectory/cli": "workspace:*",
+    "@effectory/runtime": "workspace:*",
+    "@effectory/sdk": "workspace:*",
+    "@effectory/t3": "workspace:*",
+    "effect": "4.0.5"
+  },
+  "devDependencies": {
+    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/tsgo": "0.56.0",
+    "@types/bun": "1.4.3",
+    "@types/node": "24.10.0",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "typescript": "7.0.2",
+    "ultracite": "8.0.1"
+  },
+  "overrides": {
+    "effect": "4.0.5"
+  },
+  "engines": {
+    "bun": ">=1.4.3",
+    "node": ">=24.11.1"
+  },
+  "packageManager": "bun@1.4.3",
+  "trustedDependencies": [
+    "esbuild"
+  ]
+}
