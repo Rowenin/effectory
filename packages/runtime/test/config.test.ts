@@ -20,6 +20,12 @@ class Greeting extends Context.Service<Greeting, { readonly text: string }>()(
   "test/Greeting"
 ) {}
 
+test("service-free registration defaults to an empty native layer", () => {
+  const config = Effectory.make({ workflows: [] });
+  expect(config.services).toBe(Layer.empty);
+  expect(Layer.isLayer(config.services)).toBe(true);
+});
+
 const finish = async (
   engine: Awaited<ReturnType<typeof openEngine>>,
   id: string

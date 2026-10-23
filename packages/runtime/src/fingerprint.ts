@@ -4,6 +4,7 @@ import { isBuiltin } from "node:module";
 import path from "node:path";
 
 import { workspaceEntrypoint } from "./entrypoint.ts";
+import { effectoryProject, resolveSourceDependency } from "./project.ts";
 import { TaskCatalogError } from "./task.ts";
 import type { TaskFingerprint } from "./task.ts";
 
@@ -156,9 +157,8 @@ export const fingerprintTask = (
 ): TaskFingerprint => {
   const root = realpathSync(workspace);
   // An isolated Effectory project does not inherit host repository configuration.
-  const project = existsSync(path.join(root, ".effectory/package.json"))
-    ? path.join(root, ".effectory")
-    : root;
+  const project = effectoryProject(root);
+  const registration = workspaceEntrypoint(root);
   const files = new Map<string, Buffer>();
   const installedPackages = new Map<string, Buffer>();
   const installedSources = new Set<string>();
@@ -167,25 +167,8 @@ export const fingerprintTask = (
   const fail = (file: string, reason: string): never => {
     throw new TaskCatalogError(`${path.relative(root, file)}: ${reason}`);
   };
-  const resolveDependency = (specifier: string, file: string): string => {
-    const resolved = realpathSync(
-      Bun.resolveSync(specifier, path.dirname(file))
-    );
-    if (project !== root) {
-      const relative = path.relative(
-        path.join(project, "node_modules"),
-        resolved
-      );
-      if (
-        relative === ".." ||
-        relative.startsWith(`..${path.sep}`) ||
-        path.isAbsolute(relative)
-      ) {
-        fail(file, `${specifier} must be installed in .effectory/node_modules`);
-      }
-    }
-    return resolved;
-  };
+  const resolveDependency = (specifier: string, file: string): string =>
+    resolveSourceDependency(root, project, specifier, file);
   const checkPath = (file: string) => {
     const relative = path.relative(root, file);
     if (
@@ -285,13 +268,22 @@ export const fingerprintTask = (
     fail(root, "jsconfig.json is unsupported; use tsconfig.json");
   }
   // oxlint-disable-next-line complexity -- Graph walk validates every allowed dependency boundary before following it.
-  const visit = (file: string, authoringRoot?: string): void => {
+  const visit = (
+    file: string,
+    authoringRoot?: string,
+    registrationSource = false
+  ): void => {
     const sourceRoot = authoringRoot ?? project;
     const sourceRelative = path.relative(sourceRoot, file);
+    // Only the selected root registration may live outside the isolated project.
+    // Its relative dependencies still pass through the normal project boundary.
+    const rootRegistration =
+      registrationSource && !authoringRoot && file === registration;
     if (
-      sourceRelative === ".." ||
-      sourceRelative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(sourceRelative)
+      !rootRegistration &&
+      (sourceRelative === ".." ||
+        sourceRelative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(sourceRelative))
     ) {
       fail(file, "source dependency escapes workspace Effectory project");
     }
@@ -317,7 +309,7 @@ export const fingerprintTask = (
     }
     // Nested resolver configuration changes Bun's interpretation of imports.
     let directory = path.dirname(file);
-    while (directory !== (authoringRoot ?? project)) {
+    while (directory !== (rootRegistration ? root : sourceRoot)) {
       for (const name of [
         "package.json",
         "tsconfig.json",
@@ -419,8 +411,8 @@ export const fingerprintTask = (
     }
   };
   try {
-    visit(path.resolve(root, entrypoint));
-    visitWorkspaceEntrypoint(root, visit);
+    visit(path.resolve(root, entrypoint), undefined, true);
+    visitWorkspaceEntrypoint(root, (file) => visit(file, undefined, true));
   } catch (error) {
     if (error instanceof TaskCatalogError) {
       throw error;

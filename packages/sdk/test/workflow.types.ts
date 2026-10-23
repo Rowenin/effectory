@@ -61,6 +61,18 @@ export const valid = base.pipe(
 );
 
 // Services the plan's Tasks need flow to the root.
+const serviceFree = base.pipe(
+  Workflow.step("count", fetchCount, ($) => ({ url: $.input.url })),
+  Workflow.returns(Schema.Finite, ($) => $.steps.count)
+);
+export const serviceFreeConfig = Effectory.make({ workflows: [serviceFree] });
+const emptyServices: Layer.Layer<never, never, Effectory.PlatformServices> =
+  serviceFreeConfig.services;
+void emptyServices;
+// @ts-expect-error omitting services must not hide the stamp Task's Clock requirement
+Effectory.make({ workflows: [valid] });
+// @ts-expect-error explicit service type arguments still require a layer
+Effectory.make<Clock, never>({ workflows: [valid] });
 export const configured = Effectory.make({
   services: Layer.succeed(Clock, { now: 0 }),
   workflows: [valid],

@@ -3,10 +3,12 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { startControlServer } from "@effectory/runtime/control";
@@ -517,6 +519,89 @@ test("isolated Effectory metadata ignores host toolchains and requires its own l
   writeFileSync(entry, "export default {};");
   write(".effectory/tsconfig.json", '{"extends":"../tsconfig.json"}');
   expect(() => fingerprintTask(workspace, entry)).toThrow("extended/aliased");
+});
+
+test.each(["effectory.run.ts", "effectory.config.ts"])(
+  "isolated %s fingerprints only the root registration and isolated source graph",
+  (registration) => {
+    rmSync(workspace, { force: true, recursive: true });
+    workspace = realpathSync(
+      mkdtempSync(path.join(tmpdir(), "effectory-root-fingerprint-"))
+    );
+    write("package.json", '{"name":"external-host"}');
+    write("tsconfig.json", '{"extends":"missing-host-config"}');
+    write(".effectory/package.json", '{"type":"module"}');
+    write(".effectory/tsconfig.json", "{}");
+    write(".effectory/bun.lock", "isolated lock v1");
+    write(
+      ".effectory/node_modules/@effectory/sdk/package.json",
+      JSON.stringify({
+        exports: { ".": "./src/index.ts", "./*": "./src/*.ts" },
+        name: "@effectory/sdk",
+        type: "module",
+        version: "0.1.2",
+      })
+    );
+    const sdk = write(
+      ".effectory/node_modules/@effectory/sdk/src/index.ts",
+      'export const label = "isolated SDK";'
+    );
+    const automation = write(
+      ".effectory/automations/hello/index.ts",
+      'export default "hello";'
+    );
+    const entry = write(
+      registration,
+      'import { label } from "@effectory/sdk"; import hello from "./.effectory/automations/hello/index.ts"; export default { label, hello };'
+    );
+    const first = fingerprintTask(workspace, entry);
+    expect(first.files).toContain(registration);
+    expect(first.files).toContain(".effectory/automations/hello/index.ts");
+    expect(first.files).not.toContain("package.json");
+    expect(first.files).not.toContain("tsconfig.json");
+    expect(first.installedSources).toContain(sdk);
+    writeFileSync(sdk, 'export const label = "changed SDK";');
+    expect(fingerprintTask(workspace, entry).digest).not.toBe(first.digest);
+    writeFileSync(automation, 'export default "changed workflow";');
+    const changed = fingerprintTask(workspace, entry);
+    writeFileSync(entry, `${readFileSync(entry, "utf-8")}\n// revision`);
+    expect(fingerprintTask(workspace, entry).digest).not.toBe(changed.digest);
+
+    write("host-source.ts", "export default {};");
+    writeFileSync(entry, 'import "./host-source.ts";');
+    expect(() => fingerprintTask(workspace, entry)).toThrow(
+      "escapes workspace Effectory project"
+    );
+    writeFileSync(entry, 'import "./.effectory/automations/hello/index.ts";');
+    writeFileSync(automation, 'import "../../../host-source.ts";');
+    expect(() => fingerprintTask(workspace, entry)).toThrow(
+      "escapes workspace Effectory project"
+    );
+    writeFileSync(automation, `import "../../../${registration}";`);
+    expect(() => fingerprintTask(workspace, entry)).toThrow(
+      "escapes workspace Effectory project"
+    );
+    writeFileSync(automation, "export default {};");
+    write(".effectory/automations/hello/tsconfig.json", "{}");
+    expect(() => fingerprintTask(workspace, entry)).toThrow("nested tsconfig");
+    rmSync(path.join(workspace, ".effectory/automations/hello/tsconfig.json"));
+    rmSync(entry);
+    symlinkSync(automation, entry);
+    expect(() => fingerprintTask(workspace, entry)).toThrow("symlink");
+  }
+);
+
+test("isolated root registration refuses SDK packages inherited from the host", () => {
+  write(".effectory/package.json", '{"type":"module"}');
+  write(".effectory/tsconfig.json", "{}");
+  write(".effectory/bun.lock", "isolated lock v1");
+  const entry = write(
+    "effectory.run.ts",
+    'import { Effectory } from "@effectory/sdk"; export default Effectory.make({ workflows: [] });'
+  );
+  expect(() => fingerprintTask(workspace, entry)).toThrow(
+    "SDK is not installed locally"
+  );
 });
 
 test("installed SDK source changes invalidate revisions and cached registration", async () => {

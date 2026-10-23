@@ -1,5 +1,5 @@
 import type { BunServices } from "@effect/platform-bun/BunServices";
-import type { Layer } from "effect";
+import { Layer } from "effect";
 import type { HttpClient } from "effect/http/HttpClient";
 
 import type { HostServices } from "./automation.ts";
@@ -22,7 +22,20 @@ export interface Config<Services = never, Error = never> {
   readonly services: Layer.Layer<Services, Error, PlatformServices>;
 }
 
-/** Compose application services with native Effect layers in effectory.run.ts. */
-export const make = <Services, Error>(
+type ServiceFreeConfig = Omit<Config<never, never>, "services"> & {
+  readonly services?: never;
+};
+
+/** Compose application services; service-free workflows default to Layer.empty. */
+export function make(config: ServiceFreeConfig): Config<never, never>;
+export function make<Services, Error>(
   config: Config<Services, Error>
-): Config<Services, Error> => config;
+): Config<Services, Error>;
+export function make<Services, Error>(
+  config: Config<Services, Error> | ServiceFreeConfig
+): Config<Services, Error> | Config<never, never> {
+  if (config.services !== undefined) {
+    return config;
+  }
+  return { ...config, services: Layer.empty };
+}

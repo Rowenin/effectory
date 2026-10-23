@@ -57,6 +57,20 @@ test.each(["local", "release"])(
         path.join(workspace, "tsconfig.json"),
         '{"extends":"missing-host-config","compilerOptions":{"paths":{"effect":["./missing.ts"]}}}'
       );
+      mkdirSync(path.join(workspace, ".github/workflows"), { recursive: true });
+      writeFileSync(
+        path.join(workspace, ".github/workflows/ci.yml"),
+        "name: Host CI\n"
+      );
+      const hostFiles = [
+        "package.json",
+        "pnpm-lock.yaml",
+        "tsconfig.json",
+        ".github/workflows/ci.yml",
+      ];
+      const hostContents = hostFiles.map((file) =>
+        readFileSync(path.join(workspace, file), "utf-8")
+      );
       if (mode === "local") {
         await execute(
           [
@@ -99,6 +113,21 @@ test.each(["local", "release"])(
       expect(existsSync(path.join(workspace, "bun.lock"))).toBe(false);
       expect(existsSync(path.join(workspace, "node_modules"))).toBe(false);
       expect(existsSync(path.join(project, "bun.lock"))).toBe(true);
+      // A conflicting host Effect and compiler alias must never supply runtime code.
+      const hostEffect = path.join(workspace, "node_modules/effect");
+      mkdirSync(hostEffect, { recursive: true });
+      writeFileSync(
+        path.join(hostEffect, "package.json"),
+        '{"name":"effect","version":"0.0.0-host","type":"module","exports":"./index.ts"}'
+      );
+      writeFileSync(
+        path.join(hostEffect, "index.ts"),
+        'throw new Error("host Effect must not execute"); export const Layer = "host";'
+      );
+      writeFileSync(
+        path.join(workspace, "missing.ts"),
+        'throw new Error("host compiler alias must not execute"); export const Layer = "host alias";'
+      );
       const cli = path.join(project, "node_modules/.bin/effectory");
       const command = async (...args: string[]) =>
         JSON.parse(await execute(args, workspace, cli));
@@ -122,6 +151,92 @@ export default Automation.define({
     return result.stdout.trim();
   }).pipe(Effect.provide(Process.layer)),
 });
+`
+      );
+      const hello = path.join(project, "automations/hello");
+      mkdirSync(hello, { recursive: true });
+      writeFileSync(
+        path.join(hello, "index.ts"),
+        `
+import { Task, Workflow } from "@effectory/sdk";
+import { Effect, Schema } from "effect";
+const greet = Task.make({ name: "greet", input: Schema.Struct({ requestId: Schema.String }), success: Schema.String, error: Schema.Never,
+  run: ({ requestId }) => Effect.succeed("hello " + requestId) });
+export default Workflow.make("hello", {
+  description: "Root registration smoke test", input: Schema.Struct({ requestId: Schema.String }), key: ($) => $.input.requestId,
+}).pipe(Workflow.step("greeting", greet, ($) => ({ requestId: $.input.requestId })), Workflow.returns(Schema.String, ($) => $.steps.greeting));
+`
+      );
+      writeFileSync(
+        path.join(workspace, "effectory.run.ts"),
+        `
+import { Effectory } from "@effectory/sdk";
+import hello from "./.effectory/automations/hello/index.ts";
+export default Effectory.make({ workflows: [hello] });
+`
+      );
+      // Exercise local sessions from the host root before starting a persistent runner.
+      const listed = await command("workflow", "list", "--json");
+      expect(listed.map((item: { name: string }) => item.name)).toEqual([
+        "hello",
+      ]);
+      const described = await command(
+        "workflow",
+        "describe",
+        "hello",
+        "--json"
+      );
+      expect(described.name).toBe("hello");
+      writeFileSync(path.join(hello, "inputs.json"), '{"requestId":"smoke-1"}');
+      const smoke = await command(
+        "workflow",
+        "run",
+        "hello",
+        "--input",
+        ".effectory/automations/hello/inputs.json",
+        "--request-key",
+        "smoke-1"
+      );
+      expect(smoke.status).toBe("succeeded");
+      expect(smoke.result).toBe("hello smoke-1");
+      const runs = await command("run", "list");
+      expect(runs.some((item: { id: string }) => item.id === smoke.id)).toBe(
+        true
+      );
+      // Ordinary host imports retain their own resolver in the same process.
+      const hostImport = path.join(workspace, "host-import.ts");
+      writeFileSync(
+        hostImport,
+        'import { Layer } from "effect"; export default Layer;'
+      );
+      const runtimeTasks = path.join(
+        project,
+        "node_modules/@effectory/runtime/src/tasks.ts"
+      );
+      await execute([
+        "--eval",
+        `
+const { loadWorkspaceConfig } = await import(${JSON.stringify(runtimeTasks)});
+const config = await loadWorkspaceConfig(${JSON.stringify(workspace)});
+if (config !== await loadWorkspaceConfig(${JSON.stringify(workspace)})) throw new Error("Registration identity changed");
+try {
+  await import(${JSON.stringify(hostImport)});
+  throw new Error("Host alias was bypassed");
+} catch (error) {
+  if (!String(error).includes("host compiler alias must not execute")) throw error;
+}
+`,
+      ]);
+      // Also exercise explicit services and a root Effect import, against the
+      // conflicting host Effect and alias, during persistent-runner recovery.
+      writeFileSync(
+        path.join(workspace, "effectory.run.ts"),
+        `
+import { Effectory } from "@effectory/sdk";
+import { Layer } from "effect";
+import dogfood from "./.effectory/automations/dogfood/index.ts";
+import hello from "./.effectory/automations/hello/index.ts";
+export default Effectory.make({ services: Layer.empty, workflows: [dogfood, hello] });
 `
       );
       const start = async () => {
@@ -198,6 +313,15 @@ export default Automation.define({
       );
       expect(replay.id).toBe(run.id);
       await stop();
+      expect(
+        hostFiles.map((file) =>
+          readFileSync(path.join(workspace, file), "utf-8")
+        )
+      ).toEqual(hostContents);
+      expect(existsSync(path.join(workspace, "bun.lock"))).toBe(false);
+      expect(existsSync(path.join(workspace, "node_modules/@effectory"))).toBe(
+        false
+      );
     } finally {
       server?.kill("SIGKILL");
       if (server) {

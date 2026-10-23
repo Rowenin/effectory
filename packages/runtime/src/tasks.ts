@@ -15,6 +15,7 @@ import type * as Workflow from "effect/workflow/Workflow";
 
 import { workspaceEntrypoint } from "./entrypoint.ts";
 import { fingerprintTask } from "./fingerprint.ts";
+import { importRegistration } from "./registration.ts";
 import { TaskCatalogError } from "./task.ts";
 import type { RegisteredTask, TaskDirectory } from "./task.ts";
 
@@ -202,7 +203,7 @@ export const loadWorkspaceConfig = async (
   freezeSources(workspace, [fingerprint]);
   let module: { default?: unknown };
   try {
-    module = await import(pathToFileURL(entrypoint).href);
+    module = await importRegistration(workspace, entrypoint);
   } catch (error) {
     throw new TaskCatalogError(
       `${entrypoint}: trusted configuration import failed: ${String(error)}`
