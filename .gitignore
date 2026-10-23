@@ -1,14 +1,7 @@
 node_modules/
 dist/
-.effectory/state/
 .env
 .env.*
 !.env.example
 *.tsbuildinfo
 .DS_Store
-.astro/
-
-# Isolated CLI acceptance workspaces contain copied source, not project files.
-packages/cli/test/fixtures/.workspace-*/
-packages/runtime/test/runtime-task-fixtures-*/
-.automation/

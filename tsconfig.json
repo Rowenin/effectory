@@ -21,8 +21,7 @@
         "allowedUnstableApis": [
           "effect/cli",
           "effect/http",
-          "effect/workflow",
-          "effect/cluster",
+          "effect/Graph",
           "effect/sql",
           "@effect/sql-sqlite-bun",
           "effect/FileSystem",
@@ -36,17 +35,5 @@
       }
     ]
   },
-  "include": [
-    ".effectory/automations/**/*.ts",
-    "*.config.ts",
-    "packages/**/*.ts",
-    "effectory.run.ts",
-    "src/**/*.ts",
-    "scripts/**/*.ts"
-  ],
-  "exclude": [
-    "packages/docs",
-    "packages/cli/test/fixtures/.workspace-*",
-    "packages/runtime/test/runtime-task-fixtures-*"
-  ]
+  "include": ["*.config.ts", "*.ts", "packages/**/*.ts", "workflows/**/*.ts"]
 }

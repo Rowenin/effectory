@@ -1,151 +1,122 @@
 # Effectory
 
-Effectory is a software factory that runs typed Effect workflows locally with SQLite persistence, inspectable outputs, and durable approvals.
+Effectory is a collection of typed automations that act on other repositories and services: verify a pull request, review a branch with agents, implement a change until its checks pass. Every automation is an ordinary [Effect](https://effect.website) program that declares a graph of typed nodes. A small engine plans the graph without side effects, then executes it with every step recorded, so runs can be inspected, resumed after a crash, gated on approvals, and queried later.
 
-## Setup
+The design follows [Alchemy](https://github.com/alchemy-run/alchemy)'s runtime: `Output` references wire nodes together, `Resource`s converge external state through `Provider` lifecycles with write-ahead state, and `Action`s record imperative steps. External APIs come from [`@distilled.cloud/*`](https://github.com/alchemy-run/distilled). See [the proposal](docs/proposals/automation-primitives.md) and [the implementation notes](docs/proposals/automation-primitives-plan.md).
 
-Install Bun 1.4.3 or later and Node 24.11.1 or later:
+## Quick start
 
-```sh
-bun install --frozen-lockfile
-bun run effectory init
-```
-
-The CLI uses the current directory by default. Pass `--workspace <path>` to select another directory. `init` creates or validates `.effectory/workspace.json` without overwriting an incompatible marker; new workspaces also receive an isolated package manifest and TypeScript config. Existing files are preserved. `start` performs the same initialization. Dependencies must be installed before running offline.
-
-## Upgrading from Factory
-
-The command is now `effectory`, packages use `@effectory/*`, and workspace and user data use `.effectory/` and `~/.effectory/`. Environment variables use the `EFFECTORY_` prefix.
-
-Stop all old runners before moving existing data. Rename each workspace's `.factory/` directory to `.effectory/` and `~/.factory/` to `~/.effectory/`, preserving their contents; if both destinations already exist, reconcile them before moving anything. In this checkout, the tracked automation files and marker have already moved, so move any remaining ignored `.factory/state/` into `.effectory/state/`. Update automation imports and paths, environment variables, and scripts to the new names. Complete unfinished workflows with the previous build before upgrading: the rename changes task revisions, local SQLite table names, and durable activity identifiers.
-
-The CLI is named `effectory`, workspaces live under `.effectory/`, and automations import `@effectory/sdk`. The rename changes workspace paths and durable identifiers; finish existing runs with the previous build before switching.
-
-## Install a GitHub release
-
-GitHub Releases distribute the CLI without npm publishing or a source checkout. This repository is private, so authenticate with `gh auth login`, then download the shell installer:
+Requires Bun 1.4.3 or later.
 
 ```sh
-gh release download v0.1.2 --repo cypress-io/effectory --pattern install.sh
-sh install.sh
-effectory --help
+bun install
+bun effectory describe                        # what this collection offers
+bun effectory run verify-pr --target effectory --input pr=12 --plan
+bun effectory run smoke --input repo=$PWD     # worktree + background service + checks, for real
+bun effectory run verify-pr --mode fake --input-json '{"pr":7,"repo":{"owner":"acme","name":"app","clone":".","checks":[{"name":"ok","command":"sh","args":["-c","echo ok"]}]}}'
 ```
 
-The installer requires Bun 1.4.3+, Node 24.11.1+, and `gh`, and supports macOS and Linux. It verifies the release archive and package checksums, installs versioned CLI data under `~/.local/share/effectory`, and exposes `~/.local/bin/effectory`. If that directory is outside your PATH, it prints the command to add it; shell profiles are never changed. `--bin-dir` and `--install-dir` select custom locations. Installing the same release again reuses its installation; previous releases remain available for running processes. The global command uses a workspace’s installed CLI when available, keeping the runtime and SDK on the same dependency graph.
+State lives in `$EFFECTORY_HOME/state.sqlite` (default `~/.effectory`), keyed by collection and scope rather than by checkout, so every clone and worktree shares one history.
 
-To also prepare an existing repository's SDK and dependencies:
+## Layout
+
+| Path | Contents |
+| --- | --- |
+| `effectory.ts` | The collection root: workflows, Actions, Resource types, Targets, Triggers, and the Layers that provide them. |
+| `workflows/` | `verify-pr`, `review-branch`, `implement`, `smoke`, and their tests. |
+| `packages/core` | `@effectory/core`: primitives, planner, engine, SQLite state, test harness. |
+| `packages/std` | `@effectory/std`: `Process`, `Shell`, `Agent` (Claude/Codex), `T3`, `Worktree`, `Service`, `Http`, `GitHub.PullRequestComment`. |
+| `packages/cli` | `@effectory/cli`: the `effectory` command. |
+| `AGENTS.md` | Guidance for coding agents working in this collection. |
+
+## Writing a workflow
+
+```ts
+import { Assert, Each, Lifetime, Output, Workflow } from "@effectory/core";
+import { GitHub, Shell, Worktree } from "@effectory/std";
+import { Effect, Schema } from "effect";
+
+export const verifyPr = Workflow.make(
+  "verify-pr",
+  {
+    description: "Check out a PR, run its checks, assert, and post a summary.",
+    input: Schema.Struct({ repo: Repository, pr: Schema.Int }),
+    scope: ({ repo, pr }) => `${repo.owner}/${repo.name}#${pr}`,
+  },
+  Effect.fn(function* ({ repo, pr }) {
+    const checkout = yield* Worktree("checkout", {
+      repo: repo.clone,
+      ref: `pull/${pr}/head`,
+      fetch: { remote: "origin" },
+    }).pipe(Lifetime.run);
+    const results = yield* Each("check", repo.checks, (check) =>
+      Shell(check.name, {
+        cwd: checkout.path,
+        command: check.command,
+        args: check.args,
+      })
+    );
+    yield* Each("passes", repo.checks, (check, i) =>
+      Assert(check.name, {
+        that: Output.map(results[i], (r) => r.exitCode === 0),
+        message: `${check.name} failed`,
+      })
+    );
+    yield* GitHub.PullRequestComment("summary", {
+      owner: repo.owner,
+      repo: repo.name,
+      number: pr,
+      body: Output.map(Output.all(results), render),
+    });
+  })
+);
+```
+
+The body runs once per run, at plan time, with the decoded input as plain values. Node constructors return `Output`s; passing an Output into another node creates an edge. JavaScript `if` and loops cannot inspect Outputs: use `Output.map`/`Output.all`, the `when`/`runIf`/`allowFailure`/`dependsOn` node options, and `Each`.
+
+### Primitives
+
+| Primitive | Use |
+| --- | --- |
+| `Action.make(type, { input, output, run, fake?, rerun?, retry? })` | An imperative, recorded step. Nonzero exits are data. `rerun: "on-change"` skips when the input digest matches the latest record; `retry: "never"` fails an interrupted attempt with `OutcomeUnknown` and opens a retry approval. |
+| `Resource.make(type, { props, attributes })` + `Provider.effect/succeed/dual` | Converge external state: `read`, `diff`, `reconcile`, `delete`, `checks`. Identity is (collection, scope, FQN), so reruns update instead of duplicating. `Lifetime.run` deletes it when the run finishes; `adopt` takes over `Unowned` objects. |
+| `Each(name, items, f, { concurrency })` | Fan out. Literal items show every child in the plan; an `Output` array expands at execution time. |
+| `Call(name, workflow, input)` | Run another workflow as a node, namespaced under `name/`. |
+| `Assert(name, { that, message, severity })` | Record an `AssertResult`; never stops the graph. `--fail-on` and `--junit` act on them. |
+| `Approve(key, { title, review, when })` | Suspend until `effectory approval approve`, then `run resume`. |
+| `Data.latest/versions(source, fqn, { scope })` | Read earlier records as Outputs. |
+| `Secret(name)` | An `Output<Redacted<string>>` from the `SecretStore`; values never enter records. |
+| `Target.make(workflow, name, preset)` | A named input preset: `--target`. |
+| `Trigger.schedule/webhook` | Start runs from cron or webhooks under `effectory serve`. |
+| `Report.make`, `Report.summary`, `Assert.junitReport` | Render a finished run into a recorded artifact. |
+| `Test.run(workflow, input, { mode })`, `Test.provider(resource, cases)` | Run a whole graph against fakes; exercise a provider's lifecycle. |
+
+## How runs execute
+
+1. **Plan.** Decode the input, run the body with a collecting registry, and build an `effect/Graph` (cycles rejected). `--plan` asks Resources to `read`/`diff` and on-change Actions to compare digests; nothing is changed.
+2. **Execute.** One fiber per node, each awaiting its upstreams' Deferreds; a semaphore bounds concurrency. Each node goes `pending → running → succeeded | failed | skipped | suspended`, with the intent written before acting and the terminal status plus an immutable record after.
+3. **Resume.** Succeeded Actions return their records; Resources re-converge; interrupted Actions rerun (or fail with `OutcomeUnknown` under `retry: "never"`); suspended approvals check for a decision. Resuming under a different collection revision (a hash of the collection's source graph and `bun.lock`) is refused.
+4. **Finish.** Run-lifetime Resources are deleted, reports rendered, and the exit code computed (0 succeeded, 1 failed or failing assertions at `--fail-on`, 2 suspended).
+
+## CLI
+
+```text
+effectory run <workflow> [--input k=v]... [--input-json JSON] [--target name] [--mode live|fake]
+                         [--plan [--mermaid]] [--fail-on low|medium|high|none] [--junit[=file]] [--json]
+effectory run resume|inspect|cancel <run-id>      effectory run list [--workflow] [--status]
+effectory approval list | approve <id> | reject <id> [--note]
+effectory action run <Action> [--input-json JSON] [--mode fake]
+effectory data latest|versions <fqn> --scope s    effectory data query [--kind] [--where 'exitCode != 0'] [--since 7d]
+effectory resource list [--scope] | delete <fqn> --scope s
+effectory describe [--json]                       effectory serve [--port 8787]
+```
+
+Every command takes `--collection <file|dir>` (default `./effectory.ts`) and `--state <file>`. Run and approval ids accept unique prefixes.
+
+## Development
 
 ```sh
-sh install.sh --workspace /absolute/path/to/other-repo
-cd /absolute/path/to/other-repo
-effectory workflow list
+bun run typecheck && bun run check && bun test   # or: bun run verify
 ```
 
-The host manifest and compiler configuration are preserved. Dependencies, Bun lockfile, compiler config, and vendored SDK/runtime/CLI tarballs live under `.effectory`. Commit those files to reproduce a workspace without GitHub authentication. `effectory init` alone creates configuration; the installer's `--workspace` option also installs its dependencies. Stop the runner and finish pending runs before upgrading. Dependency installation needs the public npm registry or a populated Bun cache.
-
-For workspace-only installation, download `effectory-v0.1.2.tar.gz`, extract it, then run `bun effectory-v0.1.2/install.ts /path/to/repo`. Both the downloaded bundle and shell installer can be removed after installation.
-
-## Dogfood in another repository
-
-From this checkout, package and install the current SDK, runtime, and CLI into another repo:
-
-```sh
-bun run dogfood /absolute/path/to/other-repo
-```
-
-This initializes `.effectory`, packs versioned tarballs into `.effectory/vendor/`, pins direct and transitive Effectory dependencies to those tarballs, and installs with Bun. Nothing is published. Re-run the command to install a newer local build; stop the target runner first. `bun run pack` separately writes distributable tarballs to this checkout's `dist/`.
-
-New workspaces keep their own `package.json`, `bun.lock`, `tsconfig.json`, and `node_modules` under `.effectory`. The host repository can use another package manager or language. Its package manifest, lockfile, and TypeScript configuration are not used for Effectory task revisions. Existing workspaces without `.effectory/package.json` retain their root dependency layout; the dogfood installer targets new isolated workspaces.
-
-Author `.effectory/automations/<name>/index.ts` using `@effectory/sdk` and `effect` as in [the authoring guide](docs/authoring.md). Then run the installed CLI from the **target repository root**:
-
-```sh
-.effectory/node_modules/.bin/effectory workflow list
-# In another terminal, also at the target repository root:
-.effectory/node_modules/.bin/effectory workflow list
-```
-
-When invoking from `.effectory` itself, pass `--workspace ..`. No starter automation is generated. Commit `.effectory/workspace.json`, `package.json`, `bun.lock`, `tsconfig.json`, automations, and the vendored tarballs if teammates should reproduce this build. Ignore `.effectory/node_modules/` and `.effectory/state/` in the target repo.
-
-## Durable tasks
-
-The CLI loads the workflows explicitly listed in root `effectory.run.ts` and runs native Effect workflows with SQLite persistence. Each command opens and closes its local runtime automatically. Start the supplied demos' loopback fixture in another terminal:
-
-```sh
-bun -e 'Bun.serve({ hostname: "127.0.0.1", port: 4311, async fetch(r) { const p = new URL(r.url).pathname; if (p === "/slow") await Bun.sleep(1500); return new Response("fixture", { status: p === "/unhealthy" ? 503 : 200 }); } })'
-```
-
-In another terminal:
-
-```sh
-bun run effectory workflow list
-bun run effectory workflow describe health-check
-bun run effectory workflow run health-check --input .effectory/automations/health-check/inputs.json --request-key demo-1
-bun run effectory run list
-bun run effectory run inspect <run-id>
-bun run effectory artifact list --run <run-id>
-```
-
-`workflow list` and `workflow describe` print readable text: the registered workflows, or one workflow's description and input fields with their types, whether each is required, and their limits. Pass `--json` for machine-readable output. `workflow run` blocks until success, failure, cancellation, or a durable approval pause, then prints the run record. Failed and cancelled executions exit nonzero. An explicit request key lets a caller retry the same submission; changed payload or task revision with the same key is refused. Omit the flag to generate a new key. The input's `requestId` is workflow data; Effectory admission uses the separate request key.
-
-Ctrl+C or SIGTERM requests cancellation and waits for cooperative interruption. Use `effectory run cancel <run-id>` from another terminal to cancel explicitly. After a crash, use `effectory run resume <run-id>` to recover committed activities and continue unfinished work. No background process keeps executing after the owning CLI exits. Optional `effectory serve` hosting remains available for long-lived integrations; local commands do not require it.
-
-### Review an approved action
-
-For a small example that needs no external services, run `bun run effectory workflow run approval-demo --input .effectory/automations/approval-demo/inputs.json`. It publishes a prepared message, pauses for approval, and publishes its completed message only after explicit resume. See the [approval and pause walkthrough](.effectory/automations/approval-demo/README.md) for the commands.
-
-```sh
-bun run effectory workflow run approved-health-check --input .effectory/automations/approved-health-check/inputs.json --request-key approved-demo-1
-bun run effectory approval list
-bun run effectory approval inspect <approval-id>
-bun run effectory approval approve <approval-id>
-bun run effectory run resume <run-id>
-# Or:
-bun run effectory approval reject <approval-id> --reason "Revise the plan"
-```
-
-Interactive approval prints the exact review and asks for confirmation. Noninteractive callers must pass both `--digest <reviewed-digest>` and `--revision <reviewed-revision>` from the inspection. Approval records the decision without executing downstream work. `run resume` continues the approved workflow and blocks until its next outcome or approval pause. Resuming an undecided gate is refused. Rejection marks the run failed; cancellation prevents a later decision from authorizing its action. The demo publishes the approved report under `.effectory/state/approved-health-check/` through an idempotent file action.
-
-Approvals assume trusted local code and the local OS user. They do not establish human-versus-agent separation for processes with identical privileges. The first version has indefinite waits, with no expiry or escalation.
-
-### Authoring and recovery limits
-
-Automation authors import `Task` and `Automation` from `@effectory/sdk`. `Task.make` creates a named, durable step whose result is recorded, and Tasks may nest; `Automation.define` registers a runnable workflow that composes Tasks, with explicit schemas and an idempotency key. Services such as `Process` and `Agent` are configured once as layers in `effectory.run.ts` and can only be called inside Tasks. `Automation.publish` records schema-encoded outputs, and `Automation.approve` suspends for review and fails on rejection. These APIs use native Effect Workflow and Activity underneath. See [the authoring guide](docs/authoring.md) and the demos for examples.
-
-`@effectory/activities` provides the `Process` service for installed executables with literal arguments, explicit environment and stdin, bounded output, timeouts, and scoped process cleanup, and the `Agent` service for Claude Code and Codex calls with schema-enforced structured output. See [running processes](docs/authoring.md#run-a-process) and [running coding agents](docs/authoring.md#run-coding-agents).
-
-Root `effectory.run.ts` registers every runnable definition alongside its service layers. The examples live under `.effectory/automations/`, but filenames and directories do not determine registration. `@effectory/sdk` in `packages/sdk` owns authoring and shared contracts. `@effectory/runtime` in `packages/runtime` owns discovery, execution, SQLite storage, and the control transport. `@effectory/cli` in `packages/cli` is a thin terminal interface over runtime. Native Workflow manifests and `defineTask` remain supported as a lower-level escape hatch.
-
-Small JSON artifacts, run records, and approval records live in `~/.effectory/workspaces/<workspace-hash>/runtime.sqlite`. The hash is SHA-256 of the canonical workspace path, so each workspace has isolated history and symlinks share the same database. On startup, an existing `.effectory/state/runtime.sqlite` is migrated with its WAL contents after checking that its runner has stopped. Migration refuses to overwrite an existing user database. The control socket and local action outputs remain in `.effectory/state/`. Run results use the workflow success schema's JSON wire representation, so native BigInt and Date results become strings and Void becomes null. An unreadable native outcome or an oversized result is recorded as `inspectionError`; it does not prevent other runs or runner startup, and it is not presented as a fabricated workflow failure. Task revisions fingerprint the supported transitive TypeScript source graph, installed SDK source bytes, package metadata, lockfile, patches, and relevant compiler configuration. Isolated projects use the metadata and configuration under `.effectory` and keep authored imports within that directory. Imports are deliberately bounded: explicit relative `.ts` files within the workspace, supported Effect packages, and permitted builtins. Dynamic imports, `import.meta`, source symlinks, resolver aliases, and untracked executable preloads are refused. Discovery uses the installed TypeScript parser locally and does not install packages. Other installed dependency bytes are assumed to match the lockfile. The v2 revision format changes existing task digests; finish pending work with the previous runtime before upgrading.
-
-Use a new CLI invocation after source changes; restart any optional long-lived runner. If unfinished work needs an earlier revision, restore that source and lockfile before restarting; Effectory does not archive historical executable bundles.
-
-Activity persistence does not make external actions exactly once. The demos use read-only HTTP checks and a reconcilable local file write. Unsafe remote mutations, arbitrary step reruns, general artifact queries, retention/GC, schedules, secrets, a UI, and remote workers remain later work. The Unix socket and process-identity ownership implementation target macOS and Linux.
-
-See the [architecture and acceptance criteria](docs/automation-platform.md), [first automation walkthrough](docs/first-automation.md), and [Swamp comparison research](docs/research/swamp-effect-workflows.md).
-
-## Build and publish releases
-
-`bun run release:pack v0.1.2` validates that the tag matches the SDK, runtime, and CLI versions, then writes the individual tarballs, `effectory-v0.1.2.tar.gz`, `install.sh`, and `SHA256SUMS` to `dist/`. The bundle contains a standalone installer and a manifest of package checksums.
-
-Pushing a `v*` tag runs `.github/workflows/release.yml`: verify the project, pack the tagged commit, and publish a GitHub prerelease with the assets. The workflow uses GitHub's repository token and does not publish to npm. For a new version, update the three package versions, their internal dependency pins, the CLI's reported version, and the workspace initialization defaults before tagging. Each release uses a new version/tag; do not replace assets of an installed release.
-
-## Development and verification
-
-```sh
-bun dev --help
-bun run typecheck
-bun run test
-bun run verify
-bun run docs:dev
-```
-
-`bun dev` and `bun run effectory` both run `packages/cli/src/main.ts`. Verification checks the SDK, runtime, CLI, process recovery tests, and documentation site. Effect and platform packages remain pinned to 4.0.5.
-
-## Documentation site
-
-The Astro/Starlight site lives in `packages/docs`. Run `bun run docs:dev` and edit `packages/docs/src/content/docs/`. The same pages generate `/llms.txt`, `/llms-full.txt`, and `/llms-small.txt` for AI assistants.
-
-## Workflow services
-
-Root `effectory.run.ts` exports `Effectory.make({ workflows, services })` from `@effectory/sdk`, explicitly listing workflows and supplying native Effect layers. Automations can require application-defined services, and a configured `ArtifactStore` replaces both artifact publishing and inspection. SQLite remains the default and continues to hold workflow state. See [runtime service configuration](docs/authoring.md#configure-runtime-services) for composition, backend contracts, and revision behavior.
+Tests never reach live services: providers have fakes (`Provider.dual`, `Provider.memory`, an in-memory GitHub API), Agent Actions have fake answers, and process tests spawn local commands only.

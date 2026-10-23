@@ -1,9 +1,0 @@
-{
-  "config": {
-    "timeoutMs": 5000,
-    "url": "http://127.0.0.1:4310"
-  },
-  "name": "app",
-  "type": "http/check",
-  "version": 1
-}
