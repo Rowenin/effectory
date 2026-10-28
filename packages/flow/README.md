@@ -95,7 +95,17 @@ const next =
 const { run, nodes } = yield * Flow.status(first.runId);
 ```
 
-Provide a store with `Flow.memoryStore` (in memory, for tests) or a persistent store. Resuming plans the root again and runs it again; nodes whose outputs are stored return them without running. A node that holds a loop of calls, like `Approve` above, runs again on each resume and replays its calls from the store.
+Provide a store with `Flow.memoryStore` (in memory, for tests) or `Flow.sqlStore`, which keeps runs in `flow_*` tables through any `effect/sql` client:
+
+```ts
+import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
+
+const store = Flow.sqlStore.pipe(
+  Layer.provide(SqliteClient.layer({ filename: ".effectory/runs.db" }))
+);
+```
+
+Resuming plans the root again and runs it again; nodes whose outputs are stored return them without running. A node that holds a loop of calls, like `Approve` above, runs again on each resume and replays its calls from the store.
 
 ## The two phases
 
@@ -162,7 +172,7 @@ The **Enforced by** column says what happens when a law is broken:
 | X1 | A node starts only after all of its dependencies have succeeded. | — | A dependent starting before its dependency finishes. | By design |
 | X2 | Nodes that don't depend on each other run at the same time, with no limit. | — | Relying on the order of unrelated nodes. | Convention |
 | X3 | Each node runs at most once per run. | — | — | By design |
-| X4 | The first failure of a planned node fails the whole run. Running nodes are interrupted, and nodes that depend on the failed one never start. A called node's failure goes to its caller instead (C5). | Handling errors inside `run` to recover locally. | Expecting other branches to keep going after a failure. | Run failure |
+| X4 | The first failure of a planned node fails the whole run. Running nodes are interrupted, and nodes that depend on the failed one never start. A called node's failure goes to its caller instead (C5). Waiting on an Input isn't a failure (I4). | Handling errors inside `run` to recover locally. | Expecting other branches to keep going after a failure. | Run failure |
 | X5 | A run fails with the failing Task's own error. | — | — | Run failure |
 
 ### Calls
@@ -185,7 +195,7 @@ The **Enforced by** column says what happens when a law is broken:
 | I1 | An Input is a Task with `kind: "input"`. Its input is what a person is shown; its output is their response. `After` and `Calls` accept it like any Task. | Planning an Input with `After` when the request is known at plan time, or calling it when it depends on results. | — | By design |
 | I2 | Plan nodes and declared calls record their `kind`; `toMermaid` draws Inputs as hexagons. | — | — | By design |
 | I3 | `run` answers an Input from `responses[key]`, decoded with its output schema's JSON codec. It never runs work for an Input. A response that fails the schema leaves the Input pending, with the reason in `rejected`. | Answering any Input the run will reach, in advance. | — | By design |
-| I4 | Reaching an Input with no response fails the run with `Suspended`, listing each pending key, its name, description and request. This holds even if a caller handled the Input's failure. | Running again with the responses so far plus new ones. | Treating a handled `Suspended` as an answer. | Run failure |
+| I4 | An Input with no response suspends the nodes that depend on it or call it, and nothing else: other branches run on. Once nothing more can run, the run fails with `Suspended`, listing every pending Input (key, name, description, request) in key order. This holds even if a caller handled the Input's failure. | Running again with the responses so far plus new ones. | Treating a handled `Suspended` as an answer. | Run failure |
 | I5 | Responses are matched by key, so a run that is replayed with responses must reach the same Inputs with the same requests. | Branching on outputs of nodes, including Inputs. | Branching on the clock or randomness in `run`, so a replay asks something different. | Convention |
 
 ### Durable runs
@@ -194,11 +204,12 @@ The **Enforced by** column says what happens when a law is broken:
 | --- | --- | --- | --- | --- |
 | D1 | `start` plans the root, records a run (Task name, JSON-encoded input, plan fingerprint) and runs it. `start` and `resume` return an `Outcome`: `Succeeded`, `Suspended` or `Failed`, each with the run id. | — | — | By design |
 | D2 | A node whose output is stored for the run never runs again; the stored output is decoded with its schema's JSON codec. | — | Expecting a finished node to run again on resume. | By design |
-| D3 | Failures aren't stored as outputs. Resuming a failed run runs failed nodes again, and a node cut off mid-work (stored as `running`) runs again too. | Resuming after fixing what failed. | Relying on a node's work running exactly once; it runs at least once. | By design |
+| D3 | Failures aren't stored as outputs. Resuming a failed run runs failed nodes again, and a node cut off mid-work (stored as `running`) or blocked on an Input (`waiting`) runs again too. | Resuming after fixing what failed. | Relying on a node's work running exactly once; it runs at least once. | By design |
 | D4 | `resume` only accepts responses for the run's pending Inputs, and records them before running. Responding and continuing are one step. | Replacing a rejected response. | Answering an Input the run isn't waiting for (`ResumeError` `"unexpected-response"`). | Run failure |
 | D5 | `resume` refuses a different Task name (`"task-mismatch"`), an unknown run (`"not-found"`), or a plan whose fingerprint differs from the one recorded at start (`"plan-changed"`). Called nodes aren't part of the fingerprint. | Changing what a called node does; its key changes, so it runs fresh. | Resuming a run after changing its static plan. | Run failure |
 | D6 | Resuming a succeeded run returns its stored output without running anything. | — | — | By design |
 | D7 | Outputs, inputs and responses are stored through their schemas' JSON codecs, so a store only needs to keep JSON. | Schemas whose type isn't JSON, such as `DateTimeUtcFromString`. | Schemas without a JSON form. | Run failure |
+| D8 | Only one process runs a run at a time. `start` and `resume` hold a lease on the run, renewed every third of `Flow.LeaseTime` (30 seconds by default) and released when they return. Resuming a run whose lease is held fails with `ResumeError` `"busy"`; a crashed owner's lease lapses after `LeaseTime`. | Resuming after a crash once the lease lapses. | Running one run from two processes at once. | Run failure |
 
 ### Types
 
@@ -220,7 +231,6 @@ These are places where the code allows something the laws forbid:
 - **C6:** Without `max` there is no cap. There's no limit on calls per run as a whole.
 - **C7:** The cycle check runs after the called node has started, so a node in a detected cycle stays blocked until the run ends, even when its caller recovers from the `CallError`.
 - **Y2:** Wrapping `Flow.After` in `Effect.provide*` removes the upstream Task's services from the type without giving them to its node, which then fails at run time with "Service not found".
-- **I4:** A run stops at the first Input without a response. Other branches are interrupted (X4), so their Inputs only show up on a later run. With `Flow.run`, running again repeats all the work before the stop; with `Flow.start` and `resume`, only unfinished work runs again.
-- **D3:** Two processes can resume the same run at once; nothing gives a run a single owner yet.
-- **D7:** Only the in-memory store exists; nothing survives the process yet.
+- **I4:** Within one node, calls run in order, so a node that asks two Inputs one after the other only reports the first.
+- **D8:** A process that loses its lease (for example, paused longer than `LeaseTime`) isn't stopped; it keeps running alongside the new owner.
 - **Run record:** Called nodes appear only in spans (`flow.caller` names the caller); `Flow.run` doesn't return the graph of what actually ran.

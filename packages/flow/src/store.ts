@@ -23,8 +23,11 @@ export interface RunRecord {
   readonly error?: string;
 }
 
-/** `running` with no later record means the node was cut off mid-work. */
-export type NodeStatus = "running" | "succeeded" | "failed";
+/**
+ * `running` with no later record means the node was cut off mid-work.
+ * `waiting` means it can't finish until a pending Input is answered.
+ */
+export type NodeStatus = "running" | "waiting" | "succeeded" | "failed";
 
 export interface NodeRecord {
   readonly key: string;
@@ -76,6 +79,21 @@ export class RunStore extends Context.Service<
       runId: string,
       key: string
     ) => Effect.Effect<Option.Option<unknown>, StoreError>;
+    /**
+     * Take or extend the lease on a run until `until` (epoch ms). Succeeds
+     * with `false` if another owner holds a lease that hasn't expired at
+     * `now`.
+     */
+    readonly claim: (
+      runId: string,
+      owner: string,
+      options: { readonly now: number; readonly until: number }
+    ) => Effect.Effect<boolean, StoreError>;
+    /** Give up `owner`'s lease on a run, if it still holds it. */
+    readonly release: (
+      runId: string,
+      owner: string
+    ) => Effect.Effect<void, StoreError>;
   }
 >()("effectory/flow/RunStore") {}
 
@@ -84,6 +102,7 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
   const runs = new Map<string, RunRecord>();
   const nodes = new Map<string, Map<string, NodeRecord>>();
   const responses = new Map<string, Map<string, unknown>>();
+  const leases = new Map<string, { owner: string; until: number }>();
   const nodesOf = (runId: string) => {
     const map = nodes.get(runId) ?? new Map<string, NodeRecord>();
     nodes.set(runId, map);
@@ -95,6 +114,15 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
     return map;
   };
   return RunStore.of({
+    claim: (runId, owner, { now, until }) =>
+      Effect.sync(() => {
+        const lease = leases.get(runId);
+        if (lease && lease.owner !== owner && lease.until >= now) {
+          return false;
+        }
+        leases.set(runId, { owner, until });
+        return true;
+      }),
     createRun: (run) =>
       runs.has(run.id)
         ? Effect.fail(new StoreError({ message: `Run ${run.id} exists` }))
@@ -118,13 +146,20 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
       Effect.sync(() => {
         responsesOf(runId).set(key, value);
       }),
+    release: (runId, owner) =>
+      Effect.sync(() => {
+        if (leases.get(runId)?.owner === owner) {
+          leases.delete(runId);
+        }
+      }),
     updateRun: (id, update) =>
       Effect.suspend(() => {
         const run = runs.get(id);
         if (!run) {
           return Effect.fail(new StoreError({ message: `No run ${id}` }));
         }
-        runs.set(id, { ...run, ...update });
+        const { error: _error, output: _output, ...rest } = run;
+        runs.set(id, { ...rest, ...update });
         return Effect.void;
       }),
   });

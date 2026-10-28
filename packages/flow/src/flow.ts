@@ -18,6 +18,7 @@ export {
 } from "./errors.ts";
 export { Input } from "./input.ts";
 export {
+  LeaseTime,
   resume,
   start,
   status,
@@ -34,6 +35,7 @@ export {
   type RunRecord,
   type RunStatus,
 } from "./store.ts";
+export { layerSql as sqlStore } from "./sql-store.ts";
 export {
   fingerprint,
   plan,

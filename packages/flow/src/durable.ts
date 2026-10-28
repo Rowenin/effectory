@@ -5,7 +5,18 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
+import {
+  Cause,
+  Clock,
+  Context,
+  Data,
+  Duration,
+  Effect,
+  Exit,
+  Option,
+  Schedule,
+  Schema,
+} from "effect";
 
 import { Suspended } from "./errors.ts";
 import type { PendingInput, PlanError, StoreError } from "./errors.ts";
@@ -46,10 +57,47 @@ export class ResumeError extends Data.TaggedError("ResumeError")<{
     | "not-found"
     | "task-mismatch"
     | "plan-changed"
-    | "unexpected-response";
+    | "unexpected-response"
+    | "busy";
   readonly message: string;
   readonly runId: string;
 }> {}
+
+/**
+ * How long a process's claim on a run lasts without renewal. The owner renews
+ * it while running; after a crash, the run can be resumed once it lapses.
+ */
+export const LeaseTime = Context.Reference<Duration.Duration>(
+  "effectory/flow/LeaseTime",
+  { defaultValue: () => Duration.seconds(30) }
+);
+
+/**
+ * Hold the lease on `runId` for the rest of the scope, renewing it as it
+ * goes, or fail with `"busy"` if another process holds it.
+ */
+const own = (runId: string) =>
+  Effect.gen(function* ownRun() {
+    const store = yield* RunStore;
+    const owner = randomUUID();
+    const lease = Duration.toMillis(yield* LeaseTime);
+    const claim = Effect.flatMap(Clock.currentTimeMillis, (now) =>
+      store.claim(runId, owner, { now, until: now + lease })
+    );
+    if (!(yield* claim)) {
+      return yield* new ResumeError({
+        message: `Run ${runId} is being run by another process`,
+        reason: "busy",
+        runId,
+      });
+    }
+    yield* Effect.addFinalizer(() =>
+      Effect.ignore(store.release(runId, owner))
+    );
+    yield* Effect.forkScoped(
+      Effect.repeat(claim, Schedule.spaced(Duration.millis(lease / 3)))
+    );
+  });
 
 export interface ResumeOptions {
   /** Responses to the run's pending Inputs, by key, JSON-encoded. */
@@ -103,6 +151,14 @@ const journalOf = (store: RunStore["Service"], runId: string): Journal => {
           key,
           output,
           status: "succeeded",
+        })
+      ),
+    waiting: (key) =>
+      Effect.flatMap(node(key), (previous) =>
+        store.putNode(runId, {
+          attempts: previous?.attempts ?? 0,
+          key,
+          status: "waiting",
         })
       ),
   };
@@ -169,8 +225,9 @@ export const start = <T extends AnyTask>(
       status: "running",
       task: task.name,
     });
+    yield* own(runId);
     return yield* drive(task, runId, planned);
-  }) as never;
+  }).pipe(Effect.scoped) as never;
 
 /**
  * Continue run `runId` of `task`, first recording `responses` for its pending
@@ -226,12 +283,13 @@ export const resume = <T extends AnyTask>(
       );
     }
 
+    yield* own(runId);
     yield* Effect.forEach(responses, ([key, value]) =>
       store.putResponse(runId, key, value)
     );
     yield* store.updateRun(runId, { pending: [], status: "running" });
     return yield* drive(task, runId, planned);
-  }) as never;
+  }).pipe(Effect.scoped) as never;
 
 /** A run's record and the state of each node it reached. */
 export const status = (

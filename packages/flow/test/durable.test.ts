@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { DateTime, Effect, Option, Schema } from "effect";
+import * as SqliteClient from "@effect/sql-sqlite-bun/SqliteClient";
+import { DateTime, Effect, Layer, Option, Schema } from "effect";
 
 import { Flow } from "../src/index.ts";
 
@@ -87,8 +88,22 @@ const makeTasks = (options: { flakyImplement?: boolean } = {}) => {
   return { Implement, events };
 };
 
-const run = <A, E>(program: Effect.Effect<A, E, Flow.RunStore>) =>
-  Effect.runPromise(program.pipe(Effect.provide(Flow.memoryStore)));
+const stores = [
+  ["memory", Flow.memoryStore],
+  [
+    "sqlite",
+    Flow.sqlStore.pipe(
+      Layer.provide(SqliteClient.layer({ filename: ":memory:" })),
+      Layer.orDie
+    ),
+  ],
+] as const;
+
+/** Run a program against a fresh store. */
+const runWith =
+  (store: Layer.Layer<Flow.RunStore>) =>
+  <A, E>(program: Effect.Effect<A, E, Flow.RunStore>) =>
+    Effect.runPromise(program.pipe(Effect.provide(store)));
 
 /** The reason a resume was refused. */
 const reason = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
@@ -99,7 +114,9 @@ const reason = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 
 const ask = (plan: string) => `ApprovePlan(${JSON.stringify(plan)})`;
 
-describe("durable runs", () => {
+describe.each(stores)("durable runs (%s)", (_name, store) => {
+  const run = runWith(store);
+
   test("a run suspends, resumes with responses, and skips finished work", async () => {
     const { Implement, events } = makeTasks();
     const result = await run(
@@ -266,10 +283,143 @@ describe("durable runs", () => {
         const a = yield* Flow.start(Implement, "a");
         const b = yield* Flow.start(Implement, "b");
         expect(a.runId).not.toBe(b.runId);
-        const store = yield* Flow.RunStore;
-        return Option.getOrThrow(yield* store.getRun(b.runId)).pending;
+        const db = yield* Flow.RunStore;
+        return Option.getOrThrow(yield* db.getRun(b.runId)).pending;
       })
     );
     expect(pending.map((input) => input.key)).toEqual([ask("b v0")]);
+  });
+
+  test("a run suspends at every pending Input after independent work", async () => {
+    const events: string[] = [];
+    const Confirm = Flow.Input("Confirm", {
+      input: Schema.String,
+      output: Schema.Boolean,
+    });
+    const Lint = Flow.Task(
+      "Lint",
+      { input: Schema.Void, output: Schema.Boolean },
+      () =>
+        Effect.succeed({
+          run: Effect.sync(() => {
+            events.push("lint");
+            return true;
+          }),
+        })
+    );
+    const Deploy = Flow.Task(
+      "Deploy",
+      { input: Schema.String, output: Schema.String },
+      (where) =>
+        Effect.gen(function* deploy() {
+          const confirmed = yield* Flow.After(Confirm, where);
+          return {
+            run: Effect.gen(function* deployRun() {
+              yield* confirmed.output;
+              events.push(`deploy(${where})`);
+              return where;
+            }),
+          };
+        })
+    );
+    const Release = Flow.Task(
+      "Release",
+      { input: Schema.Void, output: Schema.String },
+      () =>
+        Effect.gen(function* release() {
+          yield* Flow.After(Lint);
+          const staging = yield* Flow.After(Deploy, "staging");
+          const docs = yield* Flow.After(Deploy, "docs");
+          return {
+            run: Effect.all([staging.output, docs.output]).pipe(
+              Effect.map((both) => both.join("+"))
+            ),
+          };
+        })
+    );
+
+    await run(
+      Effect.gen(function* program() {
+        const first = yield* Flow.start(Release);
+        expect(first._tag).toBe("Suspended");
+        expect(
+          first._tag === "Suspended" && first.pending.map((input) => input.key)
+        ).toEqual(['Confirm("docs")', 'Confirm("staging")']);
+        // Lint didn't need either answer, so it ran and is stored.
+        expect(events).toEqual(["lint"]);
+        const statuses = Object.fromEntries(
+          (yield* Flow.status(first.runId)).nodes.map((node) => [
+            node.key,
+            node.status,
+          ])
+        );
+        expect(statuses).toMatchObject({
+          'Confirm("docs")': "waiting",
+          'Confirm("staging")': "waiting",
+          "Lint(null)": "succeeded",
+        });
+
+        const second = yield* Flow.resume(Release, first.runId, {
+          responses: { 'Confirm("staging")': true },
+        });
+        expect(second).toMatchObject({
+          _tag: "Suspended",
+          pending: [{ key: 'Confirm("docs")' }],
+        });
+        const third = yield* Flow.resume(Release, first.runId, {
+          responses: { 'Confirm("docs")': true },
+        });
+        expect(third).toMatchObject({
+          _tag: "Succeeded",
+          output: "staging+docs",
+        });
+      })
+    );
+    expect(events).toEqual(["lint", "deploy(staging)", "deploy(docs)"]);
+  });
+
+  test("a real failure ends the run even while Inputs are pending", async () => {
+    const Confirm = Flow.Input("Confirm", {
+      input: Schema.Void,
+      output: Schema.Boolean,
+    });
+    const Broken = Flow.Task(
+      "Broken",
+      { input: Schema.Void, output: Schema.Boolean },
+      () => Effect.succeed({ run: Effect.fail("broken" as const) })
+    );
+    const Both = Flow.Task(
+      "Both",
+      { input: Schema.Void, output: Schema.Boolean },
+      () =>
+        Effect.gen(function* both() {
+          yield* Flow.After(Confirm);
+          yield* Flow.After(Broken);
+          return { run: Effect.succeed(true) };
+        })
+    );
+    const outcome = await run(Flow.start(Both));
+    expect(outcome._tag).toBe("Failed");
+  });
+
+  test("a run held by another process is busy until its lease lapses", async () => {
+    const { Implement } = makeTasks();
+    const reasons = await run(
+      Effect.gen(function* program() {
+        const { runId } = yield* Flow.start(Implement, "ship");
+        const db = yield* Flow.RunStore;
+        const now = Date.now();
+        yield* db.claim(runId, "someone else", { now, until: now + 60_000 });
+        const busy = yield* reason(Flow.resume(Implement, runId));
+
+        // The other owner crashed: its lease lapses and the run can resume.
+        yield* db.claim(runId, "someone else", { now, until: now - 1 });
+        const resumed = yield* Flow.resume(Implement, runId, {
+          responses: { [ask("ship v0")]: { _tag: "Approve", by: "dana" } },
+        });
+        return [busy, resumed._tag];
+      })
+    );
+    expect(reasons).toEqual(["busy", "Succeeded"]);
   });
 });

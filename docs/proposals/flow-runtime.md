@@ -33,11 +33,13 @@ stateDiagram-v2
 
 ## Phases
 
+Phases 1–5 are implemented; see the Durable runs laws (D1–D8) in the [flow README](../../packages/flow/README.md).
+
 1. **`RunStore` and an in-memory store.** `run` reads and writes node outputs and Input responses through a journal. Stored successes never run again; failures are not memoized, so resuming retries them. Values are stored through each schema's JSON codec.
 2. **Lifecycle API.** `Flow.start(task, input)`, `Flow.resume(task, runId, { responses })`, `Flow.status(runId)`. Outcomes (`Succeeded`, `Suspended`, `Failed`) are data with the run id; store and resume problems are errors.
 3. **Plan fingerprint.** `start` stores a hash of the static plan (keys and edges). `resume` plans again and refuses a different fingerprint. Called nodes are not in the fingerprint; changing them only makes them run fresh.
 4. **Stop at every pending Input.** An unanswered Input blocks its dependents instead of failing the run. Independent branches keep going, and the run suspends once nothing else can progress, listing every pending Input.
-5. **SQLite store** with process-level tests: kill a run mid-node and resume (finished nodes don't rerun, the unfinished node runs again); suspend, exit, respond and resume in a new process; refuse a second owner for the same run.
+5. **SQLite store** with process-level tests: kill a run mid-node and resume (finished nodes don't rerun, the unfinished node runs again); suspend, exit, respond and resume in a new process; refuse a second owner for the same run. Ownership is a lease renewed while running (`Flow.LeaseTime`), so a crashed owner's run can be resumed once it lapses.
 6. **Later:** a CLI (`run`, `resume --respond key=file`, `status`), retries and timeouts per Task, a concurrency limit, durable timers, and a record of the called nodes that ran.
 
 ## Prior art in this repository

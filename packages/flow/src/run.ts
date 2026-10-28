@@ -22,6 +22,16 @@ const suspended = (pending: readonly PendingInput[]) =>
     pending,
   });
 
+/** A failure caused only by waiting on Inputs. */
+const isSuspension = (cause: Cause.Cause<unknown>) => {
+  const error = Cause.findErrorOption(cause);
+  return (
+    Option.isSome(error) &&
+    error.value instanceof Suspended &&
+    !Cause.hasDies(cause)
+  );
+};
+
 export interface RunOptions {
   /** Responses to Input nodes, by node key, JSON-encoded. */
   readonly responses?: Readonly<Record<string, unknown>>;
@@ -45,6 +55,8 @@ export interface Journal {
     output: unknown
   ) => Effect.Effect<void, unknown>;
   readonly failed: (key: string, error: string) => Effect.Effect<void, unknown>;
+  /** The node can't finish until a pending Input is answered. */
+  readonly waiting: (key: string) => Effect.Effect<void, unknown>;
 }
 
 /** A journal that remembers nothing; responses come from `options`. */
@@ -61,6 +73,7 @@ const ephemeral = (options: RunOptions): Journal => {
       ),
     started: () => Effect.void,
     succeeded: () => Effect.void,
+    waiting: () => Effect.void,
   };
 };
 
@@ -129,11 +142,14 @@ export const runWith = <A, E, R>(
             journal.succeeded(node.key, encoded)
           )
         ),
-        Effect.tapCause((cause) =>
-          Cause.hasInterruptsOnly(cause) || pending.has(node.key)
-            ? Effect.void
-            : journal.failed(node.key, Cause.pretty(cause))
-        )
+        Effect.tapCause((cause) => {
+          if (Cause.hasInterruptsOnly(cause)) {
+            return Effect.void;
+          }
+          return isSuspension(cause)
+            ? journal.waiting(node.key)
+            : journal.failed(node.key, Cause.pretty(cause));
+        })
       );
       return Effect.flatMap(journal.output(node.key), (stored) =>
         Option.isSome(stored)
@@ -266,22 +282,26 @@ export const runWith = <A, E, R>(
         );
       });
 
-    const exit = yield* Effect.forEach(
+    // A suspended node doesn't stop its siblings: its dependents and callers
+    // suspend through it, and everything else runs on. Real failures still
+    // interrupt the run.
+    yield* Effect.forEach(
       [...self.nodes.values()],
-      (entry) => execute(entry),
-      {
-        concurrency: "unbounded",
-        discard: true,
-      }
+      (entry) =>
+        execute(entry).pipe(
+          Effect.catchCauseIf(isSuspension, () => Effect.void)
+        ),
+      { concurrency: "unbounded", discard: true }
     ).pipe(
       Effect.provideService(Outputs, outputs),
-      Effect.provideService(CurrentRun, { call }),
-      Effect.exit
+      Effect.provideService(CurrentRun, { call })
     );
     if (pending.size > 0) {
-      return yield* suspended([...pending.values()]);
+      return yield* suspended(
+        [...pending.values()].toSorted((a, b) => a.key.localeCompare(b.key))
+      );
     }
-    return yield* Effect.map(exit, () => outputs.get(self.root));
+    return outputs.get(self.root);
   }).pipe(Effect.scoped) as never;
 
 /**
