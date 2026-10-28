@@ -2,7 +2,7 @@
 import { Context, Effect, Layer, Option } from "effect";
 
 import { StoreError } from "./errors.ts";
-import type { PendingInput } from "./errors.ts";
+import type { PendingInput, PendingTimer } from "./errors.ts";
 
 export type RunStatus = "running" | "suspended" | "succeeded" | "failed";
 
@@ -17,6 +17,8 @@ export interface RunRecord {
   readonly status: RunStatus;
   /** Inputs waiting for a response while `suspended`. */
   readonly pending: readonly PendingInput[];
+  /** Timers waiting for their wake time while `suspended`. */
+  readonly timers: readonly PendingTimer[];
   /** The root's JSON-encoded output once `succeeded`. */
   readonly output?: unknown;
   /** What went wrong once `failed`. */
@@ -37,6 +39,15 @@ export interface NodeRecord {
   /** The JSON-encoded output once `succeeded`. */
   readonly output?: unknown;
   readonly error?: string;
+  /** For Timers: when the node wakes, in epoch milliseconds. */
+  readonly wakeAt?: number;
+}
+
+/** An edge the run followed: `to` ran after `from`, or `from` called `to`. */
+export interface EdgeRecord {
+  readonly from: string;
+  readonly to: string;
+  readonly kind: "after" | "call";
 }
 
 /**
@@ -54,7 +65,7 @@ export class RunStore extends Context.Service<
     readonly listRuns: Effect.Effect<readonly RunRecord[], StoreError>;
     readonly updateRun: (
       id: string,
-      update: Pick<RunRecord, "status" | "pending"> &
+      update: Pick<RunRecord, "status" | "pending" | "timers"> &
         Partial<Pick<RunRecord, "output" | "error">>
     ) => Effect.Effect<void, StoreError>;
     readonly getNode: (
@@ -68,6 +79,15 @@ export class RunStore extends Context.Service<
     readonly listNodes: (
       runId: string
     ) => Effect.Effect<readonly NodeRecord[], StoreError>;
+    /** Record an edge; recording the same edge again does nothing. */
+    readonly putEdge: (
+      runId: string,
+      edge: EdgeRecord
+    ) => Effect.Effect<void, StoreError>;
+    /** Every edge recorded for a run, in the order first recorded. */
+    readonly listEdges: (
+      runId: string
+    ) => Effect.Effect<readonly EdgeRecord[], StoreError>;
     /**
      * Record a response, replacing an earlier one. `resume` only accepts
      * responses for pending Inputs, so a consumed response is never replaced.
@@ -105,6 +125,12 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
   const nodes = new Map<string, Map<string, NodeRecord>>();
   const responses = new Map<string, Map<string, unknown>>();
   const leases = new Map<string, { owner: string; until: number }>();
+  const edges = new Map<string, Map<string, EdgeRecord>>();
+  const edgesOf = (runId: string) => {
+    const map = edges.get(runId) ?? new Map<string, EdgeRecord>();
+    edges.set(runId, map);
+    return map;
+  };
   const nodesOf = (runId: string) => {
     const map = nodes.get(runId) ?? new Map<string, NodeRecord>();
     nodes.set(runId, map);
@@ -139,8 +165,17 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
         return map.has(key) ? Option.some(map.get(key)) : Option.none();
       }),
     getRun: (id) => Effect.sync(() => Option.fromUndefinedOr(runs.get(id))),
+    listEdges: (runId) => Effect.sync(() => [...edgesOf(runId).values()]),
     listNodes: (runId) => Effect.sync(() => [...nodesOf(runId).values()]),
     listRuns: Effect.sync(() => [...runs.values()]),
+    putEdge: (runId, edge) =>
+      Effect.sync(() => {
+        const id = JSON.stringify([edge.from, edge.to, edge.kind]);
+        const map = edgesOf(runId);
+        if (!map.has(id)) {
+          map.set(id, edge);
+        }
+      }),
     putNode: (runId, node) =>
       Effect.sync(() => {
         nodesOf(runId).set(node.key, node);

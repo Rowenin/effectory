@@ -10,6 +10,7 @@ import type { Outcome, RunState } from "./durable.ts";
 import type { PlanError, StoreError } from "./errors.ts";
 import { plan } from "./plan.ts";
 import type { Plan } from "./plan.ts";
+import { Concurrency } from "./services.ts";
 import { RunStore } from "./store.ts";
 import type { RunRecord } from "./store.ts";
 import type { AnyTask, ServicesOf } from "./task.ts";
@@ -65,6 +66,8 @@ export interface AppConfig<Tasks extends readonly AnyTask[], Provided, E> {
   readonly tasks: Tasks;
   /** Provides the services the Tasks need. */
   readonly layer?: Layer.Layer<Provided, E>;
+  /** Most nodes doing work at once in each run (default: no limit). */
+  readonly concurrency?: number;
 }
 
 /** Decode a Task's input from its JSON form. */
@@ -122,7 +125,12 @@ export const make = <
       )
     );
   const provide = <A, Err, R>(effect: Effect.Effect<A, Err, R>) =>
-    Effect.provide(effect, services) as Effect.Effect<
+    Effect.provide(
+      config.concurrency === undefined
+        ? effect
+        : Effect.provideService(effect, Concurrency, config.concurrency),
+      services
+    ) as Effect.Effect<
       A,
       Err | PlanError,
       Exclude<R, ServicesOfAll<Tasks[number]>>

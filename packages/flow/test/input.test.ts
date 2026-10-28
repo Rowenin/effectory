@@ -202,6 +202,7 @@ describe("Flow.Input", () => {
             request: { goal: "ship", plan: "ship v0" },
           },
         ],
+        timers: [],
       })
     );
     expect(events).toEqual(["refine()"]);

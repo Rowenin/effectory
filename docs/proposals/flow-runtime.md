@@ -33,7 +33,7 @@ stateDiagram-v2
 
 ## Phases
 
-Phases 1–6 are implemented; see the Durable runs laws (D1–D8) in the [flow README](../../packages/flow/README.md).
+Phases 1–7 are implemented; see the Durable runs laws (D1–D8) in the [flow README](../../packages/flow/README.md).
 
 1. **`RunStore` and an in-memory store.** `run` reads and writes node outputs and Input responses through a journal. Stored successes never run again; failures are not memoized, so resuming retries them. Values are stored through each schema's JSON codec.
 2. **Lifecycle API.** `Flow.start(task, input)`, `Flow.resume(task, runId, { responses })`, `Flow.status(runId)`. Outcomes (`Succeeded`, `Suspended`, `Failed`) are data with the run id; store and resume problems are errors.
@@ -41,7 +41,8 @@ Phases 1–6 are implemented; see the Durable runs laws (D1–D8) in the [flow R
 4. **Stop at every pending Input.** An unanswered Input blocks its dependents instead of failing the run. Independent branches keep going, and the run suspends once nothing else can progress, listing every pending Input.
 5. **SQLite store** with process-level tests: kill a run mid-node and resume (finished nodes don't rerun, the unfinished node runs again); suspend, exit, respond and resume in a new process; refuse a second owner for the same run. Ownership is a lease renewed while running (`Flow.LeaseTime`), so a crashed owner's run can be resumed once it lapses.
 6. **Entry point and CLI (done).** `flow.run.ts` default-exports `Flow.make({ tasks, layer })`; the `flow` command in `packages/cli` lists, searches, plans, runs, resumes and inspects its Tasks, with runs in `.effectory/runs.db`.
-7. **Later:** retries and timeouts per Task, a concurrency limit, durable timers, and a record of the called nodes that ran.
+7. **Execution (done).** Per-Task `retry` and `timeout`, a concurrency limit per run (`Flow.Concurrency`, `Flow.make({ concurrency })`) and per Task, durable `Flow.Timer`s that suspend the run until their wake time, and a record of the edges each run followed (`flow status --mermaid`).
+8. **Later:** something that resumes runs when their Timers wake, and a way to re-run selected nodes.
 
 ## Prior art in this repository
 

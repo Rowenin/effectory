@@ -24,6 +24,8 @@ export interface PendingInput {
 export class Suspended extends Data.TaggedError("Suspended")<{
   readonly message: string;
   readonly pending: readonly PendingInput[];
+  /** Timers that haven't woken yet; resume after their wake time. */
+  readonly timers: readonly PendingTimer[];
 }> {}
 
 /**
@@ -35,6 +37,20 @@ export class CallError extends Data.TaggedError("CallError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+/** An attempt at a Task's work ran longer than its `timeout`. */
+export class TaskTimeout extends Data.TaggedError("TaskTimeout")<{
+  readonly message: string;
+  readonly key: string;
+}> {}
+
+/** A Timer the run reached before its wake time. */
+export interface PendingTimer {
+  readonly key: string;
+  readonly name: string;
+  /** When it wakes, in epoch milliseconds. */
+  readonly wakeAt: number;
+}
 
 /** A `RunStore` could not read or write. */
 export class StoreError extends Data.TaggedError("StoreError")<{

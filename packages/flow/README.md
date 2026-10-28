@@ -1,6 +1,6 @@
 # @effectory/flow
 
-A spike on building DAG workflows with Effect. You define Tasks, `Flow.plan` turns a root Task into a graph, and `Flow.run` executes that graph. Tasks may also declare Tasks they call at run time, for loops and branches that depend on results, and Inputs, where a run stops to wait for a person.
+A spike on building DAG workflows with Effect. You define Tasks, `Flow.plan` turns a root Task into a graph, and `Flow.run` executes that graph. Tasks may also declare Tasks they call at run time, for loops and branches that depend on results; Inputs, where a run stops to wait for a person; and Timers, where it waits for a time. Tasks can retry, time out and limit how many run at once.
 
 ```ts
 const RunTests = Flow.Task(
@@ -194,7 +194,9 @@ The **Enforced by** column says what happens when a law is broken:
 | # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
 | --- | --- | --- | --- | --- |
 | X1 | A node starts only after all of its dependencies have succeeded. | — | A dependent starting before its dependency finishes. | By design |
-| X2 | Nodes that don't depend on each other run at the same time, with no limit. | — | Relying on the order of unrelated nodes. | Convention |
+| X2 | Nodes that don't depend on each other run at the same time, up to `Flow.Concurrency` (no limit by default) and each Task's `concurrency`. Inputs and Timers don't count. A node lets go of its slots while it waits on a call. | Limiting agent Tasks with `concurrency: 2`. | Relying on the order of unrelated nodes. | Convention |
+| X6 | A Task with `retry: { times, delay? }` runs failed work up to `times` more times, `delay` apart. Waiting for an Input or Timer is never retried. Each attempt counts in the node's `attempts`. | — | Expecting a retry after the run suspends. | By design |
+| X7 | A Task with `timeout` fails any attempt that runs longer with `TaskTimeout`, which is in the Task's error type only when `timeout` is set. Each retry gets its own timeout. | — | — | Type error / run failure |
 | X3 | Each node runs at most once per run. | — | — | By design |
 | X4 | The first failure of a planned node fails the whole run. Running nodes are interrupted, and nodes that depend on the failed one never start. A called node's failure goes to its caller instead (C5). Waiting on an Input isn't a failure (I4). | Handling errors inside `run` to recover locally. | Expecting other branches to keep going after a failure. | Run failure |
 | X5 | A run fails with the failing Task's own error. | — | — | Run failure |
@@ -243,6 +245,20 @@ The **Enforced by** column says what happens when a law is broken:
 | A2 | Task names in an app are unique. | Listing the same Task twice. | Two different Tasks with the same name; `Flow.make` throws `AppError` `"duplicate-task"`. | Run failure |
 | A3 | Apps start, plan and resume Tasks by name with input in its JSON form, and provide the layer themselves. Resuming finds the Task by the name stored with the run. | — | An unknown name (`"unknown-task"`) or input that doesn't decode (`"invalid-input"`). | Run failure |
 
+### Timers
+
+| # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
+| --- | --- | --- | --- | --- |
+| M1 | A Timer is a Task with `kind: "timer"` whose output is its wake time in epoch milliseconds. `wait` computes the wait from its input. `toMermaid` draws Timers as stadiums. | Planning a Timer with `After` or calling it with `Calls`. | — | By design |
+| M2 | The wait starts the first time a run reaches the node, and the wake time is stored with the node, so resuming early doesn't restart it. | — | Expecting a resumed Timer to wait again from the start. | By design |
+| M3 | A Timer due within `Flow.InProcessWait` (1 minute by default) is waited for in the process. A later one suspends the run, listing it in `timers` with its wake time; resume after that time to continue. | — | — | By design |
+
+### Run record
+
+| # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
+| --- | --- | --- | --- | --- |
+| R1 | A durable run records each edge it follows: `after` when a node waits on a dependency, `call` when a node calls another. `status` returns them with the nodes, and `toMermaidRun` draws the graph that ran, coloured by node status. | — | — | By design |
+
 ### Types
 
 | # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
@@ -258,11 +274,12 @@ These are places where the code allows something the laws forbid:
 - **N4:** `Flow.make` rejects duplicate names among the Tasks it lists (A2), but a Task that isn't listed can still share a name with one that is. When their inputs also match, the second is silently merged into the first.
 - **T4:** Nothing stops a Task body from causing side effects during planning.
 - **O2:** Reading an upstream output during planning type-checks, then fails as a defect (a crash) rather than a typed `PlanError`.
-- **X2:** There's no limit on how many nodes run at once.
 - **C4:** A called node runs with the services of the first caller to reach it; later callers with the same key get its output even if they provided different services around the call.
 - **C6:** Without `max` there is no cap. There's no limit on calls per run as a whole.
 - **C7:** The cycle check runs after the called node has started, so a node in a detected cycle stays blocked until the run ends, even when its caller recovers from the `CallError`.
 - **Y2:** Wrapping `Flow.After` in `Effect.provide*` removes the upstream Task's services from the type without giving them to its node, which then fails at run time with "Service not found".
 - **I4:** Within one node, calls run in order, so a node that asks two Inputs one after the other only reports the first.
 - **D8:** A process that loses its lease (for example, paused longer than `LeaseTime`) isn't stopped; it keeps running alongside the new owner.
-- **Run record:** Called nodes appear only in spans (`flow.caller` names the caller); `Flow.run` doesn't return the graph of what actually ran.
+- **R1:** `Flow.run` keeps no record; only durable runs do.
+- **M3:** Nothing resumes a suspended run when its Timer wakes; someone (or a scheduler) has to run `flow resume`.
+- **D2:** A node's stored output is reused on resume even if it describes a failure, such as a check that reports `passed: false`. Start a new run to check again.

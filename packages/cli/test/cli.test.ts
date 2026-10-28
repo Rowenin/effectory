@@ -47,6 +47,14 @@ describe("flow", () => {
   test("tasks lists and searches the Tasks in flow.run.ts", async () => {
     const all = await flowJson("tasks");
     expect(all.map((task: { name: string }) => task.name)).toEqual([
+      "Verify",
+      "Check",
+      "Release",
+      "HeadCommit",
+      "ConfirmRelease",
+      "Cooldown",
+      "Publish",
+      "Announce",
       "Implement",
       "Approve",
       "ApprovePlan",
@@ -55,22 +63,65 @@ describe("flow", () => {
       "Review",
     ]);
     const human = await flowJson("tasks", "human");
-    expect(human).toEqual([
-      expect.objectContaining({ kind: "task", name: "Approve" }),
-      expect.objectContaining({ kind: "input", name: "ApprovePlan" }),
+    expect(
+      human.map((task: { kind: string; name: string }) => [
+        task.name,
+        task.kind,
+      ])
+    ).toEqual([
+      ["Release", "task"],
+      ["ConfirmRelease", "input"],
+      ["Approve", "task"],
+      ["ApprovePlan", "input"],
     ]);
   });
 
-  test("plan shows the graph, including where a person may be asked", async () => {
+  test("plan shows the graph, including where a run may stop", async () => {
     const { code, stdout } = await flow(
       "plan",
-      "Implement",
+      "Release",
       "--input",
-      '"dark mode"'
+      '{"version":"0.1.0","checks":["typecheck"],"cooldownSeconds":3}'
     );
     expect(code).toBe(0);
     expect(stdout).toStartWith("flowchart TD");
-    expect(stdout).toContain('{{"ApprovePlan#40;…#41;"}}');
+    expect(stdout).toContain('{{"ConfirmRelease#40;…#41;"}}');
+    expect(stdout).toContain('(["Cooldown#40;…#41;"])');
+  });
+
+  test("a release waits for a person, then for its cooldown", async () => {
+    const started = await flowJson(
+      "run",
+      "Release",
+      "--input",
+      '{"version":"0.1.0","checks":[],"cooldownSeconds":120}'
+    );
+    expect(started).toMatchObject({
+      _tag: "Suspended",
+      pending: [{ name: "ConfirmRelease" }],
+      timers: [],
+    });
+    // HeadCommit read the real commit with git.
+    expect(started.pending[0].request.sha).toMatch(/^[0-9a-f]{7,}$/u);
+
+    const confirmed = await flow(
+      "resume",
+      started.runId,
+      "--respond",
+      '{"_tag":"Ship","by":"dana"}'
+    );
+    expect(confirmed.code).toBe(0);
+    expect(confirmed.stdout).toContain("Cooldown(120)");
+    expect(confirmed.stdout).toContain("wakes at");
+    expect(confirmed.stdout).toContain(`Resume after`);
+
+    const state = await flowJson("status", started.runId);
+    expect(
+      state.nodes.find((node: { key: string }) => node.key === "Cooldown(120)")
+    ).toMatchObject({ status: "waiting", wakeAt: expect.any(Number) });
+    const graph = await flow("status", started.runId, "--mermaid");
+    expect(graph.stdout).toContain(":::waiting");
+    expect(graph.stdout).toContain("-.->");
   });
 
   test("a run waits for a person, who revises then approves from a file", async () => {

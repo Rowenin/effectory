@@ -2,7 +2,7 @@ import { Effect } from "effect";
 
 import type { Suspended } from "./errors.ts";
 import { TaskTypeId } from "./task.ts";
-import type { AnySchema, Task, TaskConfig } from "./task.ts";
+import type { AnySchema, BaseConfig, Task } from "./task.ts";
 
 /**
  * Define a point where the run waits for a person. `input` is what they are
@@ -17,7 +17,7 @@ export const Input = <
   Out extends AnySchema,
 >(
   name: Name,
-  config: TaskConfig<In, Out>
+  config: BaseConfig<In, Out>
 ): Task<Name, In, Out, Suspended> => ({
   [TaskTypeId]: { _E: (_) => _, _R: (_) => _ },
   body: () =>
@@ -25,6 +25,7 @@ export const Input = <
       run: Effect.die(new Error(`${name} is an Input; run answers it`)),
     }),
   description: config.description,
+  execution: {},
   input: config.input,
   kind: "input",
   labels: config.labels ?? [],

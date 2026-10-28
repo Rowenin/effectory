@@ -202,17 +202,29 @@ const escape = (label: string) =>
     .replaceAll("(", "#40;")
     .replaceAll(")", "#41;");
 
+const shapes = {
+  input: "hexagon",
+  task: "rectangle",
+  timer: "stadium",
+} as const satisfies Record<TaskKind, Graph.MermaidNodeShape>;
+
+const wrap: Record<TaskKind, (label: string) => string> = {
+  input: (label) => `{{${label}}}`,
+  task: (label) => `[${label}]`,
+  timer: (label) => `([${label}])`,
+};
+
 /**
  * Render a plan as a Mermaid flowchart labelled by node key. Input nodes are
- * hexagons. Declared calls are dashed edges to the called Task, labelled with
- * their `max`.
+ * hexagons and Timers are stadiums. Declared calls are dashed edges to the
+ * called Task, labelled with their `max`.
  */
 export const toMermaid = (self: Plan<unknown, unknown, unknown>): string => {
   const lines = [
     Graph.toMermaid(self.graph, {
       edgeLabel: () => "",
       nodeLabel: (node) => node.key,
-      nodeShape: (node) => (node.kind === "input" ? "hexagon" : "rectangle"),
+      nodeShape: (node) => shapes[node.kind],
     }),
   ];
   const targets = new Map<string, string>();
@@ -223,11 +235,7 @@ export const toMermaid = (self: Plan<unknown, unknown, unknown>): string => {
         id = `call${targets.size}`;
         targets.set(call.name, id);
         const label = escape(`${call.name}(…)`);
-        lines.push(
-          call.kind === "input"
-            ? `  ${id}{{"${label}"}}`
-            : `  ${id}["${label}"]`
-        );
+        lines.push(`  ${id}${wrap[call.kind](`"${label}"`)}`);
       }
       const label = call.max === undefined ? "" : `|"≤${call.max}"|`;
       lines.push(`  ${index} -.->${label} ${id}`);

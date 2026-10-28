@@ -38,6 +38,8 @@ export const Draft = Flow.Task(
     input: Schema.Struct({ goal: Goal, notes: Schema.optional(Schema.String) }),
     labels: ["agent"],
     output: Schema.String,
+    retry: { delay: "1 second", times: 2 },
+    timeout: "2 minutes",
   },
   ({ goal, notes }) =>
     Effect.succeed({

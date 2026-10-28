@@ -1,5 +1,5 @@
 /** Context the runtime provides to Task code at plan time and at run time. */
-import { Context } from "effect";
+import { Context, Duration } from "effect";
 import type { Effect } from "effect";
 
 import type { PlanError } from "./errors.ts";
@@ -49,4 +49,19 @@ export interface Runtime {
 export const CurrentRun = Context.Reference<Runtime | null>(
   "effectory/flow/CurrentRun",
   { defaultValue: () => null }
+);
+
+/** Most nodes doing work at once in a run; Inputs and Timers don't count. */
+export const Concurrency = Context.Reference<number | "unbounded">(
+  "effectory/flow/Concurrency",
+  { defaultValue: () => "unbounded" }
+);
+
+/**
+ * Timers due within this long are waited for in the process; later ones
+ * suspend the run until their wake time.
+ */
+export const InProcessWait = Context.Reference<Duration.Duration>(
+  "effectory/flow/InProcessWait",
+  { defaultValue: () => Duration.minutes(1) }
 );

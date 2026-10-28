@@ -19,13 +19,18 @@ import {
 } from "effect";
 
 import { Suspended } from "./errors.ts";
-import type { PendingInput, PlanError, StoreError } from "./errors.ts";
+import type {
+  PendingInput,
+  PendingTimer,
+  PlanError,
+  StoreError,
+} from "./errors.ts";
 import { fingerprint, plan } from "./plan.ts";
 import type { Plan } from "./plan.ts";
 import { runWith } from "./run.ts";
 import type { Journal } from "./run.ts";
 import { RunStore } from "./store.ts";
-import type { NodeRecord, RunRecord } from "./store.ts";
+import type { EdgeRecord, NodeRecord, RunRecord } from "./store.ts";
 import type {
   AnyTask,
   ErrorOf,
@@ -45,6 +50,7 @@ export type Outcome<A, E> =
       readonly _tag: "Suspended";
       readonly runId: string;
       readonly pending: readonly PendingInput[];
+      readonly timers: readonly PendingTimer[];
     }
   | {
       readonly _tag: "Failed";
@@ -107,6 +113,8 @@ export interface ResumeOptions {
 export interface RunState {
   readonly run: RunRecord;
   readonly nodes: readonly NodeRecord[];
+  /** Edges the run followed: dependencies and calls. */
+  readonly edges: readonly EdgeRecord[];
 }
 
 type DurableEffect<T extends AnyTask, E = never> = Effect.Effect<
@@ -119,16 +127,26 @@ type DurableEffect<T extends AnyTask, E = never> = Effect.Effect<
 const journalOf = (store: RunStore["Service"], runId: string): Journal => {
   const node = (key: string) =>
     Effect.map(store.getNode(runId, key), Option.getOrUndefined);
+  /** Write a node's new state, keeping its attempts and wake time. */
+  const put = (
+    key: string,
+    update: (previous: NodeRecord | undefined) => Omit<NodeRecord, "key">
+  ) =>
+    Effect.flatMap(node(key), (previous) =>
+      store.putNode(runId, {
+        key,
+        ...(previous?.wakeAt === undefined ? {} : { wakeAt: previous.wakeAt }),
+        ...update(previous),
+      })
+    );
   return {
+    edge: (from, to, kind) => store.putEdge(runId, { from, kind, to }),
     failed: (key, error) =>
-      Effect.flatMap(node(key), (previous) =>
-        store.putNode(runId, {
-          attempts: previous?.attempts ?? 0,
-          error,
-          key,
-          status: "failed",
-        })
-      ),
+      put(key, (previous) => ({
+        attempts: previous?.attempts ?? 0,
+        error,
+        status: "failed",
+      })),
     output: (key) =>
       Effect.map(node(key), (previous) =>
         previous?.status === "succeeded"
@@ -137,30 +155,35 @@ const journalOf = (store: RunStore["Service"], runId: string): Journal => {
       ),
     response: (key) => store.getResponse(runId, key),
     started: (key) =>
-      Effect.flatMap(node(key), (previous) =>
-        store.putNode(runId, {
-          attempts: (previous?.attempts ?? 0) + 1,
-          key,
-          status: "running",
-        })
-      ),
+      put(key, (previous) => ({
+        attempts: (previous?.attempts ?? 0) + 1,
+        status: "running",
+      })),
     succeeded: (key, output) =>
+      put(key, (previous) => ({
+        attempts: previous?.attempts ?? 1,
+        output,
+        status: "succeeded",
+      })),
+    timer: (key, wakeAt) =>
       Effect.flatMap(node(key), (previous) =>
-        store.putNode(runId, {
-          attempts: previous?.attempts ?? 1,
-          key,
-          output,
-          status: "succeeded",
-        })
+        previous?.wakeAt === undefined
+          ? Effect.as(
+              store.putNode(runId, {
+                attempts: previous?.attempts ?? 0,
+                key,
+                status: previous?.status ?? "running",
+                wakeAt,
+              }),
+              wakeAt
+            )
+          : Effect.succeed(previous.wakeAt)
       ),
     waiting: (key) =>
-      Effect.flatMap(node(key), (previous) =>
-        store.putNode(runId, {
-          attempts: previous?.attempts ?? 0,
-          key,
-          status: "waiting",
-        })
-      ),
+      put(key, (previous) => ({
+        attempts: previous?.attempts ?? 0,
+        status: "waiting",
+      })),
   };
 };
 
@@ -181,14 +204,15 @@ const drive = <T extends AnyTask>(
         output,
         pending: [],
         status: "succeeded",
+        timers: [],
       });
       return { _tag: "Succeeded", output: exit.value, runId } as const;
     }
     const error = Cause.findErrorOption(exit.cause);
     if (Option.isSome(error) && error.value instanceof Suspended) {
-      const { pending } = error.value;
-      yield* store.updateRun(runId, { pending, status: "suspended" });
-      return { _tag: "Suspended", pending, runId } as const;
+      const { pending, timers } = error.value;
+      yield* store.updateRun(runId, { pending, status: "suspended", timers });
+      return { _tag: "Suspended", pending, runId, timers } as const;
     }
     if (Cause.hasInterruptsOnly(exit.cause)) {
       // Left `running`: resuming continues where it was cut off.
@@ -198,6 +222,7 @@ const drive = <T extends AnyTask>(
       error: Cause.pretty(exit.cause),
       pending: [],
       status: "failed",
+      timers: [],
     });
     return { _tag: "Failed", cause: exit.cause, runId } as const;
   });
@@ -224,6 +249,7 @@ export const start = <T extends AnyTask>(
       pending: [],
       status: "running",
       task: task.name,
+      timers: [],
     });
     yield* own(runId);
     return yield* drive(task, runId, planned);
@@ -287,7 +313,11 @@ export const resume = <T extends AnyTask>(
     yield* Effect.forEach(responses, ([key, value]) =>
       store.putResponse(runId, key, value)
     );
-    yield* store.updateRun(runId, { pending: [], status: "running" });
+    yield* store.updateRun(runId, {
+      pending: [],
+      status: "running",
+      timers: [],
+    });
     return yield* drive(task, runId, planned);
   }).pipe(Effect.scoped) as never;
 
@@ -305,5 +335,54 @@ export const status = (
         runId,
       });
     }
-    return { nodes: yield* store.listNodes(runId), run: run.value };
+    return {
+      edges: yield* store.listEdges(runId),
+      nodes: yield* store.listNodes(runId),
+      run: run.value,
+    };
   });
+
+const mermaidLabel = (text: string) =>
+  text
+    .replaceAll('"', "#quot;")
+    .replaceAll("(", "#40;")
+    .replaceAll(")", "#41;");
+
+const statusClasses = {
+  failed: "fill:#ffe3e3,stroke:#e03131",
+  running: "fill:#e7f5ff,stroke:#1c7ed6",
+  succeeded: "fill:#ebfbee,stroke:#2f9e44",
+  waiting: "fill:#fff9db,stroke:#f08c00",
+} as const;
+
+/**
+ * Render what a run did as a Mermaid flowchart: every node it reached, styled
+ * by status, with solid edges for dependencies and dashed edges for calls.
+ */
+export const toMermaidRun = (state: RunState): string => {
+  const ids = new Map<string, string>();
+  const idOf = (key: string) => {
+    let id = ids.get(key);
+    if (id === undefined) {
+      id = `n${ids.size}`;
+      ids.set(key, id);
+    }
+    return id;
+  };
+  const lines = ["flowchart TD"];
+  for (const node of state.nodes) {
+    const attempts = node.attempts > 1 ? ` ×${node.attempts}` : "";
+    lines.push(
+      `  ${idOf(node.key)}["${mermaidLabel(node.key)}<br/>${node.status}${attempts}"]:::${node.status}`
+    );
+  }
+  for (const edge of state.edges) {
+    lines.push(
+      `  ${idOf(edge.from)} ${edge.kind === "call" ? "-.->" : "-->"} ${idOf(edge.to)}`
+    );
+  }
+  for (const [className, style] of Object.entries(statusClasses)) {
+    lines.push(`  classDef ${className} ${style}`);
+  }
+  return lines.join("\n");
+};

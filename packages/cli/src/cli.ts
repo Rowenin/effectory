@@ -75,6 +75,7 @@ const report = (
           output: run.output,
           pending: run.pending,
           runId: run.id,
+          timers: run.timers,
         })
       );
     } else if (outcome._tag === "Succeeded") {
@@ -91,14 +92,30 @@ const report = (
           yield* Console.log(`    last response rejected: ${input.rejected}`);
         }
       }
-      yield* Console.log(
-        run.pending.length === 1
-          ? `\nRespond with: flow resume ${run.id} --respond '<json>' (or @file.json)`
-          : `\nRespond with: flow resume ${run.id} --responses '{"<key>": <json>}' (or @file.json)`
-      );
+      for (const timer of run.timers) {
+        yield* Console.log(
+          `\n  ${timer.key}\n    wakes at ${new Date(timer.wakeAt).toISOString()}`
+        );
+      }
+      if (run.pending.length === 1) {
+        yield* Console.log(
+          `\nRespond with: flow resume ${run.id} --respond '<json>' (or @file.json)`
+        );
+      } else if (run.pending.length > 1) {
+        yield* Console.log(
+          `\nRespond with: flow resume ${run.id} --responses '{"<key>": <json>}' (or @file.json)`
+        );
+      }
+      if (run.timers.length > 0) {
+        const latest = Math.max(...run.timers.map((timer) => timer.wakeAt));
+        yield* Console.log(
+          `\nResume after ${new Date(latest).toISOString()} with: flow resume ${run.id}`
+        );
+      }
     } else {
+      const [reason = "unknown error"] = (run.error ?? "").split("\n");
       yield* Console.error(
-        `Run ${run.id} failed:\n${run.error ?? "unknown error"}`
+        `Run ${run.id} failed: ${reason}\n(details: flow status ${run.id} --json)`
       );
     }
     if (outcome._tag === "Failed") {
@@ -232,13 +249,21 @@ const status = Command.make(
   "status",
   {
     json,
+    mermaid: Flag.Boolean("mermaid").pipe(
+      Flag.withDescription("Print the graph the run followed as Mermaid"),
+      Flag.withDefault(false)
+    ),
     runId: Argument.String("run").pipe(Argument.withDescription("Run id")),
   },
-  Effect.fn(function* runStatus({ json: asJson, runId }) {
+  Effect.fn(function* runStatus({ json: asJson, mermaid, runId }) {
     const { app, store } = yield* context;
     const state = yield* app.status(runId).pipe(Effect.provide(store));
     if (asJson) {
       yield* Console.log(print(state));
+      return;
+    }
+    if (mermaid) {
+      yield* Console.log(Flow.toMermaidRun(state));
       return;
     }
     yield* Console.log(
