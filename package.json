@@ -2,12 +2,8 @@
   "name": "effectory",
   "version": "0.0.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "type": "module",
   "scripts": {
-    "effectory": "bun packages/cli/src/main.ts",
     "typecheck": "tsc --noEmit",
     "check": "ultracite check .",
     "fix": "ultracite fix .",
@@ -18,8 +14,6 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.5",
     "@effect/sql-sqlite-bun": "4.0.5",
-    "@effectory/core": "workspace:*",
-    "@effectory/std": "workspace:*",
     "effect": "4.0.5"
   },
   "devDependencies": {

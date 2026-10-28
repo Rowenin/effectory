@@ -35,5 +35,5 @@
       }
     ]
   },
-  "include": ["*.config.ts", "*.ts", "packages/**/*.ts", "workflows/**/*.ts"]
+  "include": ["*.config.ts", "*.ts"]
 }
