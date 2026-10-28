@@ -23,6 +23,12 @@ export interface Step<A, E = never, R = never> {
 
 export const TaskTypeId: unique symbol = Symbol.for("effectory/flow/Task");
 
+/**
+ * `"task"` does work in `run`; `"input"` waits for a person's response, which
+ * `run` takes from outside instead of computing.
+ */
+export type TaskKind = "task" | "input";
+
 // oxlint-disable-next-line no-redeclare -- `Flow.Task` is both the type and its constructor.
 export interface Task<
   out Name extends string,
@@ -36,6 +42,7 @@ export interface Task<
     readonly _R: (_: never) => R;
   };
   readonly name: Name;
+  readonly kind: TaskKind;
   readonly description: string | undefined;
   readonly labels: readonly string[];
   readonly input: In;
@@ -92,6 +99,7 @@ export const Task = <
   body,
   description: config.description,
   input: config.input,
+  kind: "task",
   labels: config.labels ?? [],
   name,
   output: config.output,

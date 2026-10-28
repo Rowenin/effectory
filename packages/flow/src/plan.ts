@@ -9,13 +9,24 @@ import type {
   InputArgs,
   OutputOf,
   ServicesOf,
+  TaskKind,
 } from "./task.ts";
 
 export interface PlanNode {
   readonly key: string;
   readonly name: string;
+  /** `"input"` nodes are where a run may stop to wait for a person. */
+  readonly kind: TaskKind;
+  /** The node's input as encoded into its key. */
+  readonly input: unknown;
   readonly description: string | undefined;
   readonly labels: readonly string[];
+  /** Tasks this node may call at run time, declared with `Calls`. */
+  readonly calls: readonly {
+    readonly name: string;
+    readonly kind: TaskKind;
+    readonly max: number | undefined;
+  }[];
 }
 
 export interface PlannedNode {
@@ -26,6 +37,9 @@ export interface PlannedNode {
   readonly dependencies: readonly string[];
   readonly run: Effect.Effect<unknown, unknown, unknown>;
 }
+
+/** A planned node before it is placed in the graph. */
+export type NodeEntry = Omit<PlannedNode, "index">;
 
 const PlanTypeId: unique symbol = Symbol.for("effectory/flow/Plan");
 
@@ -47,7 +61,10 @@ export interface Plan<out A, out E, out R> {
 /** A node's identity: its Task name and encoded input. */
 const keyOf = (task: AnyTask, input: unknown) =>
   Schema.encodeUnknownEffect(task.input)(input).pipe(
-    Effect.map((encoded) => `${task.name}(${JSON.stringify(encoded)})`),
+    Effect.map((encoded) => ({
+      encoded,
+      key: `${task.name}(${JSON.stringify(encoded)})`,
+    })),
     Effect.mapError(
       (cause) =>
         new PlanError({
@@ -56,6 +73,65 @@ const keyOf = (task: AnyTask, input: unknown) =>
         })
     )
   );
+
+/**
+ * Plan `task(input)` and everything it runs after into `planned`, reusing
+ * nodes already there. `path` is the chain of bodies being planned, used to
+ * name cycles. `run` reuses this to plan nodes started by calls.
+ */
+export const visit = (
+  planned: Map<string, NodeEntry>,
+  current: AnyTask,
+  value: unknown,
+  path: readonly string[] = []
+): Effect.Effect<string, unknown, unknown> =>
+  Effect.gen(function* visitTask() {
+    const { encoded, key } = yield* keyOf(current, value);
+    if (path.includes(key)) {
+      const cycle = [...path.slice(path.indexOf(key)), key];
+      return yield* new PlanError({ message: `Cycle: ${cycle.join(" -> ")}` });
+    }
+    if (planned.has(key)) {
+      return key;
+    }
+    const dependencies: string[] = [];
+    const calls: PlanNode["calls"][number][] = [];
+    const planner = Planner.of({
+      after: (dependency, dependencyInput) =>
+        visit(planned, dependency, dependencyInput, [...path, key]).pipe(
+          Effect.tap((dependencyKey) =>
+            Effect.sync(() => {
+              if (!dependencies.includes(dependencyKey)) {
+                dependencies.push(dependencyKey);
+              }
+            })
+          )
+        ) as Effect.Effect<string, PlanError>,
+      calls: (task, max) =>
+        Effect.sync(() => {
+          calls.push({ kind: task.kind, max, name: task.name });
+          return { caller: key, max, task };
+        }),
+    });
+    const step = yield* current
+      .body(value)
+      .pipe(Effect.provideService(Planner, planner));
+    planned.set(key, {
+      dependencies,
+      node: {
+        calls,
+        description: current.description,
+        input: encoded,
+        key,
+        kind: current.kind,
+        labels: current.labels,
+        name: current.name,
+      },
+      run: step.run,
+      task: current,
+    });
+    return key;
+  });
 
 /**
  * Build the DAG rooted at `task(input)`. Each Task body runs once per distinct
@@ -74,57 +150,8 @@ export const plan = <T extends AnyTask>(
   ServicesOf<T>
 > =>
   Effect.gen(function* planTask() {
-    const planned = new Map<string, Omit<PlannedNode, "index">>();
-    const visiting: string[] = [];
-
-    const visit = (
-      current: AnyTask,
-      value: unknown
-    ): Effect.Effect<string, unknown, unknown> =>
-      Effect.gen(function* visitTask() {
-        const key = yield* keyOf(current, value);
-        if (visiting.includes(key)) {
-          const path = [...visiting.slice(visiting.indexOf(key)), key];
-          return yield* new PlanError({
-            message: `Cycle: ${path.join(" -> ")}`,
-          });
-        }
-        if (planned.has(key)) {
-          return key;
-        }
-        visiting.push(key);
-        const dependencies: string[] = [];
-        const planner = Planner.of({
-          after: (dependency, dependencyInput) =>
-            visit(dependency, dependencyInput).pipe(
-              Effect.tap((dependencyKey) =>
-                Effect.sync(() => {
-                  if (!dependencies.includes(dependencyKey)) {
-                    dependencies.push(dependencyKey);
-                  }
-                })
-              )
-            ) as Effect.Effect<string, PlanError>,
-        });
-        const step = yield* current
-          .body(value)
-          .pipe(Effect.provideService(Planner, planner));
-        visiting.pop();
-        planned.set(key, {
-          dependencies,
-          node: {
-            description: current.description,
-            key,
-            labels: current.labels,
-            name: current.name,
-          },
-          run: step.run,
-          task: current,
-        });
-        return key;
-      });
-
-    const root = yield* visit(task, input);
+    const planned = new Map<string, NodeEntry>();
+    const root = yield* visit(planned, task, input);
 
     const nodes = new Map<string, PlannedNode>();
     const graph = Graph.directed<PlanNode, null>((mutable) => {
@@ -151,9 +178,42 @@ export const plan = <T extends AnyTask>(
     } satisfies Plan<unknown, unknown, unknown>;
   }) as never;
 
-/** Render a plan as a Mermaid flowchart labelled by node key. */
-export const toMermaid = (self: Plan<unknown, unknown, unknown>): string =>
-  Graph.toMermaid(self.graph, {
-    edgeLabel: () => "",
-    nodeLabel: (node) => node.key,
-  });
+const escape = (label: string) =>
+  label
+    .replaceAll('"', "#quot;")
+    .replaceAll("(", "#40;")
+    .replaceAll(")", "#41;");
+
+/**
+ * Render a plan as a Mermaid flowchart labelled by node key. Input nodes are
+ * hexagons. Declared calls are dashed edges to the called Task, labelled with
+ * their `max`.
+ */
+export const toMermaid = (self: Plan<unknown, unknown, unknown>): string => {
+  const lines = [
+    Graph.toMermaid(self.graph, {
+      edgeLabel: () => "",
+      nodeLabel: (node) => node.key,
+      nodeShape: (node) => (node.kind === "input" ? "hexagon" : "rectangle"),
+    }),
+  ];
+  const targets = new Map<string, string>();
+  for (const { index, node } of self.nodes.values()) {
+    for (const call of node.calls) {
+      let id = targets.get(call.name);
+      if (id === undefined) {
+        id = `call${targets.size}`;
+        targets.set(call.name, id);
+        const label = escape(`${call.name}(…)`);
+        lines.push(
+          call.kind === "input"
+            ? `  ${id}{{"${label}"}}`
+            : `  ${id}["${label}"]`
+        );
+      }
+      const label = call.max === undefined ? "" : `|"≤${call.max}"|`;
+      lines.push(`  ${index} -.->${label} ${id}`);
+    }
+  }
+  return lines.join("\n");
+};
