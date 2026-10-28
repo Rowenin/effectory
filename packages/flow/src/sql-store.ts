@@ -160,6 +160,13 @@ export const layerSql: Layer.Layer<RunStore, StoreError, SqlClient.SqlClient> =
             Effect.map((rows) => rows.map(toNode)),
             Effect.mapError(storeError(`Could not list nodes of run ${runId}`))
           ),
+        listRuns: sql<RunRow>`
+          SELECT id, task, input, fingerprint, status, pending, output, error
+          FROM flow_runs ORDER BY rowid
+        `.pipe(
+          Effect.map((rows) => rows.map(toRun)),
+          Effect.mapError(storeError("Could not list runs"))
+        ),
         putNode: (runId, node) =>
           sql`
           INSERT INTO flow_nodes (run_id, key, status, attempts, output, error)

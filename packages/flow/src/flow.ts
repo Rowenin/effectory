@@ -8,6 +8,14 @@
  */
 // oxlint-disable-next-line no-barrel-file -- the public `Flow` namespace.
 export { After, type Upstream } from "./after.ts";
+export {
+  AppError,
+  isApp,
+  make,
+  type App,
+  type AppConfig,
+  type MissingServices,
+} from "./app.ts";
 export { Calls, type Call, type CallOptions } from "./calls.ts";
 export {
   CallError,

@@ -35,5 +35,5 @@
       }
     ]
   },
-  "include": ["*.config.ts", "*.ts", "packages/**/*.ts"]
+  "include": ["*.config.ts", "*.ts", "flows/**/*.ts", "packages/**/*.ts"]
 }

@@ -12,7 +12,8 @@
     "fix": "ultracite fix .",
     "test": "bun test",
     "verify": "bun run typecheck && bun run check && bun run test",
-    "prepare": "effect-tsgo patch"
+    "prepare": "effect-tsgo patch",
+    "flow": "bun packages/cli/src/main.ts"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.5",

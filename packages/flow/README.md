@@ -107,6 +107,30 @@ const store = Flow.sqlStore.pipe(
 
 Resuming plans the root again and runs it again; nodes whose outputs are stored return them without running. A node that holds a loop of calls, like `Approve` above, runs again on each resume and replays its calls from the store.
 
+## The entry point: `flow.run.ts`
+
+A repository lists its Tasks in a `flow.run.ts` at its root, default-exporting `Flow.make`:
+
+```ts
+export default Flow.make({
+  layer: AgentsLive, // provides every service the Tasks need
+  tasks: [Implement, Approve, ApprovePlan, Refine, Draft, Review],
+});
+```
+
+The `flow` command (`packages/cli`, `bun run flow`) loads it and keeps runs in `.effectory/runs.db`:
+
+| Command | Does |
+| --- | --- |
+| `flow tasks [query]` | Lists Tasks, or those whose name, description or a label contains `query` |
+| `flow plan <task> --input <json>` | Prints the plan as Mermaid without running anything |
+| `flow run <task> --input <json>` | Starts a durable run and prints how it ended, or what it's waiting for |
+| `flow resume <run> --respond <json>` | Answers the run's only pending Input and continues |
+| `flow resume <run> --responses <json>` | Answers pending Inputs by key and continues |
+| `flow status <run>` / `flow runs` | Shows a run's nodes, or lists runs |
+
+JSON arguments can be given inline or as `@file.json`. Every command takes `--json`, and `--file` and `--db` before the command choose another entry file or store.
+
 ## The two phases
 
 Every Task has two halves, and they run at different times.
@@ -211,6 +235,14 @@ The **Enforced by** column says what happens when a law is broken:
 | D7 | Outputs, inputs and responses are stored through their schemas' JSON codecs, so a store only needs to keep JSON. | Schemas whose type isn't JSON, such as `DateTimeUtcFromString`. | Schemas without a JSON form. | Run failure |
 | D8 | Only one process runs a run at a time. `start` and `resume` hold a lease on the run, renewed every third of `Flow.LeaseTime` (30 seconds by default) and released when they return. Resuming a run whose lease is held fails with `ResumeError` `"busy"`; a crashed owner's lease lapses after `LeaseTime`. | Resuming after a crash once the lease lapses. | Running one run from two processes at once. | Run failure |
 
+### Entry point
+
+| # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
+| --- | --- | --- | --- | --- |
+| A1 | `Flow.make`'s `layer` provides every service its Tasks need, including those of Tasks they run after or call. If it doesn't, the config must have a `missingServices` property whose type names what's missing. | — | Leaving a service out. | Type error |
+| A2 | Task names in an app are unique. | Listing the same Task twice. | Two different Tasks with the same name; `Flow.make` throws `AppError` `"duplicate-task"`. | Run failure |
+| A3 | Apps start, plan and resume Tasks by name with input in its JSON form, and provide the layer themselves. Resuming finds the Task by the name stored with the run. | — | An unknown name (`"unknown-task"`) or input that doesn't decode (`"invalid-input"`). | Run failure |
+
 ### Types
 
 | # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
@@ -223,7 +255,7 @@ The **Enforced by** column says what happens when a law is broken:
 
 These are places where the code allows something the laws forbid:
 
-- **N4:** Tasks with the same name aren't detected. When their inputs also match, the second Task is silently merged into the first.
+- **N4:** `Flow.make` rejects duplicate names among the Tasks it lists (A2), but a Task that isn't listed can still share a name with one that is. When their inputs also match, the second is silently merged into the first.
 - **T4:** Nothing stops a Task body from causing side effects during planning.
 - **O2:** Reading an upstream output during planning type-checks, then fails as a defect (a crash) rather than a typed `PlanError`.
 - **X2:** There's no limit on how many nodes run at once.

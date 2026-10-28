@@ -50,6 +50,8 @@ export class RunStore extends Context.Service<
     readonly getRun: (
       id: string
     ) => Effect.Effect<Option.Option<RunRecord>, StoreError>;
+    /** Every run, oldest first. */
+    readonly listRuns: Effect.Effect<readonly RunRecord[], StoreError>;
     readonly updateRun: (
       id: string,
       update: Pick<RunRecord, "status" | "pending"> &
@@ -138,6 +140,7 @@ export const layerMemory: Layer.Layer<RunStore> = Layer.sync(RunStore)(() => {
       }),
     getRun: (id) => Effect.sync(() => Option.fromUndefinedOr(runs.get(id))),
     listNodes: (runId) => Effect.sync(() => [...nodesOf(runId).values()]),
+    listRuns: Effect.sync(() => [...runs.values()]),
     putNode: (runId, node) =>
       Effect.sync(() => {
         nodesOf(runId).set(node.key, node);
