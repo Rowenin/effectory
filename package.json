@@ -2,6 +2,9 @@
   "name": "effectory",
   "version": "0.0.0",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -14,6 +17,7 @@
   "dependencies": {
     "@effect/platform-bun": "4.0.5",
     "@effect/sql-sqlite-bun": "4.0.5",
+    "@effectory/flow": "workspace:*",
     "effect": "4.0.5"
   },
   "devDependencies": {
