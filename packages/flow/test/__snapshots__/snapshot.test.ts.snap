@@ -1,0 +1,193 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`plan snapshot a plan with every concept: mermaid 1`] = `
+"flowchart TD
+  0["GatherContext#40;#quot;ship#quot;#41;"]
+  1["Refine#40;#quot;ship#quot;#41;"]
+  2["Approve#40;#quot;ship#quot;#41;"]
+  3["Implement#40;#quot;ship#quot;#41;"]
+  4["InstallDeps#40;#91;#quot;effect#quot;,#quot;typescript#quot;#93;#41;"]
+  5["Lint#40;#91;#quot;effect#quot;,#quot;typescript#quot;#93;#41;"]
+  6["InstallDeps#40;#91;#quot;vitest#quot;#93;#41;"]
+  7["RunTests#40;#91;#quot;effect#quot;,#quot;typescript#quot;#93;#41;"]
+  8{{"ConfirmRelease#40;#quot;ship#quot;#41;"}}
+  9["Ship#40;#quot;ship#quot;#41;"]
+  0 --> 1
+  1 --> 2
+  2 --> 3
+  4 --> 5
+  4 --> 7
+  6 --> 7
+  3 --> 9
+  5 --> 9
+  7 --> 9
+  8 --> 9
+  call0["Draft#40;…#41;"]
+  1 -.->|"≤3"| call0
+  call1["Review#40;…#41;"]
+  1 -.->|"≤3"| call1
+  call2{{"ApprovePlan#40;…#41;"}}
+  2 -.-> call2
+  call3["Refine#40;…#41;"]
+  2 -.-> call3"
+`;
+
+exports[`plan snapshot a plan with every concept: nodes 1`] = `
+[
+  {
+    "calls": [],
+    "dependencies": [],
+    "description": undefined,
+    "input": "ship",
+    "key": "GatherContext("ship")",
+    "kind": "task",
+    "labels": [],
+  },
+  {
+    "calls": [],
+    "dependencies": [],
+    "description": "Installs packages.",
+    "input": [
+      "effect",
+      "typescript",
+    ],
+    "key": "InstallDeps(["effect","typescript"])",
+    "kind": "task",
+    "labels": [
+      "setup",
+    ],
+  },
+  {
+    "calls": [],
+    "dependencies": [],
+    "description": "Installs packages.",
+    "input": [
+      "vitest",
+    ],
+    "key": "InstallDeps(["vitest"])",
+    "kind": "task",
+    "labels": [
+      "setup",
+    ],
+  },
+  {
+    "calls": [],
+    "dependencies": [],
+    "description": "A person confirms the release.",
+    "input": "ship",
+    "key": "ConfirmRelease("ship")",
+    "kind": "input",
+    "labels": [
+      "human",
+    ],
+  },
+  {
+    "calls": [
+      {
+        "kind": "task",
+        "max": 3,
+        "name": "Draft",
+      },
+      {
+        "kind": "task",
+        "max": 3,
+        "name": "Review",
+      },
+    ],
+    "dependencies": [
+      "GatherContext("ship")",
+    ],
+    "description": "Drafts and reviews a plan until the reviewer approves.",
+    "input": "ship",
+    "key": "Refine("ship")",
+    "kind": "task",
+    "labels": [
+      "agents",
+    ],
+  },
+  {
+    "calls": [],
+    "dependencies": [
+      "InstallDeps(["effect","typescript"])",
+    ],
+    "description": undefined,
+    "input": [
+      "effect",
+      "typescript",
+    ],
+    "key": "Lint(["effect","typescript"])",
+    "kind": "task",
+    "labels": [
+      "check",
+    ],
+  },
+  {
+    "calls": [],
+    "dependencies": [
+      "InstallDeps(["effect","typescript"])",
+      "InstallDeps(["vitest"])",
+    ],
+    "description": undefined,
+    "input": [
+      "effect",
+      "typescript",
+    ],
+    "key": "RunTests(["effect","typescript"])",
+    "kind": "task",
+    "labels": [
+      "check",
+    ],
+  },
+  {
+    "calls": [
+      {
+        "kind": "input",
+        "max": undefined,
+        "name": "ApprovePlan",
+      },
+      {
+        "kind": "task",
+        "max": undefined,
+        "name": "Refine",
+      },
+    ],
+    "dependencies": [
+      "Refine("ship")",
+    ],
+    "description": undefined,
+    "input": "ship",
+    "key": "Approve("ship")",
+    "kind": "task",
+    "labels": [],
+  },
+  {
+    "calls": [],
+    "dependencies": [
+      "Approve("ship")",
+    ],
+    "description": undefined,
+    "input": "ship",
+    "key": "Implement("ship")",
+    "kind": "task",
+    "labels": [
+      "agents",
+    ],
+  },
+  {
+    "calls": [],
+    "dependencies": [
+      "Implement("ship")",
+      "Lint(["effect","typescript"])",
+      "RunTests(["effect","typescript"])",
+      "ConfirmRelease("ship")",
+    ],
+    "description": "Plans, implements, checks, and releases a change.",
+    "input": "ship",
+    "key": "Ship("ship")",
+    "kind": "task",
+    "labels": [
+      "release",
+    ],
+  },
+]
+`;
