@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { Effect, Exit, Schema } from "effect";
+import { Effect, Schema } from "effect";
 
 import { Flow } from "../src/index.ts";
 
@@ -246,16 +246,22 @@ describe("Flow.Input", () => {
     expect(result).toBe("implemented ship v0, approved by reviewer");
   });
 
-  test("a response must match the Input's output schema", async () => {
+  test("a response that fails the output schema leaves the Input pending", async () => {
     const { Implement } = makeTasks();
     const plan = await Effect.runPromise(Flow.plan(Implement, ship("human")));
-    const exit = await Effect.runPromiseExit(
-      Flow.run(plan, {
-        responses: { [askKey("ship v0")]: { _tag: "Approve" } },
-      })
+    const error = await Effect.runPromise(
+      Effect.flip(
+        Flow.run(plan, {
+          responses: { [askKey("ship v0")]: { _tag: "Approve" } },
+        })
+      )
     );
-    expect(Exit.isFailure(exit)).toBe(true);
-    expect(String(exit)).toContain("by");
+    expect(error).toMatchObject({
+      _tag: "Suspended",
+      pending: [
+        { key: askKey("ship v0"), rejected: expect.stringContaining("by") },
+      ],
+    });
   });
 
   test("handling an Input's failure does not hide the stop", async () => {

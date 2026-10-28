@@ -13,6 +13,8 @@ export interface PendingInput {
   readonly description: string | undefined;
   /** The Input's encoded input: what to show the person. */
   readonly request: unknown;
+  /** Why the last response was not accepted, if there was one. */
+  readonly rejected?: string;
 }
 
 /**
@@ -30,6 +32,12 @@ export class Suspended extends Data.TaggedError("Suspended")<{
  */
 export class CallError extends Data.TaggedError("CallError")<{
   readonly reason: "limit" | "cycle" | "plan";
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+/** A `RunStore` could not read or write. */
+export class StoreError extends Data.TaggedError("StoreError")<{
   readonly message: string;
   readonly cause?: unknown;
 }> {}

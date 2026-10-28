@@ -1,4 +1,6 @@
 /** Planning: run Task bodies and build the DAG with `effect/Graph`. */
+import { createHash } from "node:crypto";
+
 import { Effect, Graph, Schema } from "effect";
 
 import { PlanError } from "./errors.ts";
@@ -60,7 +62,7 @@ export interface Plan<out A, out E, out R> {
 
 /** A node's identity: its Task name and encoded input. */
 const keyOf = (task: AnyTask, input: unknown) =>
-  Schema.encodeUnknownEffect(task.input)(input).pipe(
+  Schema.encodeUnknownEffect(Schema.toCodecJson(task.input))(input).pipe(
     Effect.map((encoded) => ({
       encoded,
       key: `${task.name}(${JSON.stringify(encoded)})`,
@@ -177,6 +179,22 @@ export const plan = <T extends AnyTask>(
       root,
     } satisfies Plan<unknown, unknown, unknown>;
   }) as never;
+
+/**
+ * A hash of the plan's nodes and edges. Called nodes aren't part of a plan, so
+ * they don't affect it.
+ */
+export const fingerprint = (self: Plan<unknown, unknown, unknown>): string =>
+  createHash("sha256")
+    .update(
+      JSON.stringify(
+        self.order.map((key) => [
+          key,
+          [...(self.nodes.get(key)?.dependencies ?? [])].toSorted(),
+        ])
+      )
+    )
+    .digest("hex");
 
 const escape = (label: string) =>
   label

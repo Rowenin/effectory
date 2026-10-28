@@ -1,5 +1,13 @@
 /** Execution: one fiber per node, each waiting on its dependencies. */
-import { Deferred, Effect, Exit, Schema, Semaphore } from "effect";
+import {
+  Cause,
+  Deferred,
+  Effect,
+  Exit,
+  Option,
+  Schema,
+  Semaphore,
+} from "effect";
 
 import { CallError, Suspended } from "./errors.ts";
 import type { PendingInput } from "./errors.ts";
@@ -15,30 +23,56 @@ const suspended = (pending: readonly PendingInput[]) =>
   });
 
 export interface RunOptions {
-  /** Responses to Input nodes, by node key, in their encoded form. */
+  /** Responses to Input nodes, by node key, JSON-encoded. */
   readonly responses?: Readonly<Record<string, unknown>>;
 }
 
 /**
- * Execute a plan: one fiber per node, each waiting on its dependencies before
- * running. Outputs are checked against the Task's output schema. The first
- * failure of a planned node interrupts the rest; dependents of a failed node
- * never start.
- *
- * Declared calls plan their node when made and run it in the same run. A
- * failed call fails only its caller, which may handle it.
- *
- * Input nodes are answered from `responses`, keyed by node key and decoded
- * with the Input's output schema. If the run reaches an Input without a
- * response, it fails with `Suspended` listing what it is waiting for, even if
- * a caller handled that Input's failure.
+ * Where a run finds finished outputs and Input responses, and records what
+ * happens to each node. Values are JSON-encoded through the Task's schemas.
  */
-export const run = <A, E, R>(
+export interface Journal {
+  /** The output of a node that finished in an earlier attempt. */
+  readonly output: (
+    key: string
+  ) => Effect.Effect<Option.Option<unknown>, unknown>;
+  readonly response: (
+    key: string
+  ) => Effect.Effect<Option.Option<unknown>, unknown>;
+  readonly started: (key: string) => Effect.Effect<void, unknown>;
+  readonly succeeded: (
+    key: string,
+    output: unknown
+  ) => Effect.Effect<void, unknown>;
+  readonly failed: (key: string, error: string) => Effect.Effect<void, unknown>;
+}
+
+/** A journal that remembers nothing; responses come from `options`. */
+const ephemeral = (options: RunOptions): Journal => {
+  const responses = options.responses ?? {};
+  return {
+    failed: () => Effect.void,
+    output: () => Effect.succeedNone,
+    response: (key) =>
+      Effect.succeed(
+        Object.hasOwn(responses, key)
+          ? Option.some(responses[key])
+          : Option.none()
+      ),
+    started: () => Effect.void,
+    succeeded: () => Effect.void,
+  };
+};
+
+/**
+ * `run`, reading and recording through `journal`. A node with an output in
+ * the journal returns it without running its work.
+ */
+export const runWith = <A, E, R>(
   self: Plan<A, E, R>,
-  options: RunOptions = {}
+  journal: Journal
 ): Effect.Effect<A, E | Schema.SchemaError | Suspended, R> =>
   Effect.gen(function* runPlan() {
-    const responses = options.responses ?? {};
     const pending = new Map<string, PendingInput>();
     const scope = yield* Effect.scope;
     const entries = new Map<string, NodeEntry>(self.nodes);
@@ -62,19 +96,51 @@ export const run = <A, E, R>(
     };
 
     /** An Input's response, or `Suspended` if there is none yet. */
-    const answer = ({ node, task }: Pick<NodeEntry, "node" | "task">) =>
-      Object.hasOwn(responses, node.key)
-        ? Schema.decodeUnknownEffect(task.output)(responses[node.key])
-        : Effect.suspend(() => {
-            const input: PendingInput = {
-              description: node.description,
-              key: node.key,
-              name: node.name,
-              request: node.input,
-            };
-            pending.set(node.key, input);
-            return Effect.fail(suspended([input]));
-          });
+    const answer = ({ node, task }: Pick<NodeEntry, "node" | "task">) => {
+      const wait = (rejected?: string) => {
+        const input: PendingInput = {
+          description: node.description,
+          key: node.key,
+          name: node.name,
+          request: node.input,
+          ...(rejected === undefined ? {} : { rejected }),
+        };
+        pending.set(node.key, input);
+        return Effect.fail(suspended([input]));
+      };
+      return Effect.flatMap(journal.response(node.key), (response) =>
+        Option.isNone(response)
+          ? wait()
+          : Schema.decodeUnknownEffect(Schema.toCodecJson(task.output))(
+              response.value
+            ).pipe(
+              Effect.catchTag("SchemaError", (failure) => wait(failure.message))
+            )
+      );
+    };
+
+    /** Run a node's work, or answer it, and record the outcome. */
+    const perform = ({ node, run: work, task }: NodeEntry) => {
+      const codec = Schema.toCodecJson(task.output);
+      const fresh = journal.started(node.key).pipe(
+        Effect.andThen(task.kind === "input" ? answer({ node, task }) : work),
+        Effect.tap((output) =>
+          Effect.flatMap(Schema.encodeUnknownEffect(codec)(output), (encoded) =>
+            journal.succeeded(node.key, encoded)
+          )
+        ),
+        Effect.tapCause((cause) =>
+          Cause.hasInterruptsOnly(cause) || pending.has(node.key)
+            ? Effect.void
+            : journal.failed(node.key, Cause.pretty(cause))
+        )
+      );
+      return Effect.flatMap(journal.output(node.key), (stored) =>
+        Option.isSome(stored)
+          ? Schema.decodeUnknownEffect(codec)(stored.value)
+          : fresh
+      );
+    };
 
     const execute = (
       { dependencies, node, run: work, task }: NodeEntry,
@@ -83,8 +149,7 @@ export const run = <A, E, R>(
       Effect.forEach(dependencies, (key) => Deferred.await(doneOf(key)), {
         discard: true,
       }).pipe(
-        Effect.andThen(task.kind === "input" ? answer({ node, task }) : work),
-        Effect.tap((output) => Schema.encodeUnknownEffect(task.output)(output)),
+        Effect.andThen(perform({ dependencies, node, run: work, task })),
         Effect.tap((output) =>
           Effect.sync(() => outputs.set(node.key, output))
         ),
@@ -218,3 +283,23 @@ export const run = <A, E, R>(
     }
     return yield* Effect.map(exit, () => outputs.get(self.root));
   }).pipe(Effect.scoped) as never;
+
+/**
+ * Execute a plan: one fiber per node, each waiting on its dependencies before
+ * running. Outputs are checked against the Task's output schema. The first
+ * failure of a planned node interrupts the rest; dependents of a failed node
+ * never start.
+ *
+ * Declared calls plan their node when made and run it in the same run. A
+ * failed call fails only its caller, which may handle it.
+ *
+ * Input nodes are answered from `responses`, keyed by node key and decoded
+ * with the Input's output schema. If the run reaches an Input without a
+ * response, it fails with `Suspended` listing what it is waiting for, even if
+ * a caller handled that Input's failure.
+ */
+export const run = <A, E, R>(
+  self: Plan<A, E, R>,
+  options: RunOptions = {}
+): Effect.Effect<A, E | Schema.SchemaError | Suspended, R> =>
+  runWith(self, ephemeral(options));

@@ -12,11 +12,30 @@ export { Calls, type Call, type CallOptions } from "./calls.ts";
 export {
   CallError,
   PlanError,
+  StoreError,
   Suspended,
   type PendingInput,
 } from "./errors.ts";
 export { Input } from "./input.ts";
 export {
+  resume,
+  start,
+  status,
+  ResumeError,
+  type Outcome,
+  type ResumeOptions,
+  type RunState,
+} from "./durable.ts";
+export {
+  layerMemory as memoryStore,
+  RunStore,
+  type NodeRecord,
+  type NodeStatus,
+  type RunRecord,
+  type RunStatus,
+} from "./store.ts";
+export {
+  fingerprint,
   plan,
   toMermaid,
   type Plan,

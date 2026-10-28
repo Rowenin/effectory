@@ -1,0 +1,251 @@
+/**
+ * Durable runs: `start` and `resume` run a plan through a `RunStore`, so a
+ * run can stop at its Inputs and continue in a later process without
+ * repeating finished nodes.
+ */
+import { randomUUID } from "node:crypto";
+
+import { Cause, Data, Effect, Exit, Option, Schema } from "effect";
+
+import { Suspended } from "./errors.ts";
+import type { PendingInput, PlanError, StoreError } from "./errors.ts";
+import { fingerprint, plan } from "./plan.ts";
+import type { Plan } from "./plan.ts";
+import { runWith } from "./run.ts";
+import type { Journal } from "./run.ts";
+import { RunStore } from "./store.ts";
+import type { NodeRecord, RunRecord } from "./store.ts";
+import type {
+  AnyTask,
+  ErrorOf,
+  InputArgs,
+  OutputOf,
+  ServicesOf,
+} from "./task.ts";
+
+/** How a durable run ended this time. */
+export type Outcome<A, E> =
+  | {
+      readonly _tag: "Succeeded";
+      readonly runId: string;
+      readonly output: A;
+    }
+  | {
+      readonly _tag: "Suspended";
+      readonly runId: string;
+      readonly pending: readonly PendingInput[];
+    }
+  | {
+      readonly _tag: "Failed";
+      readonly runId: string;
+      readonly cause: Cause.Cause<E>;
+    };
+
+export class ResumeError extends Data.TaggedError("ResumeError")<{
+  readonly reason:
+    | "not-found"
+    | "task-mismatch"
+    | "plan-changed"
+    | "unexpected-response";
+  readonly message: string;
+  readonly runId: string;
+}> {}
+
+export interface ResumeOptions {
+  /** Responses to the run's pending Inputs, by key, JSON-encoded. */
+  readonly responses?: Readonly<Record<string, unknown>>;
+}
+
+export interface RunState {
+  readonly run: RunRecord;
+  readonly nodes: readonly NodeRecord[];
+}
+
+type DurableEffect<T extends AnyTask, E = never> = Effect.Effect<
+  Outcome<OutputOf<T>, ErrorOf<T> | Schema.SchemaError>,
+  E | PlanError | ErrorOf<T> | StoreError | Schema.SchemaError,
+  RunStore | ServicesOf<T>
+>;
+
+/** Read and record a run's nodes in the store. */
+const journalOf = (store: RunStore["Service"], runId: string): Journal => {
+  const node = (key: string) =>
+    Effect.map(store.getNode(runId, key), Option.getOrUndefined);
+  return {
+    failed: (key, error) =>
+      Effect.flatMap(node(key), (previous) =>
+        store.putNode(runId, {
+          attempts: previous?.attempts ?? 0,
+          error,
+          key,
+          status: "failed",
+        })
+      ),
+    output: (key) =>
+      Effect.map(node(key), (previous) =>
+        previous?.status === "succeeded"
+          ? Option.some(previous.output)
+          : Option.none()
+      ),
+    response: (key) => store.getResponse(runId, key),
+    started: (key) =>
+      Effect.flatMap(node(key), (previous) =>
+        store.putNode(runId, {
+          attempts: (previous?.attempts ?? 0) + 1,
+          key,
+          status: "running",
+        })
+      ),
+    succeeded: (key, output) =>
+      Effect.flatMap(node(key), (previous) =>
+        store.putNode(runId, {
+          attempts: previous?.attempts ?? 1,
+          key,
+          output,
+          status: "succeeded",
+        })
+      ),
+  };
+};
+
+/** Run `self` for `runId` and record how it ended. */
+const drive = <T extends AnyTask>(
+  task: T,
+  runId: string,
+  self: Plan<unknown, unknown, unknown>
+) =>
+  Effect.gen(function* driveRun() {
+    const store = yield* RunStore;
+    const exit = yield* Effect.exit(runWith(self, journalOf(store, runId)));
+    if (Exit.isSuccess(exit)) {
+      const output = yield* Schema.encodeUnknownEffect(
+        Schema.toCodecJson(task.output)
+      )(exit.value);
+      yield* store.updateRun(runId, {
+        output,
+        pending: [],
+        status: "succeeded",
+      });
+      return { _tag: "Succeeded", output: exit.value, runId } as const;
+    }
+    const error = Cause.findErrorOption(exit.cause);
+    if (Option.isSome(error) && error.value instanceof Suspended) {
+      const { pending } = error.value;
+      yield* store.updateRun(runId, { pending, status: "suspended" });
+      return { _tag: "Suspended", pending, runId } as const;
+    }
+    if (Cause.hasInterruptsOnly(exit.cause)) {
+      // Left `running`: resuming continues where it was cut off.
+      return yield* Effect.interrupt;
+    }
+    yield* store.updateRun(runId, {
+      error: Cause.pretty(exit.cause),
+      pending: [],
+      status: "failed",
+    });
+    return { _tag: "Failed", cause: exit.cause, runId } as const;
+  });
+
+/**
+ * Plan `task(input)` and run it as a new durable run. Returns how it ended,
+ * with the run id to resume it by.
+ */
+export const start = <T extends AnyTask>(
+  task: T,
+  ...[input]: InputArgs<T>
+): DurableEffect<T> =>
+  Effect.gen(function* startRun() {
+    const store = yield* RunStore;
+    const planned = yield* plan(task, input);
+    const encoded = yield* Schema.encodeUnknownEffect(
+      Schema.toCodecJson(task.input)
+    )(input);
+    const runId = randomUUID();
+    yield* store.createRun({
+      fingerprint: fingerprint(planned),
+      id: runId,
+      input: encoded,
+      pending: [],
+      status: "running",
+      task: task.name,
+    });
+    return yield* drive(task, runId, planned);
+  }) as never;
+
+/**
+ * Continue run `runId` of `task`, first recording `responses` for its pending
+ * Inputs. Finished nodes return their stored outputs; failed and unfinished
+ * nodes run again. A run that already succeeded returns its output.
+ */
+export const resume = <T extends AnyTask>(
+  task: T,
+  runId: string,
+  options: ResumeOptions = {}
+): DurableEffect<T, ResumeError> =>
+  Effect.gen(function* resumeRun() {
+    const store = yield* RunStore;
+    const fail = (reason: ResumeError["reason"], message: string) =>
+      Effect.fail(new ResumeError({ message, reason, runId }));
+
+    const found = yield* store.getRun(runId);
+    if (Option.isNone(found)) {
+      return yield* fail("not-found", `No run ${runId}`);
+    }
+    const run = found.value;
+    if (run.task !== task.name) {
+      return yield* fail(
+        "task-mismatch",
+        `Run ${runId} is of ${run.task}, not ${task.name}`
+      );
+    }
+    if (run.status === "succeeded") {
+      const output = yield* Schema.decodeUnknownEffect(
+        Schema.toCodecJson(task.output)
+      )(run.output);
+      return { _tag: "Succeeded", output, runId } as const;
+    }
+
+    const responses = Object.entries(options.responses ?? {});
+    const pending = new Set(run.pending.map((input) => input.key));
+    const unexpected = responses.filter(([key]) => !pending.has(key));
+    if (unexpected.length > 0) {
+      return yield* fail(
+        "unexpected-response",
+        `Run ${runId} is not waiting for ${unexpected.map(([key]) => key).join(", ")}`
+      );
+    }
+
+    const input = yield* Schema.decodeUnknownEffect(
+      Schema.toCodecJson(task.input)
+    )(run.input);
+    const planned = yield* plan(task, input);
+    if (fingerprint(planned) !== run.fingerprint) {
+      return yield* fail(
+        "plan-changed",
+        `The plan for run ${runId} changed since it started`
+      );
+    }
+
+    yield* Effect.forEach(responses, ([key, value]) =>
+      store.putResponse(runId, key, value)
+    );
+    yield* store.updateRun(runId, { pending: [], status: "running" });
+    return yield* drive(task, runId, planned);
+  }) as never;
+
+/** A run's record and the state of each node it reached. */
+export const status = (
+  runId: string
+): Effect.Effect<RunState, StoreError | ResumeError, RunStore> =>
+  Effect.gen(function* runStatus() {
+    const store = yield* RunStore;
+    const run = yield* store.getRun(runId);
+    if (Option.isNone(run)) {
+      return yield* new ResumeError({
+        message: `No run ${runId}`,
+        reason: "not-found",
+        runId,
+      });
+    }
+    return { nodes: yield* store.listNodes(runId), run: run.value };
+  });

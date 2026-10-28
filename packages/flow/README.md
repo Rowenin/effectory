@@ -76,6 +76,27 @@ const done =
 
 The plan draws Inputs as hexagons, whether planned with `After` or declared with `Calls`, so you can see where a run may stop before running it.
 
+## Durable runs
+
+`Flow.run` keeps nothing between runs. `Flow.start` and `Flow.resume` run through a `RunStore`, so a run can stop at its Inputs, end the process, and continue later without repeating finished work:
+
+```ts
+const first = yield * Flow.start(Implement, "ship");
+// { _tag: "Suspended", runId, pending: [{ key: 'ApprovePlan("ship v0")', request: "ship v0" }] }
+
+// Later, in another process: respond and continue in one step.
+const next =
+  yield *
+  Flow.resume(Implement, first.runId, {
+    responses: { 'ApprovePlan("ship v0")': { _tag: "Approve", by: "dana" } },
+  });
+// { _tag: "Succeeded", runId, output } (or Suspended again, or Failed)
+
+const { run, nodes } = yield * Flow.status(first.runId);
+```
+
+Provide a store with `Flow.memoryStore` (in memory, for tests) or a persistent store. Resuming plans the root again and runs it again; nodes whose outputs are stored return them without running. A node that holds a loop of calls, like `Approve` above, runs again on each resume and replays its calls from the store.
+
 ## The two phases
 
 Every Task has two halves, and they run at different times.
@@ -109,7 +130,7 @@ The **Enforced by** column says what happens when a law is broken:
 
 | # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
 | --- | --- | --- | --- | --- |
-| N1 | A node is a Task applied to one input. Its key is the Task name plus the encoded input, e.g. `RunTests(["effect"])`. | One Task appearing as several nodes with different inputs. | — | — |
+| N1 | A node is a Task applied to one input. Its key is the Task name plus the input encoded with its schema's JSON codec, e.g. `RunTests(["effect"])`. | One Task appearing as several nodes with different inputs. | — | — |
 | N2 | The same Task with the same input is always one node. | Many Tasks declaring `After` on the same Task and input; it runs once. | Expecting a Task to run twice for the same input. | By design |
 | N3 | Inputs must be valid for the Task's input schema. | — | Planning or depending on a Task with input that fails its schema. | Plan error |
 | N4 | Task names must be unique. | — | Two different Tasks with the same name. If their inputs match, they silently become one node. | Convention |
@@ -163,9 +184,21 @@ The **Enforced by** column says what happens when a law is broken:
 | --- | --- | --- | --- | --- |
 | I1 | An Input is a Task with `kind: "input"`. Its input is what a person is shown; its output is their response. `After` and `Calls` accept it like any Task. | Planning an Input with `After` when the request is known at plan time, or calling it when it depends on results. | — | By design |
 | I2 | Plan nodes and declared calls record their `kind`; `toMermaid` draws Inputs as hexagons. | — | — | By design |
-| I3 | `run` answers an Input from `responses[key]`, decoded with its output schema. It never runs work for an Input. | Answering any Input the run will reach, in advance. | A response that fails the output schema; the run fails. | Run failure |
+| I3 | `run` answers an Input from `responses[key]`, decoded with its output schema's JSON codec. It never runs work for an Input. A response that fails the schema leaves the Input pending, with the reason in `rejected`. | Answering any Input the run will reach, in advance. | — | By design |
 | I4 | Reaching an Input with no response fails the run with `Suspended`, listing each pending key, its name, description and request. This holds even if a caller handled the Input's failure. | Running again with the responses so far plus new ones. | Treating a handled `Suspended` as an answer. | Run failure |
 | I5 | Responses are matched by key, so a run that is replayed with responses must reach the same Inputs with the same requests. | Branching on outputs of nodes, including Inputs. | Branching on the clock or randomness in `run`, so a replay asks something different. | Convention |
+
+### Durable runs
+
+| # | Law | ✅ Allowed | ❌ Not allowed | Enforced by |
+| --- | --- | --- | --- | --- |
+| D1 | `start` plans the root, records a run (Task name, JSON-encoded input, plan fingerprint) and runs it. `start` and `resume` return an `Outcome`: `Succeeded`, `Suspended` or `Failed`, each with the run id. | — | — | By design |
+| D2 | A node whose output is stored for the run never runs again; the stored output is decoded with its schema's JSON codec. | — | Expecting a finished node to run again on resume. | By design |
+| D3 | Failures aren't stored as outputs. Resuming a failed run runs failed nodes again, and a node cut off mid-work (stored as `running`) runs again too. | Resuming after fixing what failed. | Relying on a node's work running exactly once; it runs at least once. | By design |
+| D4 | `resume` only accepts responses for the run's pending Inputs, and records them before running. Responding and continuing are one step. | Replacing a rejected response. | Answering an Input the run isn't waiting for (`ResumeError` `"unexpected-response"`). | Run failure |
+| D5 | `resume` refuses a different Task name (`"task-mismatch"`), an unknown run (`"not-found"`), or a plan whose fingerprint differs from the one recorded at start (`"plan-changed"`). Called nodes aren't part of the fingerprint. | Changing what a called node does; its key changes, so it runs fresh. | Resuming a run after changing its static plan. | Run failure |
+| D6 | Resuming a succeeded run returns its stored output without running anything. | — | — | By design |
+| D7 | Outputs, inputs and responses are stored through their schemas' JSON codecs, so a store only needs to keep JSON. | Schemas whose type isn't JSON, such as `DateTimeUtcFromString`. | Schemas without a JSON form. | Run failure |
 
 ### Types
 
@@ -187,5 +220,7 @@ These are places where the code allows something the laws forbid:
 - **C6:** Without `max` there is no cap. There's no limit on calls per run as a whole.
 - **C7:** The cycle check runs after the called node has started, so a node in a detected cycle stays blocked until the run ends, even when its caller recovers from the `CallError`.
 - **Y2:** Wrapping `Flow.After` in `Effect.provide*` removes the upstream Task's services from the type without giving them to its node, which then fails at run time with "Service not found".
-- **I4:** A run stops at the first Input without a response. Other branches are interrupted (X4), so their Inputs only show up on a later run, and there is no store yet, so running again with responses repeats all the work before the stop.
+- **I4:** A run stops at the first Input without a response. Other branches are interrupted (X4), so their Inputs only show up on a later run. With `Flow.run`, running again repeats all the work before the stop; with `Flow.start` and `resume`, only unfinished work runs again.
+- **D3:** Two processes can resume the same run at once; nothing gives a run a single owner yet.
+- **D7:** Only the in-memory store exists; nothing survives the process yet.
 - **Run record:** Called nodes appear only in spans (`flow.caller` names the caller); `Flow.run` doesn't return the graph of what actually ran.

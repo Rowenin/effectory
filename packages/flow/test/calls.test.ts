@@ -183,7 +183,7 @@ describe("Flow.Calls", () => {
     );
     expect(error).toEqual(
       new Flow.CallError({
-        message: "Greedy(undefined) called Review more than 1 times",
+        message: "Greedy(null) called Review more than 1 times",
         reason: "limit",
       })
     );
