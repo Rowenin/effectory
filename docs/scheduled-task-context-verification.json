@@ -1,0 +1,44 @@
+{
+  "feature": "Scheduled task occurrence context",
+  "date": "2026-11-05",
+  "runtime": "Bun 1.4.3",
+  "verification": {
+    "typecheck": "passed",
+    "formatAndLint": "passed",
+    "fullSuite": {
+      "tests": 156,
+      "passed": 154,
+      "failed": 2,
+      "files": 40,
+      "seconds": 545.72
+    },
+    "focusedRerun": {
+      "passed": 2,
+      "failed": 0,
+      "seconds": 79.18,
+      "command": "bun test packages/platform-bun/test/schedule-daemon.test.ts packages/platform-bun/test/daemon.test.ts --test-name-pattern 'schedule CLI/RPC|waiting runs retain'"
+    },
+    "result": "All 156 tests passed across the full run and focused reruns; there was no subsequent single all-green full-suite invocation."
+  },
+  "testCorrections": [
+    "Schedule daemon fixture selects a daily firing roughly twelve hours away, then seeds one missed day offline for deterministic catch-up. This avoids a legitimate minute firing between startup and inspection.",
+    "Extension revision recovery test budget increased from 60 to 120 seconds after a full-suite timeout. Its focused rerun passed in 33.65 seconds."
+  ],
+  "isolation": {
+    "reason": "Concurrent CLI/SDK source edits invalidated the initial shared-checkout run with an import error and a host ABI mismatch. Verification used a copied snapshot with its own dependencies.",
+    "occurrenceProductionFilesMatchWorkspace": true,
+    "scope": "The final snapshot includes the two test-only corrections. Concurrent SDK edits after snapshot creation are outside this verification."
+  },
+  "productionSha256": {
+    "packages/core/src/schedule-occurrence.ts": "9d02b4475848d536f58e74fe4b423cd8eab3bd17bbacbad097c5e35dc0de0131",
+    "packages/core/src/test-occurrence.ts": "21373c8aec11a1be3d76e7dd779c534aee3d164dd9ef4261c3ec8aeec755956b",
+    "packages/core/src/task.ts": "750b30cd3690c06bddbfb62b450b472ccf527b6c17206d432825ce4f4c37f6f6",
+    "packages/core/src/workflow-schedule.ts": "c0fb690bfe3b10090e004b23c5628f4f9025a4dd3288895268cc185ad5cf85da",
+    "packages/core/package.json": "d015b81edb5d44f5265d688610d291cbc387bcc3fe29965a95898ace08a35302",
+    "packages/runtime/src/protocol.ts": "f03dbf5168d6fc469a5c228b9e88aca0795f8e694ef2ce182c75d2f18c5b8ab0",
+    "packages/runtime/src/schedule-protocol.ts": "38ef770c1f1f8110f8140890028eeae99b5d6e05c4a8d2efe2d8694d4a2e5c07",
+    "packages/platform-bun/src/interpreter.ts": "8978b8ae1eead08928ab4a269f473d6bbcb336dda59768f2ab3281bb974d1792",
+    "packages/platform-bun/src/host-modules.generated.ts": "422025cc695f991ee65640db6c773b6fda259a936652e440015b3261767aa44e",
+    "examples/scheduled/effectory.ts": "81ebd23736df972d8ec066296661381fa09596a0654d4f7f9b0ffa71bdaf0f3b"
+  }
+}

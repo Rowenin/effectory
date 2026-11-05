@@ -31,7 +31,7 @@ Runnable source: [scheduled example](../examples/scheduled/effectory.ts). Contra
 
 The approved `WorkflowSchedule.Occurrence` schema is shared by run provenance, history and task fixtures. Scheduled task handlers read a fresh frozen `context.occurrence` snapshot per attempt. Manual workflows, direct task runs and default `Task.test` omit the property. `Task.test` accepts a strictly decoded optional occurrence fixture, with lazy field-specific errors. No service or Layer is required.
 
-The scheduled example returns occurrence metadata before and after a durable approval. Tests cover fixture isolation, canonical timestamps and JSON Schema constraints, service/type preservation, inheritance through extension replacements/patches, branches and linked fan-out, retry mutation isolation, slot-based publication keys, and malformed persisted metadata. The CLI restart test compares task results across daemon death. See the [approved context contract](scheduled-task-context-api-draft.md).
+The scheduled example returns occurrence metadata before and after a durable approval. Tests cover fixture isolation, canonical timestamps and JSON Schema constraints, service/type preservation, inheritance through extension replacements/patches, branches and linked fan-out, retry mutation isolation, slot-based publication keys, and malformed persisted metadata. The CLI restart test compares task results across daemon death. See the [approved context contract](scheduled-task-context-api-draft.md). [Verification record](scheduled-task-context-verification.json): typecheck and formatting/lint passed; all 156 tests passed across the isolated full run and focused reruns after two test-only corrections.
 
 ## Runnable demonstration
 
