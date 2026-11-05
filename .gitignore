@@ -6,3 +6,7 @@ dist/
 *.tsbuildinfo
 .DS_Store
 .effectory/
+
+# Local upstream source references; revisions live in vendor/manifest.json.
+/vendor/swamp/
+/vendor/effect/

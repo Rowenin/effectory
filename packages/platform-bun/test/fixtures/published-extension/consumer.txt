@@ -1,0 +1,37 @@
+import { Application, Extension, Ref, Task, Workflow } from "@effectory/core";
+import { Effect, Layer, Schema } from "effect";
+import { Tools } from "./effectory.extensions.ts";
+
+const Format = Task.make({ id: "local/format", version: 1, input: Schema.String, success: Schema.String, error: Schema.Never, replay: "idempotent" }, (value) => Effect.succeed(`formatted:${value}`));
+const Flow = Workflow.make({ id: "local/flow", version: 1, input: Tools.tasks.Inspect.inputSchema, success: Schema.String, error: Tools.tasks.Inspect.errorSchema }, Effect.gen(function* () {
+  const graph = yield* Workflow.Builder;
+  const result = yield* graph.task("inspect", Tools.tasks.Inspect, yield* graph.input(Tools.tasks.Inspect.inputSchema));
+  return yield* graph.task("format", Format, result);
+}));
+const missing = Application.make({ tasks: [Format], workflows: [Flow], extensions: [Extension.use(Tools)] });
+export default missing.provide(Layer.succeed(Tools.exports.Client, { prefix: "loaded" }));
+
+// Compile-only public API proofs. Never called at runtime.
+export function typeProofs() {
+  // @ts-expect-error The separately emitted declaration retains the Client requirement.
+  Effect.runPromise(Effect.scoped(Layer.build(missing.layer)));
+  Task.implementation({ id: "local/replacement", target: Tools.tasks.Inspect }, (_input, context) => Effect.gen(function* () {
+    // @ts-expect-error Declared extension outputs retain their value schema.
+    yield* context.publish("report", { text: 123 }, { key: "report" });
+    // @ts-expect-error An arbitrary output name is not a declared extension output.
+    yield* context.publish("other", { text: "ok" }, { key: "other" });
+    return "ok";
+  }));
+  return Effect.gen(function* () {
+    const graph = yield* Workflow.Builder;
+    // @ts-expect-error Generated task input retains its required string field.
+    yield* graph.task("bad-input", Tools.tasks.Inspect, { repository: 123 });
+    const value = yield* graph.task("valid", Tools.tasks.Inspect, { repository: "swamp-club/swamp" }, { retry: { attempts: 2, delay: "1 second", when: ["FetchFailed"] } });
+    const typed: Ref.Ref<string> = value;
+    // @ts-expect-error Generated task result is not widened.
+    const wrong: Ref.Ref<number> = value;
+    // @ts-expect-error Retry selection retains the extension's declared error tags.
+    yield* graph.task("bad-error", Tools.tasks.Inspect, { repository: "x/y" }, { retry: { attempts: 2, delay: "1 second", when: ["UnknownError"] } });
+    return { typed, wrong };
+  });
+}

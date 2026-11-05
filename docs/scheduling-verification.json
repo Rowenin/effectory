@@ -1,0 +1,49 @@
+{
+  "feature": "Approved durable workflow scheduling",
+  "verifiedAt": "2026-11-05T17:08:13.479094+00:00",
+  "typecheck": "passed",
+  "lintAndFormat": "passed",
+  "fullSuite": {
+    "location": "isolated source snapshot",
+    "tests": 140,
+    "files": 35,
+    "passed": 137,
+    "timedOut": 3,
+    "log": "/tmp/effectory-schedule-isolated-tests.log"
+  },
+  "targetedRerun": {
+    "location": "working checkout",
+    "passed": 3,
+    "failed": 0,
+    "assertions": 52,
+    "log": "/tmp/effectory-schedule-final-retry.log",
+    "command": "bun test packages/platform-bun/test/extension-daemon.test.ts packages/platform-bun/test/cancellation-daemon.test.ts packages/platform-bun/test/backup.test.ts"
+  },
+  "testHarnessBudgetsMs": {
+    "extension-daemon.test.ts": {
+      "before": 90000,
+      "after": 180000
+    },
+    "cancellation-daemon.test.ts": {
+      "before": 45000,
+      "after": 90000
+    },
+    "backup.test.ts": {
+      "before": 60000,
+      "after": 120000
+    }
+  },
+  "reason": "Measured cold CLI invocations took 2\u20134 seconds during concurrent work. Diagnostic reruns completed all assertions; only outer test deadlines changed, not runtime deadlines or test assertions.",
+  "uniqueTestsVerifiedAcrossRuns": 140,
+  "productionFilesMatchSnapshot": true,
+  "singleFullGreenRunAfterBudgetChanges": false,
+  "scope": "Scheduling is implemented. Broader Swamp parity and the proposed task occurrence context remain incomplete; occurrence context is not approved or implemented.",
+  "concurrentChangesAfterVerification": {
+    "addedFiles": [
+      "packages/platform-bun/test/host-runtime.test.ts",
+      "packages/platform-bun/test/sdk.test.ts",
+      "packages/cli/test/binary.test.ts"
+    ],
+    "latestWorkingTreeLint": "Blocked by formatting in concurrently added packages/platform-bun/test/sdk.test.ts; verified snapshot lint passed."
+  }
+}

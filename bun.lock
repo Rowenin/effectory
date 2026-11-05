@@ -7,7 +7,7 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.5",
         "@effect/sql-sqlite-bun": "4.0.5",
-        "@effectory/flow": "workspace:*",
+        "@effectory/core": "workspace:*",
         "effect": "4.0.5",
       },
       "devDependencies": {
@@ -24,19 +24,38 @@
       "name": "@effectory/cli",
       "version": "0.0.0",
       "bin": {
-        "flow": "./src/main.ts",
+        "effectory": "./src/main.ts",
       },
       "dependencies": {
         "@effect/platform-bun": "4.0.5",
-        "@effect/sql-sqlite-bun": "4.0.5",
-        "@effectory/flow": "workspace:*",
+        "@effectory/platform-bun": "workspace:*",
+        "@effectory/runtime": "workspace:*",
         "effect": "4.0.5",
       },
     },
-    "packages/flow": {
-      "name": "@effectory/flow",
+    "packages/core": {
+      "name": "@effectory/core",
       "version": "0.0.0",
       "dependencies": {
+        "effect": "4.0.5",
+      },
+    },
+    "packages/platform-bun": {
+      "name": "@effectory/platform-bun",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform-bun": "4.0.5",
+        "@effect/sql-sqlite-bun": "4.0.5",
+        "@effectory/core": "workspace:*",
+        "@effectory/runtime": "workspace:*",
+        "effect": "4.0.5",
+      },
+    },
+    "packages/runtime": {
+      "name": "@effectory/runtime",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effectory/core": "workspace:*",
         "effect": "4.0.5",
       },
     },
@@ -81,7 +100,11 @@
 
     "@effectory/cli": ["@effectory/cli@workspace:packages/cli"],
 
-    "@effectory/flow": ["@effectory/flow@workspace:packages/flow"],
+    "@effectory/core": ["@effectory/core@workspace:packages/core"],
+
+    "@effectory/platform-bun": ["@effectory/platform-bun@workspace:packages/platform-bun"],
+
+    "@effectory/runtime": ["@effectory/runtime@workspace:packages/runtime"],
 
     "@nodelib/fs.scandir": ["@nodelib/fs.scandir@2.1.5", "", { "dependencies": { "@nodelib/fs.stat": "2.0.5", "run-parallel": "1.2.0" } }, "sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g=="],
 

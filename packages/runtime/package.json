@@ -1,0 +1,19 @@
+{
+  "name": "@effectory/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./protocol": "./src/protocol.ts",
+    "./lake-protocol": "./src/lake-protocol.ts",
+    "./rpc": "./src/rpc.ts",
+    "./extension-protocol": "./src/extension-protocol.ts",
+    "./history-protocol": "./src/history-protocol.ts",
+    "./system-protocol": "./src/system-protocol.ts",
+    "./schedule-protocol": "./src/schedule-protocol.ts"
+  },
+  "dependencies": {
+    "@effectory/core": "workspace:*",
+    "effect": "4.0.5"
+  }
+}

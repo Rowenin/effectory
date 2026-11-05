@@ -1,0 +1,56 @@
+{
+  "verifiedAt": "2026-11-05T13:12:32.710527+00:00",
+  "method": "Real gh adapter and temporary daemon/CLI consumer; two downloads, publisher digest verification, explicit selection, task execution, restart and locked restore with gh denied.",
+  "releases": [
+    {
+      "visibility": "public",
+      "releaseUrl": "https://github.com/Rowenin/effectory-extension-fixture-public/releases/tag/v1.0.0",
+      "assetName": "effectory.tgz",
+      "download": {
+        "assetId": 713461560,
+        "bytes": 1867,
+        "commit": "d2fadd2ea2fabd82243fab0a2b0366cc200c51a6",
+        "extensionId": "fixture/tools",
+        "extensionVersion": "1.0.0",
+        "publisherDigestVerified": true,
+        "releaseId": 435218881,
+        "sha256": "dacc0e9eb2034036a6b6bd55ed75acc656bce45114954816e9567af56baa4f34"
+      },
+      "installation": {
+        "assetId": 713461560,
+        "digest": "dacc0e9eb2034036a6b6bd55ed75acc656bce45114954816e9567af56baa4f34",
+        "extensionId": "fixture/tools",
+        "offlineRestore": true,
+        "releaseId": 435218881,
+        "result": "formatted:loaded/a/b",
+        "source": "Rowenin/effectory-extension-fixture-public",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "visibility": "private",
+      "releaseUrl": "https://github.com/Rowenin/effectory-extension-fixture-private/releases/tag/v1.0.0",
+      "assetName": "effectory.tgz",
+      "download": {
+        "assetId": 713461716,
+        "bytes": 1867,
+        "commit": "debb1e135c87365bf9f76988789c7ebf080d8ff1",
+        "extensionId": "fixture/tools",
+        "extensionVersion": "1.0.0",
+        "publisherDigestVerified": true,
+        "releaseId": 435218938,
+        "sha256": "dacc0e9eb2034036a6b6bd55ed75acc656bce45114954816e9567af56baa4f34"
+      },
+      "installation": {
+        "assetId": 713461716,
+        "digest": "dacc0e9eb2034036a6b6bd55ed75acc656bce45114954816e9567af56baa4f34",
+        "extensionId": "fixture/tools",
+        "offlineRestore": true,
+        "releaseId": 435218938,
+        "result": "formatted:loaded/a/b",
+        "source": "Rowenin/effectory-extension-fixture-private",
+        "version": "1.0.0"
+      }
+    }
+  ]
+}

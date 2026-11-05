@@ -1,0 +1,24 @@
+{
+  "name": "@effectory/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./internal/boundary": "./src/boundary.ts",
+    "./internal/policy": "./src/policy.ts",
+    "./Application": "./src/application.ts",
+    "./Artifact": "./src/artifact.ts",
+    "./Extension": "./src/extension.ts",
+    "./Ref": "./src/ref.ts",
+    "./Task": "./src/task.ts",
+    "./Workflow": "./src/workflow.ts",
+    "./WorkflowPatch": "./src/workflow-patch.ts",
+    "./WorkflowSchedule": "./src/workflow-schedule.ts",
+    "./package.json": "./package.json",
+    "./internal/schedule-occurrence": "./src/schedule-occurrence.ts"
+  },
+  "dependencies": {
+    "effect": "4.0.5"
+  }
+}

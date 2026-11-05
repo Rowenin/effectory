@@ -1,0 +1,3 @@
+[test]
+# Upstream source references have their own test suites and dependencies.
+pathIgnorePatterns = ["vendor/**"]

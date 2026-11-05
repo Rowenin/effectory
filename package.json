@@ -13,12 +13,14 @@
     "test": "bun test",
     "verify": "bun run typecheck && bun run check && bun run test",
     "prepare": "effect-tsgo patch",
-    "flow": "bun packages/cli/src/main.ts"
+    "effectory": "bun packages/cli/src/main.ts",
+    "build:binary": "bun scripts/build-binary.ts",
+    "generate:host-modules": "bun scripts/generate-host-modules.ts"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.5",
     "@effect/sql-sqlite-bun": "4.0.5",
-    "@effectory/flow": "workspace:*",
+    "@effectory/core": "workspace:*",
     "effect": "4.0.5"
   },
   "devDependencies": {

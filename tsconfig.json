@@ -30,10 +30,19 @@
           "effect/process",
           "effect/PlatformError",
           "@effect/platform-bun",
-          "effect/rpc"
+          "effect/rpc",
+          "effect/workflow",
+          "effect/cluster"
         ]
       }
     ]
   },
-  "include": ["*.config.ts", "*.ts", "flows/**/*.ts", "packages/**/*.ts"]
+  "include": [
+    "*.config.ts",
+    "*.ts",
+    "flows/**/*.ts",
+    "examples/**/*.ts",
+    "packages/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }

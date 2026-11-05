@@ -3,5 +3,5 @@ import ultracite from "ultracite/oxfmt";
 
 export default defineConfig({
   ...ultracite,
-  ignorePatterns: ["**/dist/**", "bun.lock"],
+  ignorePatterns: ["vendor/**", "**/dist/**", "bun.lock", "**/*.generated.ts"],
 });

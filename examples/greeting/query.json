@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "artifact": { "schemaId": "example/greeting", "schemaVersion": 1 },
+  "versions": "latest",
+  "where": {
+    "_tag": "Eq",
+    "field": { "json": ["greeting"] },
+    "value": "Hello Ada"
+  },
+  "limit": 50
+}

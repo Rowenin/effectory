@@ -1,0 +1,20 @@
+{
+  "formatVersion": 1,
+  "purpose": "Read-only source references for the documentation pass; not runtime dependencies.",
+  "repositories": [
+    {
+      "name": "swamp",
+      "url": "https://github.com/swamp-club/swamp.git",
+      "revision": "b42dd1ac63c899e1cba75efae9d7d3dd1ce96c11",
+      "ref": "main at inspection",
+      "path": "vendor/swamp"
+    },
+    {
+      "name": "effect",
+      "url": "https://github.com/Effect-TS/effect.git",
+      "revision": "7f524e25cfb49a71ac39b0f44278d08d40dda5de",
+      "ref": "effect@4.0.5",
+      "path": "vendor/effect"
+    }
+  ]
+}
