@@ -156,6 +156,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          gh label create "autorelease: tagged" --repo "$GITHUB_REPOSITORY" --color EDEDED --force
           for number in $(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --label "autorelease: pending" --json number --jq '.[].number'); do
             gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --remove-label "autorelease: pending" --add-label "autorelease: tagged"
           done
