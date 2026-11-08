@@ -1,24 +1,27 @@
-# Publishes a release when a version tag is pushed:
+# Builds and publishes a GitHub Release. Releases are normally cut from a
+# maintainer machine with the same script:
 #
-#   git tag v0.1.0 && git push origin v0.1.0
+#   bun scripts/release-assets.ts
+#   gh release create v0.1.0 dist/release/* --title "Effectory v0.1.0" --generate-notes
 #
-# 1. verify:  the tag matches every package version; typecheck, lint and tests pass.
-# 2. binaries: compile every target, attach them, SHA256SUMS and install.sh to a
-#    GitHub Release.
-# 3. npm:     publish @offtree/effectory-sdk through npm trusted publishing (OIDC,
-#    no token; provenance is generated automatically). Tags with a prerelease
-#    suffix (v0.2.0-rc.1) publish under the `next` dist-tag.
+# This workflow does the same in CI when started by hand (Actions → Release →
+# Run workflow) for a tag that already exists. The release carries every
+# binary, the SDK tarball that projects install by URL, the AWS vault
+# extension, install.sh and SHA256SUMS. Nothing is published to npm.
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, for example v0.1.0
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -27,17 +30,20 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
       - name: Tag matches package versions
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
           for manifest in package.json packages/*/package.json extensions/*/package.json; do
             version="$(jq -r .version "$manifest")"
-            if [ "$version" != "$tag" ]; then
-              echo "::error file=$manifest::version $version does not match tag $GITHUB_REF_NAME"
+            if [ "v$version" != "$TAG" ]; then
+              echo "::error file=$manifest::version $version does not match tag $TAG"
               exit 1
             fi
           done
@@ -45,7 +51,7 @@ jobs:
       - run: bun run check
       - run: bun test --timeout 60000
 
-  binaries:
+  release:
     needs: verify
     # Darwin binaries are built natively; Bun cross-compiles the Linux targets.
     runs-on: macos-latest
@@ -54,54 +60,25 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
-      - run: bun scripts/build-binary.ts --target all --outdir dist/bin
-      - run: bun run build:extension:aws-vault
-      - name: Include extension checksum
-        run: cat dist/extensions/aws-vault/SHA256SUMS >> dist/bin/SHA256SUMS
+      - run: bun scripts/release-assets.ts --outdir dist/release
       - name: Smoke test the native binary
-        run: dist/bin/effectory-darwin-arm64 version --json
+        run: dist/release/effectory-darwin-arm64 version --json
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
         run: |
           prerelease=""
-          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$GITHUB_REF_NAME" \
+          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "$TAG" \
             --verify-tag \
-            --title "Effectory ${GITHUB_REF_NAME}" \
+            --title "Effectory $TAG" \
             --generate-notes \
             $prerelease \
-            dist/bin/effectory-* dist/bin/SHA256SUMS install.sh \
-            dist/extensions/aws-vault/effectory-aws-vault.tgz
-
-  npm:
-    needs: binaries
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    environment: npm
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v5
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: package.json
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm 11.5.1 or later.
-      - run: npm install --global npm@11
-      - run: bun install --frozen-lockfile
-      - run: bun scripts/build-sdk.ts --outdir dist/sdk
-      - name: Publish @offtree/effectory-sdk
-        working-directory: dist/sdk
-        run: |
-          tag="latest"
-          case "$GITHUB_REF_NAME" in *-*) tag="next" ;; esac
-          npm publish --access public --tag "$tag"
+            dist/release/*

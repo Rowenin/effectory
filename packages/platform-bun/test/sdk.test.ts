@@ -10,8 +10,17 @@ import {
   initProject,
   projectStatus,
   projectWarning,
+  sdkSpecifier,
   upgradeProject,
 } from "../src/sdk.ts";
+
+test("projects install the SDK from the matching GitHub release", () => {
+  const version = hostVersions["@offtree/effectory-sdk"];
+  expect(sdkSpecifier("@offtree/effectory-sdk")).toBe(
+    `https://github.com/Rowenin/effectory/releases/download/v${version}/offtree-effectory-sdk-${version}.tgz`
+  );
+  expect(sdkSpecifier("effect")).toBe(hostVersions.effect);
+});
 
 const version = "1.2.3";
 
@@ -104,14 +113,14 @@ test("upgrade records the version and pins exact SDK versions in place", async (
       {
         from: null,
         name: "@offtree/effectory-sdk",
-        to: hostVersions["@offtree/effectory-sdk"],
+        to: sdkSpecifier("@offtree/effectory-sdk"),
       },
       { from: "^4.0.0", name: "effect", to: hostVersions.effect },
     ]);
     expect(await readJson(filename)).toEqual({
       dependencies: { effect: hostVersions.effect, zod: "4.0.0" },
       devDependencies: {
-        "@offtree/effectory-sdk": hostVersions["@offtree/effectory-sdk"],
+        "@offtree/effectory-sdk": sdkSpecifier("@offtree/effectory-sdk"),
       },
       effectory: { note: "kept", version },
       name: "existing",

@@ -22,6 +22,7 @@
     "effectory": "bun packages/cli/src/main.ts",
     "build:binary": "bun scripts/build-binary.ts",
     "build:sdk": "bun scripts/build-sdk.ts",
+    "release:assets": "bun scripts/release-assets.ts",
     "build:extension:aws-vault": "bun scripts/build-aws-vault-extension.ts",
     "generate:host-modules": "bun scripts/generate-host-modules.ts"
   },

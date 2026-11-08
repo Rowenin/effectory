@@ -14,6 +14,21 @@ import { hostVersions } from "./host-runtime.ts";
 export type SdkPackage = keyof typeof hostVersions;
 const sdkPackages = Object.keys(hostVersions) as SdkPackage[];
 
+/** The GitHub repository whose releases carry the binary and the SDK. */
+export const releaseRepository = "Rowenin/effectory";
+
+/**
+ * What a project's `package.json` should name for each SDK package. The SDK is
+ * not on npm; each release attaches it as a tarball next to the binaries.
+ * `effect` comes from npm.
+ */
+export function sdkSpecifier(name: SdkPackage) {
+  const version = hostVersions[name];
+  return name === "@offtree/effectory-sdk"
+    ? `https://github.com/${releaseRepository}/releases/download/v${version}/offtree-effectory-sdk-${version}.tgz`
+    : version;
+}
+
 const invalid = (message: string) =>
   new OperationError({ code: "InvalidInput", message });
 
@@ -183,7 +198,7 @@ export function upgradeProject(repository: string, effectoryVersion: string) {
             : "dependencies";
         const table = { ...manifest[field] };
         const from = table[name] ?? null;
-        const to = hostVersions[name];
+        const to = sdkSpecifier(name);
         if (from !== to) {
           table[name] = to;
           manifest[field] = Object.fromEntries(

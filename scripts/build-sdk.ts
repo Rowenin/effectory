@@ -1,9 +1,11 @@
 /**
- * Builds the npm package for `@offtree/effectory-sdk` from `packages/core`.
+ * Builds the package for `@offtree/effectory-sdk` from `packages/core`.
  *
  *   bun scripts/build-sdk.ts                  # writes dist/sdk
  *   bun scripts/build-sdk.ts --outdir out/sdk
- *   npm publish dist/sdk --access public
+ *
+ * `scripts/release-assets.ts` packs it into the tarball each GitHub Release
+ * carries; projects install it from that URL.
  *
  * Projects install the SDK for types and editor support; the Effectory binary
  * supplies its own copy at runtime. The package is still complete JavaScript, so

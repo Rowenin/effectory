@@ -1,6 +1,6 @@
 # Binary distribution
 
-The CLI, daemon and runtime ship as one standalone executable built with `bun build --compile`. Projects install only the authoring SDK (`@offtree/effectory-sdk` and `effect`) from npm, for types and editor support. The binary runs the project with its own built-in copies of those packages.
+The CLI, daemon and runtime ship as one standalone executable built with `bun build --compile`. Projects install only the authoring SDK (`@offtree/effectory-sdk` from the GitHub Release, and `effect` from npm), for types and editor support. The binary runs the project with its own built-in copies of those packages.
 
 ## Why the host provides `effect` and `@offtree/effectory-sdk`
 
@@ -26,7 +26,7 @@ Processes the host starts for itself use `selfCommand(script, args)`. A source r
 
 ## SDK version alignment
 
-The project's npm SDK provides types; the binary provides the runtime. They must match exactly. Like Swamp's `.swamp.yaml` `swampVersion`, the project records which Effectory version last set it up, in `package.json`:
+The project's installed SDK provides types; the binary provides the runtime. They must match exactly. Like Swamp's `.swamp.yaml` `swampVersion`, the project records which Effectory version last set it up, in `package.json`:
 
 ```json
 { "effectory": { "version": "0.1.0" } }
@@ -63,39 +63,47 @@ EFFECTORY_BINARY=dist/bin/effectory-darwin-arm64 bun test packages/platform-bun/
 
 ## Releasing
 
-A release is one version number shared by every package, the binaries and the npm SDK. Pushing a `v*` tag runs `.github/workflows/release.yml`:
+A release is one version number shared by every package, the binaries and the SDK, and everything ships as GitHub Release assets; nothing is published to npm. `scripts/release-assets.ts` (`bun run release:assets`) writes the full set to `dist/release`:
 
-1. **verify**: the tag must equal every `package.json` version; typecheck, lint and tests must pass.
-2. **binaries**: on macOS, `build-binary.ts --target all`, a smoke run of the native binary, then a GitHub Release carrying each `effectory-<platform>`, `SHA256SUMS` and `install.sh`.
-3. **npm**: `scripts/build-sdk.ts`, then `npm publish` of `@offtree/effectory-sdk` through npm trusted publishing (OIDC, no stored token; provenance is automatic). A tag with a prerelease suffix (`v0.2.0-rc.1`) becomes a GitHub prerelease and publishes under the npm `next` dist-tag.
+| Asset | Contents |
+| --- | --- |
+| `effectory-<os>-<arch>[-musl]` | Standalone binaries for macOS and Linux, arm64 and x64 |
+| `offtree-effectory-sdk-<version>.tgz` | The authoring SDK, installed by URL |
+| `effectory-aws-vault.tgz` | The AWS vault extension |
+| `install.sh` | The installer |
+| `SHA256SUMS` | Checksums of every asset above |
 
-`scripts/build-sdk.ts` compiles `packages/core` with `tsc` into `dist/sdk`: JavaScript with `.d.ts` files, a generated `package.json` whose export map points at them, `effect` as an exact peer dependency, and the README and MIT license. It rejects output that still imports `.ts` files or anything other than `effect`, then imports the built entry point. The source `package.json` stays `private`; only `dist/sdk` is published.
+Projects depend on the SDK through the release URL, which `effectory init` and `effectory upgrade` write:
 
-```sh
-bun scripts/build-sdk.ts
-(cd dist/sdk && npm pack --dry-run)
+```json
+"devDependencies": {
+  "@offtree/effectory-sdk": "https://github.com/Rowenin/effectory/releases/download/v0.1.0/offtree-effectory-sdk-0.1.0.tgz",
+  "effect": "4.0.5"
+}
 ```
 
-`install.sh` picks the asset for the OS and architecture (musl on Alpine, arm64 under Rosetta), verifies it against `SHA256SUMS` and installs it to `~/.effectory/bin` (`EFFECTORY_HOME`). `EFFECTORY_VERSION` selects a release, and `EFFECTORY_DOWNLOAD_BASE` points it at a mirror or a local directory (`file:///path/to/dist/bin`), which is how it is tested before a release exists.
+Bun, npm and pnpm install tarball URLs directly, so the repository must be public for projects and `install.sh` to download without credentials. `effectory doctor sdk` still compares the installed package's `version` with the binary.
+
+`scripts/build-sdk.ts` compiles `packages/core` with `tsc` into `dist/sdk`: JavaScript with `.d.ts` files, a generated `package.json` whose export map points at them, `effect` as an exact peer dependency, and the README and MIT license. It rejects output that still imports `.ts` files or anything other than `effect`, then imports the built entry point. The source `package.json` stays `private`.
+
+`install.sh` picks the asset for the OS and architecture (musl on Alpine, arm64 under Rosetta), verifies it against `SHA256SUMS` and installs it to `~/.effectory/bin` (`EFFECTORY_HOME`). `EFFECTORY_VERSION` selects a release, and `EFFECTORY_DOWNLOAD_BASE` points it at a mirror or a local directory (`file:///path/to/dist/release`), which is how it is tested before a release exists.
 
 ### Cutting a release
 
 ```sh
-# 1. Set the same version in package.json and packages/*/package.json, then commit.
-# 2. Tag and push.
-git tag v0.1.0
-git push origin v0.1.0
+# 1. Set the same version in package.json, packages/*/package.json and
+#    extensions/*/package.json; check, commit and push.
+bun run verify
+# 2. Build every asset and publish the release (creates the tag on main).
+bun run release:assets
+gh release create v0.1.0 dist/release/* --target main --title "Effectory v0.1.0" --generate-notes
 ```
 
-### One-time setup
-
-- npm cannot configure a trusted publisher for a package that does not exist yet, so the first version is published by hand: `npm login`, `bun scripts/build-sdk.ts`, `cd dist/sdk && npm publish --access public`.
-- Then, on npmjs.com, `@offtree/effectory-sdk` → Settings → Trusted publishing → GitHub Actions: repository `Rowenin/effectory`, workflow `release.yml`, environment `npm`. Afterwards, set publishing access to require two-factor authentication and disallow tokens.
-- Create the `npm` environment in the GitHub repository settings, optionally restricted to `v*` tags.
+Darwin binaries cross-compiled on Linux are ad-hoc signed by Bun. The `Release` workflow (`.github/workflows/release.yml`) does the same on GitHub Actions when started by hand for an existing tag, building on macOS after the full check suite.
 
 ## Not yet implemented
 
-- An `@offtree/effectory-cli` npm package. Like esbuild or Biome, it would need one package per platform plus a wrapper, each with its own trusted-publisher setup; binaries ship through GitHub Releases for now.
+- npm packages for the SDK or CLI. Publishing the SDK to npm would let projects use semver ranges and private-repository installs; the CLI would need one package per platform plus a wrapper.
 - A Homebrew tap and an `effectory update` self-updater (Swamp: `swamp update`).
 - Code signing and notarization for macOS and Windows builds. Windows targets are not built yet.
 - Running workflows in unit tests outside the binary (an SDK testing entry point or `effectory test`).

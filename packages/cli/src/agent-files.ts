@@ -21,6 +21,8 @@ import { Effect, Schema } from "effect";
 
 import { hostVersions } from "../../platform-bun/src/host-runtime.ts";
 import { ownershipLayer } from "../../platform-bun/src/ownership.ts";
+import type { SdkPackage } from "../../platform-bun/src/sdk.ts";
+import { sdkSpecifier } from "../../platform-bun/src/sdk.ts";
 import {
   allowedFiles,
   assetBundle,
@@ -341,8 +343,8 @@ function project(root: string, version: string) {
   const declared = { ...value.dependencies, ...value.devDependencies };
   if (
     value.effectory.version !== version ||
-    Object.entries(hostVersions).some(
-      ([key, expected]) => declared[key] !== expected
+    (Object.keys(hostVersions) as SdkPackage[]).some(
+      (key) => declared[key] !== sdkSpecifier(key)
     )
   ) {
     return fail(

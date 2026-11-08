@@ -359,13 +359,13 @@ The first exact read protects an external version for the consumer run (up to 1,
 
 ## Installing as a binary
 
-The CLI, daemon and runtime compile to one standalone executable that includes Bun, `effect` and `@offtree/effectory-sdk`. Projects install the npm SDK only for types; the binary supplies the runtime copies, so a project does not need Bun or a `node_modules` folder to run.
+The CLI, daemon and runtime compile to one standalone executable that includes Bun, `effect` and `@offtree/effectory-sdk`. Projects install the SDK (a tarball on each GitHub Release) only for types; the binary supplies the runtime copies, so a project does not need Bun or a `node_modules` folder to run.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Rowenin/effectory/main/install.sh | sh
 effectory init my-automation                # effectory.ts, tsconfig.json, version marker and SDK pins
 cd my-automation
-bun install                                 # authoring types from npm: @offtree/effectory-sdk and effect
+bun install                                 # authoring types: the SDK from the release, effect from npm
 effectory daemon start
 effectory workflow run hello/run --input '{"name":"Ada"}'
 effectory doctor sdk                        # project marker and SDK match the binary?
