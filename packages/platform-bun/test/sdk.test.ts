@@ -148,6 +148,12 @@ test("init scaffolds a project without replacing existing files", async () => {
     });
     const manifest = await readJson(path.join(project, "package.json"));
     expect(manifest.effectory).toEqual({ version });
+    // Multi-file projects and generated extension bindings use .ts imports.
+    const tsconfig = await readJson(path.join(project, "tsconfig.json"));
+    expect(tsconfig.compilerOptions).toMatchObject({
+      allowImportingTsExtensions: true,
+      noEmit: true,
+    });
     expect(
       await readFile(path.join(project, "effectory.ts"), "utf-8")
     ).toContain('from "@offtree/effectory-sdk"');

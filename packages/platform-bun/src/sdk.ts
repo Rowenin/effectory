@@ -276,6 +276,8 @@ export default Application.make({
 const tsconfigTemplate = `${JSON.stringify(
   {
     compilerOptions: {
+      // Projects import their own modules with .ts paths, as the binary runs them.
+      allowImportingTsExtensions: true,
       exactOptionalPropertyTypes: true,
       lib: ["ES2024"],
       module: "ESNext",
