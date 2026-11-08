@@ -84,7 +84,15 @@ case ":$PATH:" in
   *":$bin_dir:"*) ;;
   *)
     echo
-    echo "Add Effectory to your PATH, for example in ~/.zshrc or ~/.bashrc:"
-    echo "  export PATH=\"$bin_dir:\$PATH\""
+    case "${SHELL:-}" in
+      */fish)
+        echo "Add Effectory to your PATH:"
+        echo "  fish_add_path $bin_dir"
+        ;;
+      *)
+        echo "Add Effectory to your PATH, for example in ~/.zshrc or ~/.bashrc:"
+        echo "  export PATH=\"$bin_dir:\$PATH\""
+        ;;
+    esac
     ;;
 esac
