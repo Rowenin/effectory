@@ -1,8 +1,10 @@
 import type { Database } from "bun:sqlite";
 
+import { OperationError } from "@effectory/runtime/protocol";
 import { RecoveryReceipt } from "@effectory/runtime/recovery-protocol";
 import { Effect, Schema } from "effect";
 
+import type { InspectionBudget } from "./inspection-budget.ts";
 import { unsupportedUpgradeWork, upgradeScanner } from "./upgrade-scan.ts";
 
 const Positive = Schema.Int.check(Schema.isGreaterThan(0));
@@ -52,10 +54,16 @@ const tables = [
 ];
 
 /** Does not construct createRecoveryStore, migrate tables, or consume authorization. */
-export function inspectUpgradeRecovery(database: Database) {
+export function inspectUpgradeRecovery(
+  database: Database,
+  budget?: InspectionBudget
+) {
   return Effect.gen(function* () {
     const clock = yield* Effect.try({
-      catch: () => unsupportedUpgradeWork("manual recovery storage"),
+      catch: (cause) =>
+        cause instanceof OperationError
+          ? cause
+          : unsupportedUpgradeWork("manual recovery storage"),
       try: () => {
         const present = tables.filter(
           (name) =>
@@ -88,10 +96,11 @@ export function inspectUpgradeRecovery(database: Database) {
         ) {
           throw unsupportedUpgradeWork("manual recovery sequence");
         }
+        budget?.visit("manual recovery clock", rows[0]);
         return rows[0].sequence;
       },
     });
-    const scanner = upgradeScanner(database);
+    const scanner = upgradeScanner(database, budget);
     const counts = { authorizations: 0, continuations: 0, gates: 0, holds: 0 };
     if (clock === null) {
       return { ...scanner.totals, counts };
