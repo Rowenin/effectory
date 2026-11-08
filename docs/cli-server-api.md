@@ -207,3 +207,15 @@ The user-approved [scheduling contract](scheduling-api-draft.md) adds these sche
 List/history accept `--limit` and `--cursor`. RPC payloads use `scheduleId`, `workflowId`, capitalized state literals, and required mutation request keys. CLI generates keys when omitted and prints a recovery key on uncertain delivery. Keys are scoped to schedule ID and actor; only the latest 256 receipts per schedule are retained. Reusing an evicted key is a new mutation.
 
 `SystemHello` advertises `schedule.v1`; `SystemStatus.scheduler` reports scheduler state, reconciled revision, counts and diagnostics. `Run` and `RunSummary` gain optional schedule provenance (`scheduleId`, `generation`, `scheduledFor`, `catchUp`), including watch snapshots. Manual run shapes remain unchanged. Human output points blocked schedules to normal run inspection and wait/cancel commands. See `packages/runtime/src/schedule-protocol.ts` for concrete request/response schemas and the approved contract for timing and retention details.
+
+## Assertion inspection and JUnit export
+
+The implemented `run.checks.v1` capability adds `RunChecks({ runId, attempts?, cursor?, limit? })`, returning `{ items, cursor, snapshot }`. Inspection is metadata-only, defaults to the latest admitted entry and advances through bounded pages, which may be empty while retaining a cursor. `run checks` exposes this RPC with the ordinary JSON conventions.
+
+`run junit` is a CLI exporter over RunGet and RunChecks, with no separate export RPC. It requires a terminal run, stages a complete XML document, and either writes stdout or installs a new `--output` file without overwriting. TaskRun/WorkflowRun accept optional `checks: { failOn? }`; the CLI exposes `--fail-on` and foreground `--junit`. New options are capability-checked before admission. See [checks and JUnit](workflow-checks.md) for exit semantics, thresholds, ownership and storage limits.
+
+## Completed run-history reclamation
+
+`run reclaim plan|apply|inspect|compact` provides explicit offline maintenance. Plans select whole completed source/report families; apply removes detailed and native workflow history while keeping permanent submission records. Artifacts and unfinished consumer protection remain intact. Repeating a retired submission key or mutation returns Conflict, detailed reads return NotFound with an inspect hint, and old history cursors expire.
+
+Stop the daemon before maintenance. Pending work recovers before startup; backup refuses until recovery completes. This adds no RPC or SDK service. See [operator usage](run-history-retention.md) and [verification](run-history-retention-implementation.md).

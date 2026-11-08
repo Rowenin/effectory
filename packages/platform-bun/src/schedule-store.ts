@@ -1,9 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
-import type { WorkflowSchedule } from "@effectory/core";
-import { canonical } from "@effectory/core/internal/boundary";
-import { durationMillis } from "@effectory/core/internal/policy";
 import { OperationError, terminal } from "@effectory/runtime/protocol";
 import type { ScheduleProvenance, Run } from "@effectory/runtime/protocol";
 import {
@@ -21,19 +18,43 @@ import {
   ScheduleSummary,
   SchedulerStatus,
 } from "@effectory/runtime/schedule-protocol";
-import { Cron, Schema } from "effect";
+import type { WorkflowSchedule } from "@offtree/effectory-sdk";
+import { canonical } from "@offtree/effectory-sdk/internal/boundary";
+import { CheckSettings } from "@offtree/effectory-sdk/internal/check-schema";
+import { durationMillis } from "@offtree/effectory-sdk/internal/policy";
+import {
+  EncodedSelection,
+  SelectionDecision,
+} from "@offtree/effectory-sdk/internal/report-selection-schema";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
+import { Cron, Effect, Schema } from "effect";
 
 import type { Submit } from "./host-store.ts";
 import type { createPagination } from "./pagination.ts";
+import { ReportPlan } from "./report-plan.ts";
+import type { EncodedReportPlan } from "./report-plan.ts";
 import { dueSlots, eligibility, missedCountCap } from "./schedule-decision.ts";
 
 const Configuration = Schema.Struct({
   catchUp: ScheduleDescription.fields.catchUp,
   catchUpMillis: Schema.NullOr(Schema.Finite),
+  checks: CheckSettings.pipe(
+    Schema.withDecodingDefaultKey(
+      Effect.sync(() => ({ failOn: "low" as const }))
+    )
+  ),
   cron: Schema.String,
   description: Schema.NullOr(Schema.String),
   input: Schema.Json,
+  reportDecision: Schema.optionalKey(SelectionDecision),
+  reportPlan: ReportPlan.pipe(
+    Schema.withDecodingDefaultKey(Effect.sync(() => []))
+  ),
+  reportSelection: EncodedSelection.pipe(
+    Schema.withDecodingDefaultKey(Effect.sync(() => ({})))
+  ),
   scheduleId: Schema.String,
+  tags: RunTags.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
   timeZone: Schema.String,
   workflowId: Schema.String,
   workflowVersion: Schema.Int,
@@ -94,7 +115,7 @@ export function createScheduleStore(
   database: Database,
   pages: ReturnType<typeof createPagination>,
   host: {
-    readonly getRun: (id: string) => Run;
+    readonly getRun: (id: string) => Pick<Run, "runId" | "status" | "schedule">;
     readonly accepting: () => boolean;
     readonly submit: (
       request: Submit,
@@ -302,7 +323,12 @@ export function createScheduleStore(
   const reconcile = (
     definitions: ReadonlyMap<string, WorkflowSchedule.Definition>,
     revision: string,
-    now: number
+    now: number,
+    reportPlans: ReadonlyMap<string, EncodedReportPlan> = new Map(),
+    reportDecisions: ReadonlyMap<
+      string,
+      typeof SelectionDecision.Type
+    > = new Map()
   ) =>
     database.transaction(() => {
       if (!host.accepting()) {
@@ -319,22 +345,44 @@ export function createScheduleStore(
         }
       }
       for (const definition of definitions.values()) {
+        const reportDecision = reportDecisions.get(definition.id);
         const value: ScheduleConfiguration = {
           catchUp: definition.catchUp,
           catchUpMillis:
             definition.catchUp === "skip"
               ? null
               : durationMillis(definition.catchUp.latestWithin),
+          checks: definition.checks,
           cron: definition.cron,
           description: definition.description ?? null,
           input: definition.encodedInput,
+          reportPlan: Schema.decodeUnknownSync(ReportPlan)(
+            reportPlans.get(definition.id) ?? []
+          ),
+          reportSelection: definition.reportSelection,
+          ...(reportDecision === undefined ? {} : { reportDecision }),
           scheduleId: definition.id,
+          tags: Schema.decodeUnknownSync(RunTags)({
+            ...definition.workflow.tags,
+            ...definition.tags,
+          }),
           timeZone: definition.timeZone,
           workflowId: definition.workflow.id,
           workflowVersion: definition.workflow.spec.version,
         };
-        const { description: _description, ...identity } = value;
-        const digest = hash(identity);
+        const {
+          checks,
+          description: _description,
+          tags: _tags,
+          reportPlan: _reports,
+          reportSelection: _selection,
+          reportDecision: _decision,
+          ...identity
+        } = value;
+        const digest = hash({
+          ...identity,
+          ...(checks.failOn === "low" ? {} : { checks }),
+        });
         const raw = database
           .query("SELECT * FROM host_schedules WHERE scheduleId = ?")
           .get(definition.id);
@@ -452,13 +500,20 @@ export function createScheduleStore(
         try {
           run = host.submit(
             {
+              checks: definition.checks,
               input: definition.input,
               kind: "workflow",
+              reportPlan: definition.reportPlan,
+              reportSelection: definition.reportSelection,
+              ...(definition.reportDecision
+                ? { resolvedReportSelection: definition.reportDecision }
+                : {}),
               requestKey: hash({
                 generation: row.generation,
                 scheduleId: id,
                 scheduledFor: provenance.scheduledFor,
               }),
+              resolvedTags: definition.tags,
               revision: row.revision,
               targetId: definition.workflowId,
             },
@@ -513,6 +568,9 @@ export function createScheduleStore(
       const row = get(id, activeRevision);
       const definition = config(row);
       return ScheduleDescription.make({
+        checks: definition.checks,
+        reportSelection: definition.reportSelection,
+        tags: definition.tags,
         ...summary(row, now),
         catchUp: definition.catchUp,
         description: definition.description,

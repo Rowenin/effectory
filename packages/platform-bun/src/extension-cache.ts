@@ -15,7 +15,6 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { canonical, encode } from "@effectory/core/internal/boundary";
 import type { LockedPackage } from "@effectory/runtime/extension-protocol";
 import {
   ExtensionLock,
@@ -23,6 +22,7 @@ import {
   extensionLimits,
 } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import { canonical, encode } from "@offtree/effectory-sdk/internal/boundary";
 import { Effect, Schema } from "effect";
 
 import {

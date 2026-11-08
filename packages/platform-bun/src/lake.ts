@@ -13,14 +13,6 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import type { Artifact, Task } from "@effectory/core";
-import { TaskRuntimeError } from "@effectory/core";
-import {
-  canonical,
-  decode,
-  checkJsonBudget,
-  jsonLimits,
-} from "@effectory/core/internal/boundary";
 import {
   Content,
   Record as ArtifactRecord,
@@ -30,10 +22,32 @@ import type {
   VersionListRequest,
 } from "@effectory/runtime/lake-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import type { Artifact, Task } from "@offtree/effectory-sdk";
+import { TaskRuntimeError } from "@offtree/effectory-sdk";
+import { binaryPool } from "@offtree/effectory-sdk/internal/binary-admission";
+import {
+  canonical,
+  decode,
+  checkJsonBudget,
+  jsonLimits,
+} from "@offtree/effectory-sdk/internal/boundary";
 import { Context, Effect, Layer, Schema } from "effect";
+import type { Stream } from "effect";
 
+import { attemptEntry } from "./attempt-entry.ts";
 import { HostStore } from "./host-store.ts";
+import { createAutomaticRetention } from "./lake-automatic.ts";
+import { createBinaryStorage, initializeBinaryStorage } from "./lake-binary.ts";
+import { binaryDownload } from "./lake-download.ts";
+import {
+  cleanupReadPins,
+  initializeReadProtection,
+} from "./lake-protection.ts";
+import { initializeQueryIndexes } from "./lake-query-candidates.ts";
 import { lakeQuery } from "./lake-query.ts";
+import { createReader } from "./lake-reader.ts";
+import { createReclamation, resumeReclamation } from "./lake-reclamation.ts";
+import { initializeRetention } from "./lake-retention-store.ts";
 import { lakeVersions } from "./lake-versions.ts";
 import { RepositoryLease } from "./ownership.ts";
 import type { Lease } from "./ownership.ts";
@@ -105,18 +119,31 @@ function projectedFields(artifact: Artifact.Artifact, value: Schema.Json) {
   return fields;
 }
 
+const normalizeRecord = <A extends ArtifactRecord>(record: A) => ({
+  ...record,
+  contentType: record.contentType ?? "application/json",
+  kind: record.kind ?? "json",
+});
+
 const metadata = (raw: unknown) => {
   const stored = Schema.decodeUnknownSync(Stored)(raw);
   return {
     fields: Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Json))(
       JSON.parse(stored.fieldsJson)
     ),
-    record: Schema.decodeUnknownSync(ArtifactRecord)(
-      JSON.parse(stored.metadataJson)
+    record: normalizeRecord(
+      Schema.decodeUnknownSync(ArtifactRecord)(JSON.parse(stored.metadataJson))
     ),
   };
 };
 
+const reference = (record: ArtifactRecord): Artifact.Reference => ({
+  artifactId: record.artifactId,
+  digest: record.digest,
+  schemaId: record.schemaId,
+  schemaVersion: record.schemaVersion,
+  version: record.version,
+});
 export function createLake(
   database: Database,
   directory: string,
@@ -136,6 +163,10 @@ export function createLake(
     CREATE TABLE IF NOT EXISTS lake_schemas (schemaId TEXT NOT NULL, version INTEGER NOT NULL, fieldsJson TEXT NOT NULL, PRIMARY KEY(schemaId,version));
     CREATE TABLE IF NOT EXISTS lake_secret (id INTEGER PRIMARY KEY CHECK(id = 1), secret TEXT NOT NULL);
   `);
+  initializeRetention(database);
+  initializeQueryIndexes(database);
+  initializeReadProtection(database);
+  initializeBinaryStorage(database, directory);
   database
     .query("INSERT OR IGNORE INTO lake_secret VALUES (1, ?)")
     .run(crypto.randomUUID());
@@ -151,6 +182,7 @@ export function createLake(
       },
     });
   const pages = createPagination(secret);
+  const binaryGroups = binaryPool();
   const get = (artifactId: string, version: number, principal: string) => {
     const raw = database
       .query(
@@ -160,12 +192,234 @@ export function createLake(
     if (!raw) {
       throw fail("NotFound", "Artifact version was not found");
     }
+    if (
+      Schema.decodeUnknownSync(
+        Schema.Struct({ reclaimedAt: Schema.NullOr(Schema.String) })
+      )(raw).reclaimedAt !== null
+    ) {
+      throw fail(
+        "NotFound",
+        "Artifact version was reclaimed; use lake versions --include-reclaimed to inspect its history"
+      );
+    }
     return metadata(raw).record;
   };
+  const commit = (
+    identity: Task.Identity,
+    output: string,
+    artifact: Artifact.Any,
+    options: Parameters<Task.RuntimeContext["publish"]>[3],
+    digest: string,
+    size: number,
+    projected: Record<string, Schema.Json>,
+    fingerprint: string,
+    resolveInstallation: () => void = () => {
+      /* JSON has no install intent. */
+    }
+  ) => {
+    const publicationKey = canonical([
+      identity.runId,
+      identity.invocationPath,
+      output,
+      options.key,
+    ]);
+    return database.transaction(() => {
+      lease.assertActive();
+      const admitted = database
+        .query(
+          "SELECT owner, entries FROM host_attempts WHERE runId = ? AND nodeId = ? AND activityAttempt = ?"
+        )
+        .get(identity.runId, identity.invocationPath, identity.attempt);
+      const owner =
+        admitted &&
+        Schema.decodeUnknownSync(Schema.Struct({ owner: Schema.String }))(
+          admitted
+        ).owner;
+      const run = Schema.decodeUnknownSync(
+        Schema.Struct({
+          lastSequence: Schema.Int,
+          principal: Schema.String,
+          status: Schema.String,
+        })
+      )(
+        database
+          .query(
+            "SELECT status, lastSequence, principal FROM host_runs WHERE runId = ?"
+          )
+          .get(identity.runId)
+      );
+      if (
+        database
+          .query("SELECT runId FROM host_fences WHERE runId = ?")
+          .get(identity.runId) ||
+        owner !== lease.token ||
+        ![
+          "Queued",
+          "Running",
+          "Waiting",
+          "Retrying",
+          "NeedsAttention",
+        ].includes(run.status) ||
+        (attemptEntry(identity) !== undefined &&
+          Schema.decodeUnknownSync(Schema.Struct({ entries: Schema.Int }))(
+            admitted
+          ).entries !== attemptEntry(identity))
+      ) {
+        throw fail("Conflict", "Publication attempt is no longer admitted");
+      }
+      const prior = database
+        .query("SELECT * FROM lake_records WHERE publicationKey = ?")
+        .get(publicationKey);
+      if (prior) {
+        if (
+          Schema.decodeUnknownSync(
+            Schema.Struct({ reclaimedAt: Schema.NullOr(Schema.String) })
+          )(prior).reclaimedAt !== null
+        ) {
+          throw fail("Conflict", "Publication was reclaimed");
+        }
+        const previous = Schema.decodeUnknownSync(
+          Schema.Struct({ fingerprint: Schema.String })
+        )(prior);
+        if (previous.fingerprint !== fingerprint) {
+          throw fail(
+            "Conflict",
+            "Publication key was reused with different content or metadata"
+          );
+        }
+        resolveInstallation();
+        return metadata(prior).record;
+      }
+      const fieldsJson = canonical(
+        (artifact.kind === "bytes" ? [] : artifact.queryFields).map(
+          ({ path: fieldPath, types }) => ({
+            path: fieldPath,
+            types,
+          })
+        )
+      );
+      const previousSchema = database
+        .query(
+          "SELECT fieldsJson, kind, contentType FROM lake_schemas WHERE schemaId = ? AND version = ?"
+        )
+        .get(artifact.id, artifact.version);
+      if (previousSchema) {
+        const descriptor = Schema.decodeUnknownSync(
+          Schema.Struct({
+            contentType: Schema.String,
+            fieldsJson: Schema.String,
+            kind: Schema.String,
+          })
+        )(previousSchema);
+        if (
+          descriptor.fieldsJson !== fieldsJson ||
+          descriptor.kind !== artifact.kind ||
+          descriptor.contentType !== artifact.contentType
+        ) {
+          throw fail(
+            "Conflict",
+            "Artifact kind, content type or query fields changed without a schema version change"
+          );
+        }
+      }
+      database
+        .query(
+          "INSERT OR IGNORE INTO lake_schemas(schemaId,version,fieldsJson,kind,contentType) VALUES (?, ?, ?, ?, ?)"
+        )
+        .run(
+          artifact.id,
+          artifact.version,
+          fieldsJson,
+          artifact.kind,
+          artifact.contentType
+        );
+      const artifactId = sha256(
+        canonical([run.principal, identity.taskId, output, options.key])
+      );
+      const version = countRow.pipe(Schema.decodeUnknownSync)(
+        database
+          .query(
+            "SELECT COALESCE(MAX(version),0) + 1 AS value FROM lake_records WHERE artifactId = ?"
+          )
+          .get(artifactId)
+      ).value;
+      checkJsonBudget(projected, jsonLimits);
+      const committedAtMillis = Date.now();
+      const inserted = database
+        .query(
+          "INSERT INTO lake_records(principal,artifactId,version,schemaId,schemaVersion,publicationKey,fingerprint,metadataJson,fieldsJson,retentionJson,committedAtMillis) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?, ?, ?)"
+        )
+        .run(
+          run.principal,
+          artifactId,
+          version,
+          artifact.id,
+          artifact.version,
+          publicationKey,
+          fingerprint,
+          canonical(projected),
+          artifact.retention === undefined
+            ? null
+            : canonical(artifact.retention),
+          committedAtMillis
+        );
+      const record: ArtifactRecord = {
+        ...identity,
+        artifactId,
+        bytes: size,
+        committedAt: new Date(committedAtMillis).toISOString(),
+        contentType: artifact.contentType,
+        digest,
+        kind: artifact.kind,
+        output,
+        schemaId: artifact.id,
+        schemaVersion: artifact.version,
+        sequence: Number(inserted.lastInsertRowid),
+        tags: options.tags ?? {},
+        version,
+      };
+      const normalized = Schema.decodeUnknownSync(ArtifactRecord)(record);
+      database
+        .query("UPDATE lake_records SET metadataJson = ? WHERE sequence = ?")
+        .run(canonical(normalized), normalized.sequence);
+      const sequence = run.lastSequence + 1;
+      database
+        .query(
+          "INSERT INTO host_events VALUES (?, ?, ?, ?, 'ArtifactPublished', ?)"
+        )
+        .run(
+          identity.runId,
+          sequence,
+          `publication/${publicationKey}`,
+          normalized.committedAt,
+          canonical(normalized)
+        );
+      database
+        .query("UPDATE host_runs SET lastSequence = ? WHERE runId = ?")
+        .run(sequence, identity.runId);
+      resolveInstallation();
+      return normalized;
+    })();
+  };
+  const binary = createBinaryStorage(database, directory, lease);
   return {
+    ...createReclamation(database, directory, lease),
+    ...createAutomaticRetention(database, directory, lease),
+    cleanupReadPins: perform(() => cleanupReadPins(database)),
+    download: (artifactId: string, version: number, principal = "owner") =>
+      binaryDownload(directory, () => {
+        lease.assertActive();
+        return get(artifactId, version, principal);
+      }),
     get: (artifactId: string, version: number, principal = "owner") =>
       perform(() => {
         const record = get(artifactId, version, principal);
+        if (record.kind === "bytes") {
+          throw fail(
+            "InvalidInput",
+            `Binary artifact: use effectory lake download ${artifactId} --version ${version} --output <path>; requires an upgraded CLI supporting lake.bytes.v1`
+          );
+        }
         const bytes = readFileSync(path.join(directory, record.digest));
         if (bytes.length !== record.bytes || sha256(bytes) !== record.digest) {
           throw fail(
@@ -183,7 +437,7 @@ export function createLake(
       output: string,
       artifact: Artifact.Artifact,
       value: Schema.Json,
-      options: Task.PublicationOptions
+      options: Parameters<Task.RuntimeContext["publish"]>[3]
     ) =>
       perform(() => {
         checkJsonBudget(value);
@@ -211,144 +465,31 @@ export function createLake(
           schemaVersion: artifact.version,
           tags: options.tags ?? {},
         });
+        const existing = database
+          .query(
+            "SELECT reclaimedAt FROM lake_records WHERE publicationKey = ?"
+          )
+          .get(publicationKey);
+        if (
+          existing &&
+          Schema.decodeUnknownSync(
+            Schema.Struct({ reclaimedAt: Schema.NullOr(Schema.String) })
+          )(existing).reclaimedAt !== null
+        ) {
+          throw fail("Conflict", "Publication was reclaimed");
+        }
         // Flush immutable bytes before committing metadata. An orphan after a crash is harmless.
         atomicBlob(directory, digest, bytes);
-        return database.transaction(() => {
-          lease.assertActive();
-          const admitted = database
-            .query(
-              "SELECT owner FROM host_attempts WHERE runId = ? AND nodeId = ? AND activityAttempt = ?"
-            )
-            .get(identity.runId, identity.invocationPath, identity.attempt);
-          const owner =
-            admitted &&
-            Schema.decodeUnknownSync(Schema.Struct({ owner: Schema.String }))(
-              admitted
-            ).owner;
-          const run = Schema.decodeUnknownSync(
-            Schema.Struct({
-              lastSequence: Schema.Int,
-              principal: Schema.String,
-              status: Schema.String,
-            })
-          )(
-            database
-              .query(
-                "SELECT status, lastSequence, principal FROM host_runs WHERE runId = ?"
-              )
-              .get(identity.runId)
-          );
-          if (
-            database
-              .query("SELECT runId FROM host_fences WHERE runId = ?")
-              .get(identity.runId) ||
-            owner !== lease.token ||
-            !["Queued", "Running", "Waiting", "Retrying"].includes(run.status)
-          ) {
-            throw fail("Conflict", "Publication attempt is no longer admitted");
-          }
-          const prior = database
-            .query("SELECT * FROM lake_records WHERE publicationKey = ?")
-            .get(publicationKey);
-          if (prior) {
-            const previous = Schema.decodeUnknownSync(
-              Schema.Struct({ fingerprint: Schema.String })
-            )(prior);
-            if (previous.fingerprint !== fingerprint) {
-              throw fail(
-                "Conflict",
-                "Publication key was reused with different content or metadata"
-              );
-            }
-            return metadata(prior).record;
-          }
-          const fieldsJson = canonical(
-            artifact.queryFields.map(({ path: fieldPath, types }) => ({
-              path: fieldPath,
-              types,
-            }))
-          );
-          const previousSchema = database
-            .query(
-              "SELECT fieldsJson FROM lake_schemas WHERE schemaId = ? AND version = ?"
-            )
-            .get(artifact.id, artifact.version);
-          if (
-            previousSchema &&
-            Schema.decodeUnknownSync(
-              Schema.Struct({ fieldsJson: Schema.String })
-            )(previousSchema).fieldsJson !== fieldsJson
-          ) {
-            throw fail(
-              "Conflict",
-              "Artifact query fields changed without a schema version change"
-            );
-          }
-          database
-            .query("INSERT OR IGNORE INTO lake_schemas VALUES (?, ?, ?)")
-            .run(artifact.id, artifact.version, fieldsJson);
-          const artifactId = sha256(
-            canonical([run.principal, identity.taskId, output, options.key])
-          );
-          const version = countRow.pipe(Schema.decodeUnknownSync)(
-            database
-              .query(
-                "SELECT COALESCE(MAX(version),0) + 1 AS value FROM lake_records WHERE artifactId = ?"
-              )
-              .get(artifactId)
-          ).value;
-          const projected = projectedFields(artifact, value);
-          checkJsonBudget(projected, jsonLimits);
-          const inserted = database
-            .query(
-              "INSERT INTO lake_records(principal,artifactId,version,schemaId,schemaVersion,publicationKey,fingerprint,metadataJson,fieldsJson) VALUES (?, ?, ?, ?, ?, ?, ?, '{}', ?)"
-            )
-            .run(
-              run.principal,
-              artifactId,
-              version,
-              artifact.id,
-              artifact.version,
-              publicationKey,
-              fingerprint,
-              canonical(projected)
-            );
-          const record: ArtifactRecord = {
-            ...identity,
-            artifactId,
-            bytes: Buffer.byteLength(bytes),
-            committedAt: new Date().toISOString(),
-            digest,
-            output,
-            schemaId: artifact.id,
-            schemaVersion: artifact.version,
-            sequence: Number(inserted.lastInsertRowid),
-            tags: options.tags ?? {},
-            version,
-          };
-          const normalized = Schema.decodeUnknownSync(ArtifactRecord)(record);
-          database
-            .query(
-              "UPDATE lake_records SET metadataJson = ? WHERE sequence = ?"
-            )
-            .run(canonical(normalized), normalized.sequence);
-          const sequence = run.lastSequence + 1;
-          database
-            .query(
-              "INSERT INTO host_events VALUES (?, ?, ?, ?, 'ArtifactPublished', ?)"
-            )
-            .run(
-              identity.runId,
-              sequence,
-              `publication/${publicationKey}`,
-              normalized.committedAt,
-              canonical(normalized)
-            );
-          database
-            .query("UPDATE host_runs SET lastSequence = ? WHERE runId = ?")
-            .run(sequence, identity.runId);
-          return normalized;
-        })();
+        return commit(
+          identity,
+          output,
+          artifact,
+          options,
+          digest,
+          Buffer.byteLength(bytes),
+          projectedFields(artifact, value),
+          fingerprint
+        );
       }).pipe(
         Effect.map((record): Artifact.Reference => ({
           artifactId: record.artifactId,
@@ -368,16 +509,79 @@ export function createLake(
             })
         )
       ),
+    publishBytes: <E, R>(
+      identity: Task.Identity,
+      output: string,
+      artifact: Artifact.Bytes,
+      source: Stream.Stream<Uint8Array, E, R>,
+      options: Parameters<Task.RuntimeContext["publish"]>[3],
+      active: () => boolean = () => true
+    ) =>
+      binary.publish(source, (digest, size, resolveInstallation) => {
+        if (!active()) {
+          throw fail("InvalidInput", "Invocation closed");
+        }
+        if (Buffer.byteLength(canonical(options.tags ?? {})) > 8192) {
+          throw fail(
+            "LimitExceeded",
+            "Artifact tags exceed the publication limit"
+          );
+        }
+        const fingerprint = canonical({
+          contentType: artifact.contentType,
+          digest,
+          kind: "bytes",
+          schemaId: artifact.id,
+          schemaVersion: artifact.version,
+          tags: options.tags ?? {},
+        });
+        return reference(
+          commit(
+            identity,
+            output,
+            artifact,
+            options,
+            digest,
+            size,
+            {},
+            fingerprint,
+            resolveInstallation
+          )
+        );
+      }),
     query: (request: Query, principal: string, cursor?: string) =>
       perform(() =>
         database.transaction(() =>
-          lakeQuery(database, pages, request, principal, cursor)
+          (() => {
+            const page = lakeQuery(database, pages, request, principal, cursor);
+            return { ...page, rows: page.rows.map(normalizeRecord) };
+          })()
         )()
       ),
+    reader: (identity: Task.Identity, active: () => boolean) =>
+      createReader(
+        database,
+        directory,
+        lease,
+        pages,
+        binaryGroups,
+        identity,
+        active
+      ),
+    recoverBinary: binary.recover,
     versions: (request: typeof VersionListRequest.Type, principal: string) =>
       perform(() =>
         database.transaction(() =>
-          lakeVersions(database, pages, request, principal)
+          (() => {
+            const page = lakeVersions(database, pages, request, principal);
+            return {
+              ...page,
+              items: page.items.map((item) => ({
+                ...item,
+                ...normalizeRecord(item),
+              })),
+            };
+          })()
         )()
       ),
   };
@@ -395,7 +599,12 @@ export function lakeLayer(filename: string, directory: string) {
         Effect.sync(() => new Database(filename)),
         (db) => Effect.sync(() => db.close())
       );
-      return createLake(database, directory, lease);
+      const lake = createLake(database, directory, lease);
+      yield* lake.recoverBinary;
+      yield* resumeReclamation(database, directory, lease).pipe(
+        Effect.catch((error) => Effect.logWarning(error.message))
+      );
+      return lake;
     })
   );
 }

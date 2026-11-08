@@ -1,6 +1,7 @@
-import { decode, encode } from "@effectory/core/internal/boundary";
 import { OperationError, terminal } from "@effectory/runtime/protocol";
 import type { Outbox, Run, WaitReceipt } from "@effectory/runtime/protocol";
+import { decode, encode } from "@offtree/effectory-sdk/internal/boundary";
+import { snapshot, validate } from "@offtree/effectory-sdk/internal/tag-state";
 import { Cause, Context, Effect, Exit, Layer, Option, Schema } from "effect";
 import { DurableDeferred } from "effect/workflow";
 
@@ -11,7 +12,11 @@ import { waitDeclaration } from "./graph-execution.ts";
 import { HostStore } from "./host-store.ts";
 import type { SettleWait, Submit } from "./host-store.ts";
 import { execution, notification, stopInvocations } from "./interpreter.ts";
+import { Lake } from "./lake.ts";
 import { validatePolicies } from "./policies.ts";
+import { recoveryContinuation } from "./recovery-continuation.ts";
+import { resolveReportPlan } from "./report-plan.ts";
+import { reconcileReportSources } from "./report-reconciliation.ts";
 
 function dispatch(intent: Outbox) {
   return Effect.gen(function* () {
@@ -19,6 +24,13 @@ function dispatch(intent: Outbox) {
     const run = yield* store.getRun(intent.runId);
     if (intent.kind === "Dispatch") {
       if (run.status !== "Cancelling" && !terminal.has(run.status)) {
+        if (run.kind === "workflow") {
+          yield* store.registerWorkflowInvocation(
+            run.runId,
+            "[]",
+            run.targetId
+          );
+        }
         const id = yield* execution.execute(
           { runId: run.runId },
           { discard: true }
@@ -33,7 +45,7 @@ function dispatch(intent: Outbox) {
       yield* stopInvocations(run.runId);
       yield* run.engineId
         ? execution.interrupt(run.engineId)
-        : store.project(run.runId, "Cancelled");
+        : store.project(run.runId, "Cancelled", null, "Control");
     } else if (
       intent.waitId &&
       run.engineId &&
@@ -90,18 +102,23 @@ function reconcile(run: Run) {
     }
     const result = yield* execution.poll(run.engineId);
     if (Option.isNone(result)) {
+      yield* store.project(run.runId, "Running");
       yield* attentionIfOverdue(run);
       return;
     }
     if (result.value._tag === "Suspended") {
-      if (run.status === "Running" || run.status === "Queued") {
-        yield* store.project(run.runId, "Waiting");
-      }
+      // A suspended root can retain its last result while a child wakes.
+      // project rechecks stop fences and manual holds in its transaction.
+      yield* store.project(
+        run.runId,
+        resources.working(run.runId) > 0 ? "Running" : "Waiting"
+      );
       yield* attentionIfOverdue(run);
       return;
     }
     const { exit } = result.value;
     if (
+      resources.working(run.runId) > 0 ||
       resources.active(run.runId) > 0 ||
       (Exit.isFailure(exit) && !(yield* stopInvocations(run.runId)))
     ) {
@@ -118,22 +135,38 @@ function reconcile(run: Run) {
       const reason = yield* Schema.decodeUnknownEffect(ExecutionFailure)(
         stopped
       ).pipe(Effect.orDie);
-      yield* store.project(run.runId, reason.outcome, reason.detail);
+      yield* store.project(
+        run.runId,
+        reason.outcome,
+        reason.detail,
+        reason.category
+      );
       return;
     }
     const failure = Cause.findErrorOption(exit.cause);
-    yield* Option.isSome(failure)
-      ? store.project(run.runId, failure.value.outcome, failure.value.detail)
-      : store.project(run.runId, "Failed", {
-          category: "Defect",
-          message: "Execution failed unexpectedly",
-        });
+    yield* Option.isSome(failure) && !Cause.hasDies(exit.cause)
+      ? store.project(
+          run.runId,
+          failure.value.outcome,
+          failure.value.detail,
+          failure.value.category
+        )
+      : store.project(
+          run.runId,
+          "Failed",
+          {
+            category: "Defect",
+            message: "Execution failed unexpectedly",
+          },
+          "Defect"
+        );
   });
 }
 
 export const tick = Effect.gen(function* () {
   const store = yield* HostStore;
   yield* store.expire();
+  yield* store.checkReconcile();
   for (const intent of yield* store.outbox()) {
     yield* dispatch(intent);
   }
@@ -149,6 +182,8 @@ export const tick = Effect.gen(function* () {
     }
     after = last.runId;
   }
+  yield* reconcileReportSources;
+  yield* (yield* Lake).cleanupReadPins;
 });
 
 export const Runner = Context.Service<{
@@ -169,7 +204,9 @@ export const runnerLayer = Layer.effect(
     const store = yield* HostStore;
     const catalog = yield* Catalog;
     let accepting = true;
+    const recoveries = yield* recoveryContinuation;
     yield* tick.pipe(
+      Effect.andThen(recoveries),
       Effect.catch(() => Effect.logWarning("Runner reconciliation will retry")),
       Effect.andThen(Effect.sleep("100 millis")),
       Effect.forever,
@@ -178,7 +215,7 @@ export const runnerLayer = Layer.effect(
     return {
       settle: (request, principal) =>
         Effect.gen(function* () {
-          const wait = yield* store.getWait(request.waitId, principal);
+          const wait = yield* store.getWait(request.waitId, principal, true);
           const run = yield* store.getRun(wait.runId, principal);
           const application = yield* catalog.get(run.revision);
           const path = yield* Effect.try({
@@ -213,7 +250,7 @@ export const runnerLayer = Layer.effect(
           return yield* store.settle(request, principal, (input) =>
             codec ? encode(codec, decode(codec, input)) : input
           );
-        }),
+        }).pipe(Effect.scoped),
       stopAccepting: Effect.sync(() => {
         accepting = false;
       }),
@@ -241,6 +278,23 @@ export const runnerLayer = Layer.effect(
               message: "Definition was not found",
             });
           }
+          const resolvedTags = yield* Effect.try({
+            catch: (cause) =>
+              new OperationError({
+                code: "InvalidInput",
+                message: `${String(cause).slice(0, 1900)}; see workflow describe for declared tags`,
+              }),
+            try: () => {
+              const tags = snapshot({
+                ...(definition.kind === "Workflow" ? definition.tags : {}),
+                ...request.tags,
+              });
+              if (definition.kind === "Workflow") {
+                validate(tags, definition.tagSchemas);
+              }
+              return tags;
+            },
+          });
           yield* Effect.try({
             catch: () =>
               new OperationError({
@@ -254,8 +308,31 @@ export const runnerLayer = Layer.effect(
               }
             },
           });
-          return yield* store.submit(request, application.revision, principal);
-        }),
+          const reports = yield* Effect.try({
+            catch: (cause) =>
+              new OperationError({
+                code: "InvalidInput",
+                message: String(cause).slice(0, 1900),
+              }),
+            try: () =>
+              resolveReportPlan(
+                application.registry,
+                request.kind,
+                request.targetId,
+                request.reportSelection ?? {}
+              ),
+          });
+          return yield* store.submit(
+            {
+              ...request,
+              reportPlan: reports.plan,
+              resolvedReportSelection: reports.decision,
+              resolvedTags,
+            },
+            application.revision,
+            principal
+          );
+        }).pipe(Effect.scoped),
     };
   })
 );

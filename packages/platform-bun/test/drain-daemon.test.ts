@@ -31,7 +31,7 @@ test("bounded drain survives uncooperative cleanup and an old receipt cannot dra
       path.join(repository, "effectory.ts"),
       `
 import { appendFileSync } from "node:fs";
-import { Application, Task } from "@effectory/core";
+import { Application, Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 const hold = Task.make({ id: "hold", version: 1, input: Schema.Null, success: Schema.Null, error: Schema.Never, replay: "manual" }, () =>
   Effect.acquireUseRelease(

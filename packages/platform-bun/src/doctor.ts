@@ -1,11 +1,14 @@
-import { statSync, statfsSync } from "node:fs";
+import { existsSync, statSync, statfsSync } from "node:fs";
 import path from "node:path";
 
 import { OperationError } from "@effectory/runtime/protocol";
 import type { DiagnosticFinding } from "@effectory/runtime/system-protocol";
-import { Effect } from "effect";
+import { Effect, Exit, Option } from "effect";
 
+import { Catalog } from "./catalog.ts";
 import { HostStore } from "./host-store.ts";
+import { Lake } from "./lake.ts";
+import { keyDirectory, vaultOperation } from "./vault-store.ts";
 
 /** A bounded read-only health report, not an exhaustive content-integrity audit. */
 export const doctor = (directory: string) =>
@@ -24,6 +27,47 @@ export const doctor = (directory: string) =>
       }),
     });
     const findings: (typeof DiagnosticFinding.Type)[] = [];
+    const catalog = yield* Effect.serviceOption(Catalog);
+    if (Option.isSome(catalog) && catalog.value.vaults) {
+      const { vaults } = catalog.value;
+      const result = yield* Effect.exit(
+        vaultOperation(() => {
+          keyDirectory(vaults.repository);
+          return existsSync(path.join(directory, "vaults.sqlite"))
+            ? vaults.list().map((vault) => ({ vault, ...vaults.status(vault) }))
+            : [];
+        })
+      );
+      if (Exit.isFailure(result)) {
+        findings.push({
+          code: "VaultUnavailable",
+          message:
+            "Vault database or external key directory is unavailable; inspect its configuration and restore damaged storage offline",
+          severity: "Error",
+        });
+      } else {
+        for (const item of result.value) {
+          if (item.state !== "Ready") {
+            findings.push({
+              code: `Vault${item.state}`,
+              message: `Vault ${item.vault}: ${item.state}; ${item.hint}`,
+              severity: "Error",
+            });
+          }
+        }
+      }
+    }
+    const lake = yield* Effect.serviceOption(Lake);
+    if (Option.isSome(lake)) {
+      const status = yield* lake.value.automaticStatus.pipe(Effect.option);
+      if (Option.isSome(status) && status.value.lastError !== null) {
+        findings.push({
+          code: "AutomaticRetention",
+          message: `Reclamation maintenance has unresolved failures; use lake reclaim automatic status${status.value.lastError.planId ? ` and lake reclaim apply ${status.value.lastError.planId}` : ""}`,
+          severity: "Warning",
+        });
+      }
+    }
     const availableBytes = disk.space.bavail * disk.space.bsize;
     if (availableBytes < 67_108_864) {
       findings.push({

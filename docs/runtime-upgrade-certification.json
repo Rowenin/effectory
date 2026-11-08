@@ -1,0 +1,240 @@
+{
+  "architecture": "arm64",
+  "bun": "1.4.3",
+  "platform": "darwin",
+  "predecessor": {
+    "filename": "/private/tmp/effectory-upgrade-baseline/effectory-darwin-arm64",
+    "sha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f"
+  },
+  "target": {
+    "filename": "/private/tmp/effectory-upgrade-certification/release-bin/effectory-darwin-arm64",
+    "sha256": "02c99046b503871a62a6b50c579ad83ba8e2ade44ae3ad78b80ce72029a058d0"
+  },
+  "breaking": {
+    "filename": "/private/tmp/effectory-upgrade-certification/release-breaking-bin/effectory-darwin-arm64",
+    "sha256": "f5ecb258c6c2fed94efab55b612b5cfa6f318bc45be5f3ef31a4dc170eeb152f"
+  },
+  "results": {
+    "wait-rollback": {
+      "digest": "8a4340ba32121c912c74b4f6be4e019d5a75338feaa126349244bc4e0ac45988",
+      "result": {
+        "completedManualHandlerExecutions": 1,
+        "copyDigest": "37f2d17bb21fddabdff514999cdd6c78160ef0bc4edbc6f7afd3c91d3e7b004f",
+        "copyEntries": 13,
+        "kind": "actual-old-new-upgrade-and-original-host-rollback",
+        "limitations": [
+          "Waiting-run and rollback proof; lifecycle and offline-writer cases are recorded separately"
+        ],
+        "predecessorSha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+        "preserved": [
+          "accepted run identity",
+          "pinned revision",
+          "completed manual activity result",
+          "pending approval identity",
+          "submission request-key receipt"
+        ],
+        "result": "already-completed-continued",
+        "revision": "577279add5a307167944a420cc7c8e564f0eda9322b79f8825288a6f4e097f25",
+        "runId": "7a64b05a-b50e-4ce4-b596-766455c5a328",
+        "targetBuild": "677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc",
+        "targetSha256": "02c99046b503871a62a6b50c579ad83ba8e2ade44ae3ad78b80ce72029a058d0"
+      }
+    },
+    "lifecycle": {
+      "digest": "0af440d8dfe0098d6c264305165e76ab7d67b55725c1aa35516d02734a40e05f",
+      "result": {
+        "kind": "actual-old-new-lifecycle",
+        "manualEntries": 2,
+        "planId": "8a3666fe-9b97-4948-a3cb-5b2073afbd8a",
+        "preserved": [
+          "sleep",
+          "retry backoff",
+          "manual hold and authorization",
+          "report obligation/run identity",
+          "reader pins",
+          "report-source protection",
+          "schedule generation and watermark",
+          "encrypted vault and external key",
+          "request-key receipts"
+        ],
+        "reportCompletions": 1,
+        "retryAttempts": [1, 2],
+        "root": "/tmp/effectory-upgrade-lifecycle-vmB8Es",
+        "sourceBuild": "9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97",
+        "targetBuild": "677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc",
+        "targetSha256": "02c99046b503871a62a6b50c579ad83ba8e2ade44ae3ad78b80ce72029a058d0"
+      }
+    },
+    "writers": {
+      "digest": "6913348f3498573aacec8954e5ed63224f101d3bcd2f0b719f71beeb5e555c06",
+      "result": {
+        "externalKeyAbsence": "typed failure, no silent replacement; original key still decrypts",
+        "kind": "actual-predecessor-writers-after-real-migration",
+        "limitations": [
+          "SQLite shared-memory bytes may change on an old read-only open; logical data and all other source bytes were unchanged"
+        ],
+        "predecessorSha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+        "results": [
+          {
+            "args": ["daemon", "serve"],
+            "error": "Repository credentials are unavailable\n",
+            "exit": 3
+          },
+          {
+            "args": [
+              "run",
+              "reclaim",
+              "plan",
+              "--completed-before",
+              "2027-01-01T00:00:00Z"
+            ],
+            "error": "Run reclamation storage operation failed\n",
+            "exit": 3
+          },
+          {
+            "args": [
+              "run",
+              "reclaim",
+              "inspect",
+              "03db60f3-73d9-4fec-8059-772373e8ea14"
+            ],
+            "error": "Run reclamation storage operation failed\n",
+            "exit": 3
+          },
+          {
+            "args": ["vault", "reset", "credentials", "--discard"],
+            "error": "Vault Corrupt: unsupported database version\n",
+            "exit": 3
+          },
+          {
+            "args": [
+              "vault",
+              "key",
+              "import",
+              "credentials",
+              "--file",
+              "/tmp/effectory-upgrade-lifecycle-vmB8Es/escrow.json"
+            ],
+            "error": "Vault Corrupt: unsupported database version\n",
+            "exit": 3
+          },
+          {
+            "args": ["extension", "restore"],
+            "error": "Extension lock or repository files are invalid or unavailable\n",
+            "exit": 2
+          }
+        ],
+        "targetBuild": "677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc",
+        "targetSha256": "02c99046b503871a62a6b50c579ad83ba8e2ade44ae3ad78b80ce72029a058d0"
+      }
+    },
+    "breaking": {
+      "digest": "51f3c8900edaae89debb0a74331879c7b50a5c4297a2d74f550f7077e7ab3a5b",
+      "result": {
+        "archivedCodeLoaded": false,
+        "completedTransition": "Complete",
+        "describeExit": 5,
+        "historicalStatus": "Succeeded",
+        "kind": "actual-incompatible-host-fixture",
+        "limitations": [
+          "Deliberately incompatible contract fixture; this v2 edge will not ship"
+        ],
+        "newRunStatus": "Succeeded",
+        "refusalExit": 5,
+        "refusalStatus": "Blocked",
+        "sourceBuild": "9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97",
+        "targetBuild": "c55ea217360a7bbce7c46b9c4306184ecb667e1e3cc5b56b260dccd0e83733c0",
+        "targetSha256": "f5ecb258c6c2fed94efab55b612b5cfa6f318bc45be5f3ef31a4dc170eeb152f"
+      }
+    }
+  },
+  "kind": "concrete-executable-upgrade-certification",
+  "scope": {
+    "sourceBuild": "9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97",
+    "targetBuild": "677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc",
+    "sourceStorage": 1,
+    "targetStorage": 2,
+    "executionContract": "effectory.execution/v1",
+    "effect": "4.0.5",
+    "platform": "darwin",
+    "architecture": "arm64"
+  },
+  "verification": {
+    "status": "passed",
+    "typecheck": {
+      "path": "/tmp/effectory-upgrade-certification/release-typecheck.log",
+      "sha256": "659cd0cb96e417abbda0d6caaf5958ba03c82d8840f3ada7a6b25dbea92eeca9"
+    },
+    "check": {
+      "path": "/tmp/effectory-upgrade-certification/release-check.log",
+      "sha256": "413bb530dba825d02db7e5faa29200686e35872417b978fdc885bd6148bd2b98"
+    },
+    "sourceManifest": {
+      "path": "/tmp/effectory-upgrade-certification/release-source-manifest.json",
+      "sha256": "11b1d24e77ec1a200c1446a3cebb4b57dba0f56ada5e7d95632b8885caede77e",
+      "repositoryPath": "docs/runtime-upgrade-source-manifest.json",
+      "repositorySha256": "11b1d24e77ec1a200c1446a3cebb4b57dba0f56ada5e7d95632b8885caede77e"
+    },
+    "focused": {
+      "pass": 35,
+      "fail": 0,
+      "assertions": 224,
+      "files": 5,
+      "seconds": 16.94,
+      "path": "/tmp/effectory-upgrade-certification/release-focused.log",
+      "sha256": "fc4c07705c3b5d7b080605d653c55750a19b590e4d1d56cc620ec9a6a36afeaa"
+    },
+    "linuxComponents": {
+      "pass": 70,
+      "fail": 0,
+      "assertions": 350,
+      "files": 9,
+      "seconds": 54.64,
+      "path": "/tmp/effectory-upgrade-certification/release-linux-components.log",
+      "sha256": "e5d55b0532dc2a809787648ca65b668a0a525deffe857f6cf9e106b24b966131",
+      "platform": "linux",
+      "architecture": "arm64",
+      "image": "oven/bun:1.4.3",
+      "imageId": "sha256:3755480cb7c04fb95b5ae2f59236da1ace9f1a49c718b224837125ab1116ea4a"
+    },
+    "fullSuite": {
+      "status": "passed",
+      "pass": 709,
+      "fail": 0,
+      "assertions": 6035,
+      "files": 166,
+      "seconds": 1221.02,
+      "path": "/tmp/effectory-upgrade-certification/release-full-tests.log",
+      "sha256": "e33c56d0bc5871328f9f2cc040e122591a7fbeb7d68f97650283a076e2766377"
+    },
+    "sourceStability": {
+      "files": 450,
+      "changed": [],
+      "added": [],
+      "missing": [],
+      "path": "/tmp/effectory-upgrade-certification/release-source-stability.json",
+      "sha256": "57b586a7188c998447f17f4c24b9475e5a6fede7991fa83af23314dace5a43e6"
+    },
+    "finalDocumentationCheck": {
+      "path": "/tmp/effectory-upgrade-certification/final-check.log",
+      "sha256": "967b852d91f789d844b3b4b77d7b41d0d6ac7f1c02587a9aab783fbcc8227db2",
+      "exitCode": 0
+    }
+  },
+  "limitations": [
+    "Only the exact listed Darwin ARM64 predecessor/target edge is certified by these executable proofs.",
+    "Linux results are component tests, not an old/new executable transition.",
+    "The breaking executable deliberately changes the contract for testing; that contract is not shipped.",
+    "A restored image rewinds deduplication state and cannot reconcile external actions taken after capture.",
+    "Source file manifests exclude node_modules and generated external test repositories."
+  ],
+  "subsequentTargets": [
+    {
+      "targetBuild": "fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2",
+      "targetStorage": 3,
+      "executableSha256": "a69d21b724f053b90453e29d9dd408523c4cfc40b76974bdebcc4ff302a286bf",
+      "evidence": "docs/runtime-upgrade-format2-certification.json",
+      "status": "Certified: executable proofs, required repository checks and unchanged-source audit passed; see linked record"
+    }
+  ]
+}

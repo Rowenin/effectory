@@ -58,15 +58,15 @@ test("status compares the recorded version and nearest installed SDK with the ho
     // Hoisted to a workspace root, as package managers do.
     await install(
       directory,
-      "@effectory/core",
-      hostVersions["@effectory/core"]
+      "@offtree/effectory-sdk",
+      hostVersions["@offtree/effectory-sdk"]
     );
     await install(directory, "effect", "4.0.0");
     const mismatch = await Effect.runPromise(projectStatus(project, version));
     expect(mismatch.project.status).toBe("Mismatch");
     expect(
       Object.fromEntries(mismatch.packages.map((pkg) => [pkg.name, pkg.status]))
-    ).toEqual({ "@effectory/core": "Match", effect: "Mismatch" });
+    ).toEqual({ "@offtree/effectory-sdk": "Match", effect: "Mismatch" });
     const warning = projectWarning(mismatch);
     expect(warning).toContain("set up with Effectory 1.0.0, this is 1.2.3");
     expect(warning).toContain(
@@ -103,14 +103,16 @@ test("upgrade records the version and pins exact SDK versions in place", async (
     expect(first.changes).toEqual([
       {
         from: null,
-        name: "@effectory/core",
-        to: hostVersions["@effectory/core"],
+        name: "@offtree/effectory-sdk",
+        to: hostVersions["@offtree/effectory-sdk"],
       },
       { from: "^4.0.0", name: "effect", to: hostVersions.effect },
     ]);
     expect(await readJson(filename)).toEqual({
       dependencies: { effect: hostVersions.effect, zod: "4.0.0" },
-      devDependencies: { "@effectory/core": hostVersions["@effectory/core"] },
+      devDependencies: {
+        "@offtree/effectory-sdk": hostVersions["@offtree/effectory-sdk"],
+      },
       effectory: { note: "kept", version },
       name: "existing",
       scripts: { test: "bun test" },
@@ -139,7 +141,7 @@ test("init scaffolds a project without replacing existing files", async () => {
     expect(manifest.effectory).toEqual({ version });
     expect(
       await readFile(path.join(project, "effectory.ts"), "utf-8")
-    ).toContain('from "@effectory/core"');
+    ).toContain('from "@offtree/effectory-sdk"');
     expect(await readFile(path.join(project, ".gitignore"), "utf-8")).toBe(
       ".effectory/\nnode_modules/\n"
     );

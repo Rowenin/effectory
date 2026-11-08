@@ -21,8 +21,13 @@ An extension declares contributions. The host chooses which installed extension 
 Suppose a shared contract package exports `FetchRelease` and `PublishSummary`, and `CachedReleases` is an application service whose `fetch` satisfies the original FetchRelease input/success/error contract and replay obligations.
 
 ```ts
-import { Extension, Task, Workflow, WorkflowPatch } from "@effectory/core";
 import { FetchRelease, PublishSummary } from "@example/release-contracts";
+import {
+  Extension,
+  Task,
+  Workflow,
+  WorkflowPatch,
+} from "@offtree/effectory-sdk";
 import { Effect } from "effect";
 
 import { CachedReleases } from "./cached-releases";
@@ -91,8 +96,8 @@ effectory extension add github:acme/effectory-release-tools@v1.0.0 --as ReleaseT
 ```
 
 ```ts
-import { Application, Extension } from "@effectory/core";
 import { FetchRelease, PublishSummary } from "@example/release-contracts";
+import { Application, Extension } from "@offtree/effectory-sdk";
 
 import { ReleaseTools } from "./effectory.extensions";
 import { ReleaseServicesLive } from "./services";

@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Artifact } from "@effectory/core";
+import { Artifact } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import { createStore } from "../src/host-store.ts";
@@ -63,20 +63,19 @@ test("a lake query exceeding its scan budget fails without a partial successful 
         );
         // Populate valid metadata fixtures directly to isolate query work from
         // 10000 blob fsyncs and task admissions.
-        const insert =
-          database.prepare(`INSERT INTO lake_records(principal, artifactId, version, schemaId, schemaVersion, publicationKey, fingerprint, metadataJson, fieldsJson)
-        SELECT principal, ?, 1, schemaId, schemaVersion, ?, fingerprint, json_set(metadataJson, '$.artifactId', ?, '$.sequence', ?), fieldsJson FROM lake_records WHERE sequence = 1`);
-        database.transaction(() => {
-          for (let index = 0; index < 10_000; index += 1) {
-            insert.run(
-              `artifact-${index}`,
-              `publication-${index}`,
-              `artifact-${index}`,
-              index + 2
-            );
-          }
-        })();
-        insert.finalize();
+        database.exec(`WITH RECURSIVE numbers(n) AS (
+          VALUES(0) UNION ALL SELECT n + 1 FROM numbers WHERE n < 9999
+        ), seed AS MATERIALIZED (
+          SELECT principal, schemaId, schemaVersion, fingerprint, metadataJson, fieldsJson
+          FROM lake_records WHERE sequence = 1
+        ) INSERT INTO lake_records(principal, artifactId, version, schemaId, schemaVersion, publicationKey, fingerprint, metadataJson, fieldsJson)
+        SELECT principal, 'artifact-' || n, 1, schemaId, schemaVersion,
+          'publication-' || n, fingerprint,
+          json_set(metadataJson, '$.artifactId', 'artifact-' || n, '$.sequence', n + 2), fieldsJson
+        FROM numbers, seed`);
+        expect(
+          database.query("SELECT count(*) AS count FROM lake_records").get()
+        ).toEqual({ count: 10_001 });
         const request = {
           artifact: { schemaId: artifact.id, schemaVersion: 1 },
           limit: 1,

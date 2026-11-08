@@ -42,6 +42,7 @@
     "*.ts",
     "flows/**/*.ts",
     "examples/**/*.ts",
+    "extensions/**/*.ts",
     "packages/**/*.ts",
     "scripts/**/*.ts"
   ]

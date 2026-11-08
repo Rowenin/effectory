@@ -1,8 +1,13 @@
-import type { Application } from "@effectory/core";
-import { decode } from "@effectory/core/internal/boundary";
 import { OperationError } from "@effectory/runtime/protocol";
 import { ControlPlane } from "@effectory/runtime/rpc";
 import type { ServerHello } from "@effectory/runtime/rpc";
+import type { Application } from "@offtree/effectory-sdk";
+import { decode } from "@offtree/effectory-sdk/internal/boundary";
+import { Source as ReportSource } from "@offtree/effectory-sdk/internal/report-history";
+import {
+  results as reportResults,
+  sources as reportSources,
+} from "@offtree/effectory-sdk/internal/report-state";
 import { Clock, Context, Effect, Schema } from "effect";
 
 import { Catalog } from "./catalog.ts";
@@ -15,9 +20,12 @@ import { graphPlan } from "./graph-plan.ts";
 import { HostStore } from "./host-store.ts";
 import { Lake } from "./lake.ts";
 import { validatePolicies } from "./policies.ts";
+import { reportPlan } from "./report-plan.ts";
 import { runOutputs } from "./run-outputs.ts";
-import { createRunWatcher } from "./run-watch.ts";
+import { runSummary } from "./run-summary.ts";
+import { RunWatcher } from "./run-watch.ts";
 import { Runner } from "./runner.ts";
+import { vaultHandlers } from "./vault-control.ts";
 
 export const ServerIdentity = Context.Service<{
   readonly repositoryId: string;
@@ -26,10 +34,13 @@ export const ServerIdentity = Context.Service<{
   readonly shutdown: (deadline: number) => void;
 }>("effectory/ServerIdentity");
 const limits = {
+  activeReportHandlers: 4,
+  activeReportRuns: 4,
   activeRuns: 1000,
   activeTaskHandlers: 32,
   artifactBytes: 1_048_576,
   artifactProjectionBytes: 1_048_576,
+  binaryArtifactBytes: 16_777_216,
   bundleBytes: 16_777_216,
   cancellationReceiptsPerRun: 64,
   daemonInstanceHistory: 10_000,
@@ -61,7 +72,15 @@ const limits = {
   observers: 16,
   outputPageBytes: 2_097_152,
   pageSize: 200,
+  recoveryAuthorizationsPerAttempt: 16,
+  recoveryGenerationsPerRun: 64,
   removedSchedules: 1024,
+  reportAttachments: 128,
+  reportAttachmentsPerScope: 16,
+  reportInspectionBytes: 2_097_152,
+  reportMarkdownBytes: 262_144,
+  reportSummaryInvocations: 10_000,
+  reportSummaryMillis: 5000,
   requestBytes: 1_048_576,
   resultBytes: 1_048_576,
   retainedRevisions: 128,
@@ -115,18 +134,48 @@ const describe = (kind: "task" | "workflow", id: string, revision?: string) =>
         error: Schema.toJsonSchemaDocument(target.errorSchema),
         id,
         input: Schema.toJsonSchemaDocument(target.inputSchema),
+        reports: reportPlan(application.registry, kind, id).filter(
+          (item) =>
+            kind === "workflow" ||
+            (item.targetKind === "task" && item.targetId === id)
+        ),
         revision: application.revision,
         success: Schema.toJsonSchemaDocument(target.successSchema),
         version: target.spec.version,
         ...(target.kind === "Task"
           ? {
+              outputs: Object.fromEntries(
+                Object.entries(target.spec.outputs ?? {}).map(
+                  ([name, artifact]) => [
+                    name,
+                    {
+                      contentType: artifact.contentType,
+                      id: artifact.id,
+                      kind: artifact.kind,
+                      version: artifact.version,
+                    },
+                  ]
+                )
+              ),
               providerId: target.providerId ?? null,
               replay: target.spec.replay,
+              reportResult: reportResults.has(target.successSchema),
+              reportSource:
+                target.inputSchema === ReportSource ||
+                reportSources.has(target.inputSchema),
             }
-          : {}),
+          : {
+              tagSchemas: Object.fromEntries(
+                Object.entries(target.tagSchemas).map(([key, codec]) => [
+                  key,
+                  Schema.toJsonSchemaDocument(Schema.toType(codec)),
+                ])
+              ),
+              tags: target.tags,
+            }),
       })
     );
-  });
+  }).pipe(Effect.scoped);
 const validate = (
   kind: "task" | "workflow",
   id: string,
@@ -156,12 +205,12 @@ const validate = (
       revision: application.revision,
       valid: validation._tag === "Success",
     };
-  });
+  }).pipe(Effect.scoped);
 
 export const controlPlaneLayer = ControlPlane.toLayer(
   Effect.gen(function* () {
     const store = yield* HostStore;
-    const watcher = createRunWatcher(store);
+    const watcher = yield* RunWatcher;
     const runner = yield* Runner;
     const lake = yield* Lake;
     const catalog = yield* Catalog;
@@ -172,13 +221,25 @@ export const controlPlaneLayer = ControlPlane.toLayer(
         extensions.installed,
         (installed): typeof ServerHello.Type => ({
           capabilities: [
+            "run.checks.v1",
+            "run-tags.v1",
+            "run.recovery.v1",
+            "reports.v1",
+            "reports.search.v1",
+            "reports.workflow-invocations.v1",
+            "reports.selection.v1",
+            "vault.v1",
             "schedule.v1",
             "graph.v1",
             "task.v1",
             "lake.ast.v1",
+            "lake.bytes.v1",
+            "lake.retention.v1",
+            "lake.retention.automatic.v1",
             "extension.github.v1",
             "inspection.paging.v1",
             "run.watch.v1",
+            "run.watch.stream.v1",
             "system.drain.v1",
             "system.doctor.v1",
           ],
@@ -212,7 +273,7 @@ export const controlPlaneLayer = ControlPlane.toLayer(
         installedRevision: installed.revision,
         lock: installed.lock,
       };
-    });
+    }).pipe(Effect.scoped);
     return {
       ExtensionAdd: (request) =>
         extensions.accept({ ...request, kind: "Add" }, "owner"),
@@ -256,15 +317,55 @@ export const controlPlaneLayer = ControlPlane.toLayer(
         extensions.accept({ ...request, kind: "Update" }, "owner"),
       LakeGet: ({ artifactId, version }) => lake.get(artifactId, version),
       LakeQuery: ({ query, cursor }) => lake.query(query, "owner", cursor),
+      LakeReclamationApply: (request) =>
+        lake.applyReclamation(request, "owner"),
+      LakeReclamationAutomaticGet: () => lake.automaticStatus,
+      LakeReclamationAutomaticSet: (request) => lake.automaticSet(request),
+      LakeReclamationPlan: (request) => lake.planReclamation(request, "owner"),
       LakeVersions: (request) => lake.versions(request, "owner"),
       OperationGet: ({ operationId }) => extensions.get(operationId, "owner"),
       OperationList: (request) => extensions.operations(request, "owner"),
+      ReportCancel: (request) =>
+        "sourceRunId" in request
+          ? store.reportCancelSource(request, "owner")
+          : store.reportCancel(request, "owner"),
+      ReportGet: ({ reportId }) => store.reportInspect(reportId, "owner"),
+      ReportRetry: (request) =>
+        store.reportRetry(request, "owner", catalog.assertExecutable),
+      ReportSearch: (request) => store.reportSearch(request, "owner"),
       RunCancel: (request) => store.cancelRequest(request, "owner"),
+      RunChecks: (request) => store.checkList(request, "owner"),
       RunEvents: (request) => store.eventPage(request, "owner"),
       RunGet: ({ runId }) => store.getRun(runId, "owner"),
       RunList: (request) => store.history(request, "owner"),
       RunLogs: (request) => store.logPage(request, "owner"),
       RunOutputs: (request) => runOutputs(request, "owner"),
+      RunRecover: (request) =>
+        Effect.gen(function* () {
+          const previous = yield* store.recoveryLookup(request, "owner");
+          if (previous) {
+            return previous;
+          }
+          const run = yield* store.getRun(request.runId, "owner");
+          const available = yield* catalog
+            .get(run.revision)
+            .pipe(
+              Effect.match({ onFailure: () => false, onSuccess: () => true })
+            );
+          return yield* store.recover(request, "owner", available);
+        }),
+      RunRecoveryGet: (request) =>
+        Effect.gen(function* () {
+          const run = yield* store.getRun(request.runId, "owner");
+          const available = yield* catalog
+            .get(run.revision)
+            .pipe(
+              Effect.match({ onFailure: () => false, onSuccess: () => true })
+            );
+          return yield* store.recoveryGet(request, "owner", available);
+        }),
+      RunReports: (request) => store.reportList(request, "owner"),
+      RunSummarize: ({ runId }) => runSummary(runId, "owner"),
       RunWatch: ({ runId, afterSequence }) =>
         watcher.watch(runId, "owner", afterSequence),
       ScheduleGet: ({ scheduleId }) =>
@@ -313,6 +414,7 @@ export const controlPlaneLayer = ControlPlane.toLayer(
                 message: "Repository identity does not match",
               })
             ),
+      ...vaultHandlers(catalog),
       SystemStatus: () =>
         Effect.gen(function* () {
           const base = yield* hello();
@@ -328,6 +430,7 @@ export const controlPlaneLayer = ControlPlane.toLayer(
               daemon.drain === null
                 ? ("Ready" as const)
                 : ("Draining" as const),
+            reports: yield* store.reportSystemStatus(),
             scheduler,
           };
         }),
@@ -375,10 +478,20 @@ export const controlPlaneLayer = ControlPlane.toLayer(
               extensions: application.registry.extensions,
               id,
               nodes: graphPlan(workflow.graph, application.registry),
+              reports: reportPlan(application.registry, "workflow", id),
               revision: checked.revision,
+              tagSchemas: Object.fromEntries(
+                Object.entries(workflow.definition.tagSchemas).map(
+                  ([key, codec]) => [
+                    key,
+                    Schema.toJsonSchemaDocument(Schema.toType(codec)),
+                  ]
+                )
+              ),
+              tags: workflow.definition.tags,
             })
           );
-        }),
+        }).pipe(Effect.scoped),
       WorkflowRun: ({ id, ...request }) =>
         runner.submit({ ...request, kind: "workflow", targetId: id }, "owner"),
       WorkflowValidate: ({ id, revision, input }) =>

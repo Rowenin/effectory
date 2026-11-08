@@ -10,7 +10,7 @@ Proposed package boundaries:
 
 | Package | Responsibility |
 | --- | --- |
-| `@effectory/core` | Specs, identifiers, errors, schema codecs, service contracts |
+| `@offtree/effectory-sdk` | Specs, identifiers, errors, schema codecs, service contracts |
 | `@effectory/runtime` | Registry compilation, RunService, workflow interpreter, engine adapter |
 | `@effectory/lake` | Artifact publication, catalog, query AST, retention |
 | `@effectory/extensions` | Manifest/lockfile, GitHub source, verification, activation |

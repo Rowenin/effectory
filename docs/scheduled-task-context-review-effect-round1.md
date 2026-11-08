@@ -36,9 +36,9 @@ Labels used below: **[fact]** means I inspected it in source or checked it with 
 
 ### B1. Pick one schema owner and avoid a new protocol→core runtime edge
 
-**[fact]** No file in `packages/runtime/src` imports `@effectory/core` today. Every protocol module imports only `effect`. The draft's claim that runtime "already permit[s] importing core" is true only of `package.json`.
+**[fact]** No file in `packages/runtime/src` imports `@offtree/effectory-sdk` today. Every protocol module imports only `effect`. The draft's claim that runtime "already permit[s] importing core" is true only of `package.json`.
 
-If `ScheduleProvenance` reuses `Task.ScheduleContext`, then `protocol.ts` loads `@effectory/core/Task` into every RPC, CLI and history consumer. That module brings in `boundary`, `errors`, `json-budget` and `Layer`. This would be the first runtime-level edge from protocol to core.
+If `ScheduleProvenance` reuses `Task.ScheduleContext`, then `protocol.ts` loads `@offtree/effectory-sdk/Task` into every RPC, CLI and history consumer. That module brings in `boundary`, `errors`, `json-budget` and `Layer`. This would be the first runtime-level edge from protocol to core.
 
 The draft also leaves the namespace open ("Evaluate whether…"), and it would introduce two public names, `ScheduleContext` and `ScheduleProvenance`, for one schema.
 

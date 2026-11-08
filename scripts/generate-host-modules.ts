@@ -61,7 +61,9 @@ function coreSpecifiers() {
   return Object.keys(manifest.exports)
     .filter((key) => key !== "./package.json")
     .map((key) =>
-      key === "." ? "@effectory/core" : `@effectory/core/${key.slice(2)}`
+      key === "."
+        ? "@offtree/effectory-sdk"
+        : `@offtree/effectory-sdk/${key.slice(2)}`
     );
 }
 

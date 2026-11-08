@@ -27,7 +27,7 @@ Resource removal/replacement semantics should not become task cancellation or ar
 Every option must express the same workflow: fetch a release, render a summary, publish the summary, return its URL. We deliberately make rendering a task for comparison; real users can keep trivial pure formatting as a transformation.
 
 ```ts
-import { Application, Task, Workflow } from "@effectory/core";
+import { Application, Task, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 const Input = Schema.Struct({ repository: Schema.String });
@@ -171,7 +171,7 @@ const ReleaseSummary = ReleaseWorkflow.build((graph) => {
 ## Option 4 — Named step specification object
 
 ```ts
-import { Ref, Step } from "@effectory/core";
+import { Ref, Step } from "@offtree/effectory-sdk";
 
 const ReleaseSummary = ReleaseWorkflow.steps({
   fetch: Step.task(FetchRelease, {

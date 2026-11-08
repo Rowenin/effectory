@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -51,8 +51,24 @@ test("a compiled binary runs a project that has no node_modules", async () => {
 
     // Positional path, as in `swamp repo init ./my-project`.
     run([binary, "init", project, "--json"], directory);
+    cli("agent", "setup", "--harness", "codex", "--harness", "claude-code");
+    const agent = JSON.parse(cli("agent", "status").stdout) as {
+      healthy: boolean;
+    };
+    expect(agent.healthy).toBe(true);
+    expect(
+      readFileSync(
+        path.join(project, ".agents/skills/effectory-build/SKILL.md"),
+        "utf-8"
+      )
+    ).toBe(
+      readFileSync(
+        path.join(workspace, "packages/cli/assets/effectory-build/SKILL.md"),
+        "utf-8"
+      )
+    );
     const started = cli("daemon", "start");
-    expect(started.stderr).toContain("@effectory/core is not installed");
+    expect(started.stderr).toContain("@offtree/effectory-sdk is not installed");
     const result = JSON.parse(
       cli("workflow", "run", "hello/run", "--input", '{"name":"Ada"}').stdout
     ) as { status: string; result: unknown };

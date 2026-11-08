@@ -7,7 +7,7 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.5",
         "@effect/sql-sqlite-bun": "4.0.5",
-        "@effectory/core": "workspace:*",
+        "@offtree/effectory-sdk": "workspace:*",
         "effect": "4.0.5",
       },
       "devDependencies": {
@@ -20,9 +20,21 @@
         "ultracite": "8.0.1",
       },
     },
+    "extensions/aws-vault": {
+      "name": "@offtree/effectory-extension-aws-vault",
+      "version": "0.1.0",
+      "dependencies": {
+        "@distilled.cloud/aws": "1.0.0-rc.18",
+        "@distilled.cloud/core": "1.0.0-rc.18",
+      },
+      "peerDependencies": {
+        "@offtree/effectory-sdk": "0.1.0",
+        "effect": "4.0.5",
+      },
+    },
     "packages/cli": {
-      "name": "@effectory/cli",
-      "version": "0.0.0",
+      "name": "@offtree/effectory-cli",
+      "version": "0.1.0",
       "bin": {
         "effectory": "./src/main.ts",
       },
@@ -34,28 +46,28 @@
       },
     },
     "packages/core": {
-      "name": "@effectory/core",
-      "version": "0.0.0",
+      "name": "@offtree/effectory-sdk",
+      "version": "0.1.0",
       "dependencies": {
         "effect": "4.0.5",
       },
     },
     "packages/platform-bun": {
       "name": "@effectory/platform-bun",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
         "@effect/platform-bun": "4.0.5",
         "@effect/sql-sqlite-bun": "4.0.5",
-        "@effectory/core": "workspace:*",
         "@effectory/runtime": "workspace:*",
+        "@offtree/effectory-sdk": "workspace:*",
         "effect": "4.0.5",
       },
     },
     "packages/runtime": {
       "name": "@effectory/runtime",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "dependencies": {
-        "@effectory/core": "workspace:*",
+        "@offtree/effectory-sdk": "workspace:*",
         "effect": "4.0.5",
       },
     },
@@ -75,6 +87,12 @@
     "@clack/core": ["@clack/core@1.5.1", "", { "dependencies": { "fast-wrap-ansi": "0.2.2", "sisteransi": "1.0.5" } }, "sha512-iHTrHA8MtVuLl2TfZySmcKv1qO2PoyC9Z7pfSDozEuV5vtY3/wcOPKJXlqJ5Oq2Cx5DDGQGAMVx6HZfRRoVEbQ=="],
 
     "@clack/prompts": ["@clack/prompts@1.8.1", "", { "dependencies": { "@clack/core": "1.5.1", "fast-string-width": "3.0.2", "fast-wrap-ansi": "0.2.2", "sisteransi": "1.0.5" } }, "sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ=="],
+
+    "@distilled.cloud/aws": ["@distilled.cloud/aws@1.0.0-rc.18", "", { "dependencies": { "@distilled.cloud/aws4signer": "1.0.0-rc.18", "@distilled.cloud/core": "1.0.0-rc.18" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-VZDlOGEXvXvTdY/0sTEoTWnPCGde+fjvq1ZIW3wgiZK/X8ChbbonGArg+Sc9OO4E9tr1WBymASrZ906uLnLWFw=="],
+
+    "@distilled.cloud/aws4signer": ["@distilled.cloud/aws4signer@1.0.0-rc.18", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.18" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-eYJi2rsblwjxpa0kj2qUQYqY9cEwD6ow0njiFL6I5ZnlOqrE8I3aLiWvScoc3s9bQUQD5nFdmSnORoPJ5GsHKg=="],
+
+    "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.18", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-Iui60+sNl1CwUu7NKGLuFf3VC4H9xYzfm0Fc8ZQvd87qwf1sDMB3EAWZrq/QFgrwzSY16z2mJ0PNHaBUnGet8A=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.5", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.5" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-tB/GapZ/bVoCbwRgnojGP4TwopvkMoFoSCipXT1sf0guvG/2oRVhWzJW/1vkrYFEdLM7XyRnVVLrSJyqdok7DA=="],
 
@@ -98,10 +116,6 @@
 
     "@effect/tsgo-win32-x64": ["@effect/tsgo-win32-x64@0.56.0", "", { "os": "win32", "cpu": "x64" }, "sha512-Cf6SDixFTkp7Aoeg2eRwJps/2BG9lvx2m+iVRjUzxdqkTbCCNKmmOAIyDslNZm2sMwaDUw/iN/BPGqxx7xMxww=="],
 
-    "@effectory/cli": ["@effectory/cli@workspace:packages/cli"],
-
-    "@effectory/core": ["@effectory/core@workspace:packages/core"],
-
     "@effectory/platform-bun": ["@effectory/platform-bun@workspace:packages/platform-bun"],
 
     "@effectory/runtime": ["@effectory/runtime@workspace:packages/runtime"],
@@ -111,6 +125,12 @@
     "@nodelib/fs.stat": ["@nodelib/fs.stat@2.0.5", "", {}, "sha512-RkhPPp2zrqDAQA/2jNhnztcPAlv64XdhIp7a7454A5ovI7Bukxgt7MX7udwAu3zg1DcpPU0rz3VV1SeaqvY4+A=="],
 
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "1.20.3" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
+
+    "@offtree/effectory-cli": ["@offtree/effectory-cli@workspace:packages/cli"],
+
+    "@offtree/effectory-extension-aws-vault": ["@offtree/effectory-extension-aws-vault@workspace:extensions/aws-vault"],
+
+    "@offtree/effectory-sdk": ["@offtree/effectory-sdk@workspace:packages/core"],
 
     "@oxfmt/binding-android-arm-eabi": ["@oxfmt/binding-android-arm-eabi@0.74.0", "", { "os": "android", "cpu": "arm" }, "sha512-xxQwrf5EPI5zxvuCTW8r6tzCTjPQ+h6+HqJ0iRKRy2zS1yBllt/xLVjoIyUc+FnR7g0a5g1SZv2yyDYhTItLbA=="],
 

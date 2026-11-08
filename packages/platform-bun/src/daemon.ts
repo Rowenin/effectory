@@ -3,22 +3,21 @@ import {
   chmodSync,
   existsSync,
   mkdirSync,
-  readFileSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
 
-import { TaskRuntimeError } from "@effectory/core";
-import { checkJsonBudget } from "@effectory/core/internal/boundary";
 import { OperationError } from "@effectory/runtime/protocol";
 import { ControlPlane } from "@effectory/runtime/rpc";
+import { TaskRuntimeError } from "@offtree/effectory-sdk";
+import { checkJsonBudget } from "@offtree/effectory-sdk/internal/boundary";
 import { Effect, Layer, Schema } from "effect";
-import { HttpEffect } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
 import { snapshotMarker } from "./backup.ts";
+import { contentHandler, contentRequest } from "./content-plane.ts";
 import { controlPlaneLayer, ServerIdentity } from "./control-plane.ts";
 import {
   extensionManagerLayer,
@@ -29,6 +28,11 @@ import { HostStore } from "./host-store.ts";
 import { ownedHostLayer } from "./host.ts";
 import { ownershipLayer } from "./ownership.ts";
 import { revisionCatalogLayer } from "./revisions.ts";
+import { rpcWebHandler } from "./rpc-web-handler.ts";
+import { runWatcherLayer } from "./run-watch.ts";
+import { readStoredCredentials } from "./runtime-storage-format.ts";
+import { preflightRuntime } from "./upgrade-preflight.ts";
+import { watchHandler, watchRequest } from "./watch-plane.ts";
 
 export const Credentials = Schema.Struct({
   repositoryId: Schema.String,
@@ -53,9 +57,7 @@ function credentials(directory: string) {
     );
   }
   chmodSync(filename, 0o600);
-  return Schema.decodeUnknownSync(Credentials)(
-    JSON.parse(readFileSync(filename, "utf-8"))
-  );
+  return readStoredCredentials(path.dirname(directory));
 }
 
 function authorize(request: Request, token: string, repositoryId: string) {
@@ -111,6 +113,7 @@ export function serve(
           "Snapshot copy is incomplete; restore to a fresh destination before starting the daemon",
       });
     }
+    yield* preflightRuntime(repository);
     const auth = yield* Effect.try({
       catch: () =>
         new OperationError({
@@ -134,7 +137,9 @@ export function serve(
       })
     ).pipe(Layer.provideMerge(runtime), Layer.provide(GitHubSourceLive));
     const services = controlPlaneLayer.pipe(
-      Layer.provideMerge(administration),
+      Layer.provideMerge(
+        runWatcherLayer.pipe(Layer.provideMerge(administration))
+      ),
       Layer.provide(
         Layer.succeed(ServerIdentity, {
           directory,
@@ -156,18 +161,31 @@ export function serve(
       disableFatalDefects: true,
       streamBufferSize: 4,
     }).pipe(Effect.provideContext(serviceContext));
-    const handler = HttpEffect.toWebHandler(http);
+    const handler = rpcWebHandler(http);
+    const downloadHandler = yield* contentHandler.pipe(
+      Effect.provideContext(serviceContext)
+    );
+    const observationHandler = yield* watchHandler.pipe(
+      Effect.provideContext(serviceContext)
+    );
     const server = yield* Effect.acquireRelease(
       Effect.sync(() => {
         let inFlight = 0;
         return Bun.serve({
-          fetch: async (request) => {
+          fetch: async (request, bunServer) => {
             if (!authorize(request, auth.token, auth.repositoryId)) {
               return new Response("Unauthorized", { status: 401 });
             }
             if (
               request.method !== "POST" ||
-              !["/rpc", "/rpc/"].includes(new URL(request.url).pathname)
+              ![
+                "/rpc",
+                "/rpc/",
+                "/rpc/content",
+                "/rpc/content/",
+                "/rpc/watch",
+                "/rpc/watch/",
+              ].includes(new URL(request.url).pathname)
             ) {
               return new Response("Not found", { status: 404 });
             }
@@ -176,6 +194,39 @@ export function serve(
             }
             inFlight += 1;
             try {
+              if (
+                ["/rpc/content", "/rpc/content/"].includes(
+                  new URL(request.url).pathname
+                )
+              ) {
+                try {
+                  const bounded = await contentRequest(request);
+                  // Content producers have no idle deadline; cancellation and shutdown own cleanup.
+                  bunServer.timeout(request, 0);
+                  return await downloadHandler(bounded);
+                } catch {
+                  return new Response(
+                    "Invalid content RPC request (maximum 16 KiB)",
+                    { status: 400 }
+                  );
+                }
+              }
+              if (
+                ["/rpc/watch", "/rpc/watch/"].includes(
+                  new URL(request.url).pathname
+                )
+              ) {
+                try {
+                  const bounded = await watchRequest(request);
+                  bunServer.timeout(request, 0);
+                  return await observationHandler(bounded);
+                } catch {
+                  return new Response(
+                    "Invalid watch RPC request (maximum 16 KiB)",
+                    { status: 400 }
+                  );
+                }
+              }
               const body: unknown = await request.clone().json();
               checkJsonBudget(body);
               if (Array.isArray(body) && body.length > 16) {

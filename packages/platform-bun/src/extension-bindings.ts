@@ -23,6 +23,7 @@ import {
   packagePath,
   validateLock,
 } from "./extension-cache.ts";
+import { readStoredLockContents } from "./runtime-storage-format.ts";
 
 export const lockFilename = (repository: string) =>
   path.join(repository, "effectory.extensions.lock.json");
@@ -49,10 +50,8 @@ function readJson(filename: string, maximum: number): unknown {
   }
 }
 export function readLock(repository: string) {
-  const filename = lockFilename(repository);
-  return existsSync(filename)
-    ? validateLock(readJson(filename, extensionLimits.lockBytes))
-    : emptyLock;
+  const contents = readStoredLockContents(repository);
+  return contents === null ? emptyLock : validateLock(JSON.parse(contents));
 }
 
 /** Complete-file replacement; callers hold the repository mutation lease. */
@@ -110,7 +109,7 @@ export function bindingSource(
   const sdk = fresh();
   const lines = [
     header,
-    `import { Extension as ${sdk} } from "@effectory/core";`,
+    `import { Extension as ${sdk} } from "@offtree/effectory-sdk";`,
   ];
   for (const [id, root] of entries) {
     const locked = lock.packages[id];

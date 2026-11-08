@@ -1,0 +1,53 @@
+{
+  "scope": "Real compiled host HTTP vault read shutdown; synthetic provider only",
+  "binary": "/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64",
+  "binarySha256": "a69d21b724f053b90453e29d9dd408523c4cfc40b76974bdebcc4ff302a286bf",
+  "sourceAudit": {
+    "count": 457,
+    "changed": [],
+    "added": [],
+    "missing": []
+  },
+  "results": [
+    {
+      "mode": "stop",
+      "repo": "/tmp/effectory-http-shutdown/stop-ztSfQ9",
+      "during": {
+        "events": ["provider-acquired", "reading", "read-cleanup-start"],
+        "daemonExit": null
+      },
+      "daemonExit": 0,
+      "clientExit": 3,
+      "clientOutputBytes": 0,
+      "events": [
+        "provider-acquired",
+        "reading",
+        "read-cleanup-start",
+        "read-cleanup-end",
+        "provider-released"
+      ]
+    },
+    {
+      "mode": "sigterm",
+      "repo": "/tmp/effectory-http-shutdown/sigterm-WFhEo0",
+      "during": {
+        "events": ["provider-acquired", "reading", "read-cleanup-start"],
+        "daemonExit": null
+      },
+      "daemonExit": 130,
+      "clientExit": 3,
+      "clientOutputBytes": 0,
+      "events": [
+        "provider-acquired",
+        "reading",
+        "read-cleanup-start",
+        "read-cleanup-end",
+        "provider-released"
+      ]
+    }
+  ],
+  "probe": "import assert from 'node:assert/strict';\nimport {existsSync, readFileSync, writeFileSync, mkdtempSync} from 'node:fs';\nimport path from 'node:path';\nimport {harness} from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs';\nconst base='/tmp/effectory-http-shutdown';\nconst binary='/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64';\nconst results=[];\nfor(const mode of ['stop','sigterm']) {\n const repo=mkdtempSync(path.join(base,mode+'-'));\n const marker=path.join(repo,'events.txt'), gate=path.join(repo,'release-gate');\n const h=harness(repo);let reader;\n const events=()=>existsSync(marker)?readFileSync(marker,'utf8').trim().split('\\n'):[];\n try {\n  await h.cli(binary,repo,['init',repo]);\n  writeFileSync(path.join(repo,'effectory.ts'),`\nimport {appendFileSync,existsSync} from 'node:fs';\nimport {Application,Vault} from '@offtree/effectory-sdk';\nimport {Effect,Schema} from 'effect';\nconst record=(phase)=>Effect.sync(()=>appendFileSync(${JSON.stringify(marker)},phase+'\\\\n'));\nconst Credentials=Vault.make({id:'credentials',secrets:{token:Schema.String}});\nconst provider=Vault.layer(Credentials,()=>Effect.acquireRelease(\n record('provider-acquired').pipe(Effect.as({providerId:'test/shutdown',read:()=>record('reading').pipe(Effect.andThen(Effect.never),Effect.ensuring(Effect.gen(function*(){\n yield* record('read-cleanup-start');\n while(!existsSync(${JSON.stringify(gate)})) yield* Effect.sleep('5 millis');\n yield* record('read-cleanup-end');\n })))})),()=>record('provider-released')));\nexport default Application.make({vaults:[Credentials]}).provide(provider);\n`);\n  const daemon=await h.start(binary,repo);\n  reader=Bun.spawn([binary,'vault','reveal','credentials','token','--repository',repo],{cwd:repo,stdout:'pipe',stderr:'pipe'});\n  const readResult=Promise.all([reader.exited,new Response(reader.stdout).text(),new Response(reader.stderr).text()]);\n  await h.until('read entered',events,e=>e.includes('reading'),10000);\n  let stop;\n  if(mode==='stop') stop=h.raw(binary,repo,['daemon','stop']);else daemon.kill('SIGTERM');\n  await h.until('cleanup entered',events,e=>e.includes('read-cleanup-start'),10000);\n  const during={events:events(),daemonExit:daemon.exitCode};\n  assert.equal(during.daemonExit,null);\n  assert.ok(!during.events.includes('provider-released'));\n  writeFileSync(gate,'continue');\n  const daemonExit=await daemon.exited;\n  const client=await readResult;\n  if(stop) await stop;\n  assert.deepEqual(events(),['provider-acquired','reading','read-cleanup-start','read-cleanup-end','provider-released']);\n  results.push({mode,repo,during,daemonExit,clientExit:client[0],clientOutputBytes:client[1].length,events:events()});\n }finally{if(reader?.exitCode===null)reader.kill('SIGKILL');writeFileSync(gate,'continue');await h.close();writeFileSync(path.join(base,'results.json'),JSON.stringify(results,null,2)+'\\n');}\n}\nconsole.log(JSON.stringify(results,null,2));\n",
+  "processHelper": "/* oxlint-disable no-await-in-loop, unicorn/no-await-expression-member -- Sequential executable proof and bounded polling. */\nimport { strict as assert } from \"node:assert\";\nimport { existsSync, readFileSync } from \"node:fs\";\nimport path from \"node:path\";\n\nexport const old = process.env.EFFECTORY_PREVIOUS_BINARY;\nexport const target = process.env.EFFECTORY_UPGRADE_BINARY;\nconst until = async (label, read, check, timeout = 120_000) => {\n  const end = Date.now() + timeout;\n  for (;;) {\n    const v = await read();\n    if (check(v)) {\n      return v;\n    }\n    assert.ok(Date.now() < end, `${label}: ${JSON.stringify(v)}`);\n    await Bun.sleep(100);\n  }\n};\n\nexport function harness(root) {\n  const children = [];\n  const env = { ...process.env, EFFECTORY_KEY_DIR: path.join(root, \"keys\") };\n  const raw = async (binary, repo, args, timeout = 120_000) => {\n    const child = Bun.spawn([binary, ...args, \"--repository\", repo, \"--json\"], {\n      cwd: repo,\n      env,\n      stderr: \"pipe\",\n      stdout: \"pipe\",\n    });\n    children.push(child);\n    const timer = setTimeout(() => child.kill(\"SIGKILL\"), timeout);\n    try {\n      const [code, out, err] = await Promise.all([\n        child.exited,\n        new Response(child.stdout).text(),\n        new Response(child.stderr).text(),\n      ]);\n      assert.equal(child.signalCode, null, `timeout ${args}: ${err}`);\n      return { code, err, out };\n    } finally {\n      clearTimeout(timer);\n    }\n  };\n  const cli = async (binary, repo, args) => {\n    const r = await raw(binary, repo, args);\n    assert.equal(r.code, 0, `${args}: ${r.err}`);\n    return r.out.trim() ? JSON.parse(r.out) : null;\n  };\n  const start = async (binary, repo) => {\n    const child = Bun.spawn([binary, \"daemon\", \"serve\", \"--repository\", repo], {\n      cwd: repo,\n      env,\n      stderr: Bun.file(path.join(root, `daemon-${children.length}.log`)),\n      stdout: \"ignore\",\n    });\n    children.push(child);\n    const limit = Date.now() + 30_000;\n    for (;;) {\n      assert.equal(child.exitCode, null, \"daemon exited\");\n      assert.ok(Date.now() < limit, \"daemon start timeout\");\n      const file = path.join(repo, \".effectory/daemon.json\");\n      if (existsSync(file)) {\n        const data = JSON.parse(readFileSync(file, \"utf-8\"));\n        if (data.pid === child.pid) {\n          break;\n        }\n      }\n      await Bun.sleep(30);\n    }\n    return child;\n  };\n  const close = async () => {\n    for (const child of children) {\n      if (child.exitCode === null) {\n        child.kill(\"SIGKILL\");\n      }\n      await child.exited;\n    }\n  };\n  return { cli, close, raw, start, until };\n}\n",
+  "initialFailedProbeLog": "33 |       const [code, out, err] = await Promise.all([\n34 |         child.exited,\n35 |         new Response(child.stdout).text(),\n36 |         new Response(child.stderr).text(),\n37 |       ]);\n38 |       assert.equal(child.signalCode, null, `timeout ${args}: ${err}`);\n                  ^\nAssertionError: timeout daemon,stop: \n\n'SIGKILL' !== null\n\n generatedMessage: false,\n     actual: \"SIGKILL\",\n   expected: null,\n   operator: \"strictEqual\",\n       diff: \"simple\",\n       code: \"ERR_ASSERTION\"\n\n      at /Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs:38:14\n33 |       const [code, out, err] = await Promise.all([\n34 |         child.exited,\n35 |         new Response(child.stdout).text(),\n36 |         new Response(child.stderr).text(),\n37 |       ]);\n38 |       assert.equal(child.signalCode, null, `timeout ${args}: ${err}`);\n                  ^\nAssertionError: timeout upgrade,plan: \n\n'SIGKILL' !== null\n\n generatedMessage: false,\n     actual: \"SIGKILL\",\n   expected: null,\n   operator: \"strictEqual\",\n       diff: \"simple\",\n       code: \"ERR_ASSERTION\"\n\n      at /Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs:38:14\n\nBun v1.4.3 (macOS arm64)\n",
+  "finalLog": "[\n  {\n    \"mode\": \"stop\",\n    \"repo\": \"/tmp/effectory-http-shutdown/stop-ztSfQ9\",\n    \"during\": {\n      \"events\": [\n        \"provider-acquired\",\n        \"reading\",\n        \"read-cleanup-start\"\n      ],\n      \"daemonExit\": null\n    },\n    \"daemonExit\": 0,\n    \"clientExit\": 3,\n    \"clientOutputBytes\": 0,\n    \"events\": [\n      \"provider-acquired\",\n      \"reading\",\n      \"read-cleanup-start\",\n      \"read-cleanup-end\",\n      \"provider-released\"\n    ]\n  },\n  {\n    \"mode\": \"sigterm\",\n    \"repo\": \"/tmp/effectory-http-shutdown/sigterm-WFhEo0\",\n    \"during\": {\n      \"events\": [\n        \"provider-acquired\",\n        \"reading\",\n        \"read-cleanup-start\"\n      ],\n      \"daemonExit\": null\n    },\n    \"daemonExit\": 130,\n    \"clientExit\": 3,\n    \"clientOutputBytes\": 0,\n    \"events\": [\n      \"provider-acquired\",\n      \"reading\",\n      \"read-cleanup-start\",\n      \"read-cleanup-end\",\n      \"provider-released\"\n    ]\n  }\n]\n"
+}

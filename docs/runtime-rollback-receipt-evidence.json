@@ -1,0 +1,110 @@
+{
+  "status": "Verified completed upgrade receipts after rollback and expiry",
+  "sourceEvidence": "docs/runtime-http-disconnect-certification.json",
+  "target": {
+    "filename": "/tmp/effectory-http-disconnect/release2-bin/effectory-darwin-arm64",
+    "sha256": "0d1ae6d32526f4deb52fa9733d3420112decc9a311de004d6aa305e01ec3f485"
+  },
+  "targetBuild": "c26a3010cee6c4d7dac060b8a4b70388d5c856e5263ad764533db6a5ce9f7357",
+  "sourceAudit": {
+    "files": 460,
+    "changed": []
+  },
+  "results": [
+    {
+      "sourceStorage": 2,
+      "originalRestoredRepository": "/private/tmp/effectory-actual-upgrade-9tT2K8/restored",
+      "scratchRepository": "/tmp/effectory-rollback-receipts/copy-fryJCp/repository",
+      "predecessor": {
+        "filename": "/private/tmp/effectory-format2-upgrade-baseline/effectory-darwin-arm64",
+        "sha256": "02c99046b503871a62a6b50c579ad83ba8e2ade44ae3ad78b80ce72029a058d0"
+      },
+      "targetSha256": "0d1ae6d32526f4deb52fa9733d3420112decc9a311de004d6aa305e01ec3f485",
+      "planId": "121f237a-3b57-4a2d-9d8b-88c15cc60131",
+      "expiresAt": 1794114438417,
+      "verifiedAt": 1794115979050,
+      "files": 17,
+      "commands": [
+        {
+          "host": "predecessor",
+          "action": "inspect",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "predecessor",
+          "action": "apply",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "current",
+          "action": "inspect",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "current",
+          "action": "apply",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        }
+      ]
+    },
+    {
+      "sourceStorage": 3,
+      "originalRestoredRepository": "/private/tmp/effectory-actual-upgrade-QEEvg1/restored",
+      "scratchRepository": "/tmp/effectory-rollback-receipts/copy-px3C2M/repository",
+      "predecessor": {
+        "filename": "/private/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64",
+        "sha256": "a69d21b724f053b90453e29d9dd408523c4cfc40b76974bdebcc4ff302a286bf"
+      },
+      "targetSha256": "0d1ae6d32526f4deb52fa9733d3420112decc9a311de004d6aa305e01ec3f485",
+      "planId": "bac463da-aae5-4d74-8ebd-b349ab249ff9",
+      "expiresAt": 1794114203573,
+      "verifiedAt": 1794115983147,
+      "files": 17,
+      "commands": [
+        {
+          "host": "predecessor",
+          "action": "inspect",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "predecessor",
+          "action": "apply",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "current",
+          "action": "inspect",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        },
+        {
+          "host": "current",
+          "action": "apply",
+          "exit": 0,
+          "receiptIdentical": true,
+          "persistentFilesUnchanged": true
+        }
+      ]
+    }
+  ],
+  "probe": "import assert from 'node:assert/strict';\nimport { createHash } from 'node:crypto';\nimport { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';\nimport path from 'node:path';\nimport { harness } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs';\nconst base = '/tmp/effectory-rollback-receipts';\nconst target = '/tmp/effectory-http-disconnect/release2-bin/effectory-darwin-arm64';\nconst hash = (file) => createHash('sha256').update(readFileSync(file)).digest('hex');\nconst inventory = (root, relative = '') => Object.fromEntries(readdirSync(path.join(root, relative)).sort().flatMap(name => {\n  const rel = path.join(relative, name);\n  if (rel.startsWith('.effectory/state.sqlite.owner')) return [];\n  const full = path.join(root, rel);\n  return statSync(full).isDirectory() ? Object.entries(inventory(root, rel)) : [[rel, hash(full)]];\n}));\nconst results = [];\nfor (const format of ['format2', 'format3']) {\n  const certificate = JSON.parse(readFileSync(`/tmp/effectory-http-disconnect/edge-${format}-release/certification.json`, 'utf8'));\n  const original = certificate.results['wait-rollback'].result;\n  const receipt = original.legacySeed.receipt;\n  const planId = receipt.plan.planId;\n  const root = path.dirname(original.legacySeed.plan.recoveryCopy);\n  const restored = path.join(root, 'restored');\n  assert.ok(existsSync(path.join(restored, '.effectory/upgrade-history', planId + '.json')));\n  assert.ok(Date.now() > receipt.plan.expiresAt, 'exercise expired completed receipt');\n  const work = mkdtempSync(path.join(base, 'copy-'));\n  const repo = path.join(work, 'repository');\n  cpSync(restored, repo, { recursive: true, errorOnExist: true, force: false });\n  // Capture the restored state; commands must not recreate plans or migration work.\n  const before = inventory(repo);\n  const h = harness(work), commands = [];\n  try {\n    for (const [name, binary] of [['predecessor', certificate.predecessor.filename], ['current', target]]) {\n      for (const action of ['inspect', 'apply']) {\n        const result = await h.cli(binary, repo, ['upgrade', action, planId]);\n        assert.deepEqual(action === 'inspect' ? result.transition : result, receipt);\n        assert.deepEqual(inventory(repo), before);\n        commands.push({ host: name, action, exit: 0, receiptIdentical: true, persistentFilesUnchanged: true });\n      }\n    }\n    results.push({ sourceStorage: original.sourceStorage, originalRestoredRepository: restored, scratchRepository: repo, predecessor: certificate.predecessor, targetSha256: hash(target), planId, expiresAt: receipt.plan.expiresAt, verifiedAt: Date.now(), files: Object.keys(before).length, commands });\n  } finally { await h.close(); }\n}\nwriteFileSync(path.join(base, 'results.json'), JSON.stringify(results, null, 2) + '\\n');\nconsole.log(JSON.stringify(results, null, 2));\n",
+  "logSha256": "f34f1a8f8adf610c2326eca38380f8bd60bc5a47878b8f75b2b48a0e9f75fb05",
+  "limitations": [
+    "Uses disposable clones of the actual executable matrix rollback repositories; original evidence repositories and recovery images are unchanged.",
+    "Persistent-file comparison excludes only repository ownership database and its sidecars.",
+    "No new full-suite run or runtime source change."
+  ]
+}

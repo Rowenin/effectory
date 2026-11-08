@@ -5,7 +5,15 @@ import { DefinitionError } from "./errors.ts";
 import * as ExtensionRegistry from "./extension-registry.ts";
 import type * as Extension from "./extension.ts";
 import * as PatchCompiler from "./patch-compiler.ts";
+import { registerReports } from "./report-registry.ts";
+import { selectReports } from "./report-selection.ts";
+import type * as Report from "./report.ts";
 import type * as Task from "./task.ts";
+import {
+  definitions as vaultDefinitions,
+  handles as vaultHandles,
+} from "./vault-state.ts";
+import type * as Vault from "./vault.ts";
 import type * as WorkflowSchedule from "./workflow-schedule.ts";
 import * as Workflow from "./workflow.ts";
 
@@ -31,9 +39,18 @@ export class Registry extends Context.Service<
   Registry,
   {
     readonly tasks: ReadonlyMap<string, RuntimeTask>;
+    readonly reports: ReadonlyMap<string, Report.Attachment>;
+    readonly vaults: ReadonlyMap<
+      string,
+      {
+        readonly definition: Vault.Registrable;
+        readonly secrets: Vault.Secrets;
+        readonly backend: Vault.Backend;
+      }
+    >;
     readonly workflows: ReadonlyMap<string, CompiledWorkflow>;
     readonly schedules: ReadonlyMap<string, WorkflowSchedule.Definition>;
-    readonly artifacts: ReadonlyMap<string, Artifact.Artifact>;
+    readonly artifacts: ReadonlyMap<string, Artifact.Any>;
     readonly extensions: readonly ExtensionRegistry.Provenance[];
   }
 >()("effectory/Registry") {}
@@ -88,21 +105,74 @@ const discoverSchedules = (
     return schedules;
   });
 
+function discoverVaults<R>(
+  declared: readonly Vault.Registrable[],
+  services: Context.Context<R>
+) {
+  return Effect.gen(function* () {
+    const vaults = new Map<
+      string,
+      {
+        readonly definition: Vault.Registrable;
+        readonly secrets: Vault.Secrets;
+        readonly backend: Vault.Backend;
+      }
+    >();
+    if (declared.length > 128) {
+      return yield* new DefinitionError({
+        message: "At most 128 vaults may be registered",
+      });
+    }
+    for (const definition of declared) {
+      const metadata = vaultDefinitions.get(definition);
+      const handle = Context.getOrUndefined(
+        services,
+        Context.Service<object>(definition.key)
+      );
+      const owned = handle && vaultHandles.get(handle);
+      if (
+        !metadata ||
+        !owned ||
+        owned.definition !== definition ||
+        vaults.has(definition.id)
+      ) {
+        return yield* new DefinitionError({
+          message: `Missing, duplicate or noncanonical vault: ${definition.id}`,
+        });
+      }
+      vaults.set(definition.id, {
+        backend: owned.backend,
+        definition,
+        secrets: metadata.secrets,
+      });
+    }
+    return vaults;
+  });
+}
+
 export function make<
   const T extends readonly RegisteredTask[] = readonly [],
   const X extends readonly Extension.Use[] = readonly [],
+  const V extends readonly Vault.Registrable[] = readonly [],
 >(spec: {
   readonly tasks?: T;
+  readonly reports?: readonly Report.Attachment[];
   readonly workflows?: readonly Workflow.Definition[];
   readonly schedules?: readonly WorkflowSchedule.Definition[];
-  readonly artifacts?: readonly Artifact.Artifact[];
+  readonly artifacts?: readonly Artifact.Any[];
   readonly extensions?: X;
-}): Application<Requirements<T> | Extension.Requirements<X[number]>> {
+  readonly vaults?: V;
+}): Application<
+  Requirements<T> | Extension.Requirements<X[number]> | V[number]
+> {
+  const declaredReports = Object.freeze([...(spec.reports ?? [])]);
   const declaredSchedules = spec.schedules ?? [];
+  const declaredVaults = spec.vaults ?? [];
   const build = Effect.gen(function* () {
     const services = yield* Effect.context<
-      Requirements<T> | Extension.Requirements<X[number]>
+      Requirements<T> | Extension.Requirements<X[number]> | V[number]
     >();
+    const vaults = yield* discoverVaults(declaredVaults, services);
     const resolved = yield* ExtensionRegistry.resolve(
       spec.extensions ?? [],
       spec.tasks ?? [],
@@ -217,11 +287,31 @@ export function make<
         }
       },
     });
+    const reports = yield* Effect.try({
+      catch: (cause) =>
+        cause instanceof DefinitionError
+          ? cause
+          : new DefinitionError({ message: "Report registration failed" }),
+      try: () => {
+        const registered = registerReports(declaredReports, tasks, workflows);
+        for (const schedule of schedules.values()) {
+          selectReports(
+            { reports: registered, workflows },
+            "workflow",
+            schedule.workflow.id,
+            schedule.reportSelection
+          );
+        }
+        return registered;
+      },
+    });
     return {
       artifacts: resolved.artifacts,
       extensions: resolved.extensions,
+      reports,
       schedules,
       tasks,
+      vaults,
       workflows,
     };
   });

@@ -179,7 +179,8 @@ export function validateManifest(manifest: typeof ExtensionManifest.Type) {
     if (
       name === "effect" ||
       name.startsWith("@effect/") ||
-      name.startsWith("@effectory/")
+      name.startsWith("@effectory/") ||
+      name === "@offtree/effectory-sdk"
     ) {
       throw invalid("Host peer libraries cannot be extension dependencies");
     }
@@ -189,7 +190,8 @@ export function validateManifest(manifest: typeof ExtensionManifest.Type) {
       (entry) =>
         entry.name === "effect" ||
         entry.name.startsWith("@effect/") ||
-        entry.name.startsWith("@effectory/")
+        entry.name.startsWith("@effectory/") ||
+        entry.name === "@offtree/effectory-sdk"
     )
   ) {
     throw invalid("Host peer libraries cannot be bundled");

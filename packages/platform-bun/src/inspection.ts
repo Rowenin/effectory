@@ -13,6 +13,7 @@ import { Event, OperationError } from "@effectory/runtime/protocol";
 import { Schema } from "effect";
 
 import type { createPagination } from "./pagination.ts";
+import { refuseRetired } from "./run-retirement.ts";
 
 export function authorizeRun(
   database: Database,
@@ -25,6 +26,7 @@ export function authorizeRun(
     )
     .get(runId, principal);
   if (!row) {
+    refuseRetired(database, "run", runId, principal);
     throw new OperationError({
       code: "NotFound",
       message: "Run was not found",

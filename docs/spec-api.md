@@ -11,7 +11,7 @@ For the next API pass, see [Authoring runtime: public API candidates](authoring-
 This is modeled on Effect's real [RpcGroup tests](../vendor/effect/packages/effect/test/rpc/Rpc.test.ts) and [Workflow.toLayer](../vendor/effect/packages/effect/src/workflow/Workflow.ts). All `@effectory/*` names below are **proposed APIs**, not existing exports.
 
 ```ts
-import { Artifact, Task, TaskGroup } from "@effectory/core";
+import { Artifact, Task, TaskGroup } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 const Greeting = Artifact.make("example/greeting", {

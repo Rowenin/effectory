@@ -1,12 +1,22 @@
 import { Cron, Schema } from "effect";
 
 import { checkJsonBudget, decode, identifier } from "./boundary.ts";
+import { checkSettings } from "./check-schema.ts";
+import type { CheckOptions, CheckSettings } from "./check-schema.ts";
 import { DefinitionError } from "./errors.ts";
 import { durationMillis } from "./policy.ts";
+import type { EncodedSelection } from "./report-selection-schema.ts";
+import { authorSelection } from "./report-selection.ts";
+import type { Selection } from "./report-selection.ts";
+import { normalize, snapshot, validate } from "./tag-state.ts";
+import type * as Tag from "./tag.ts";
 import type * as Workflow from "./workflow.ts";
 
 export type CatchUp = "skip" | { readonly latestWithin: string };
 export interface Definition<S extends Workflow.Spec = Workflow.Spec> {
+  readonly checks: typeof CheckSettings.Type;
+  readonly tags: Readonly<Record<string, string>>;
+  readonly reportSelection: typeof EncodedSelection.Type;
   readonly kind: "WorkflowSchedule";
   readonly id: string;
   readonly workflow: Workflow.Definition<S>;
@@ -60,6 +70,9 @@ function validateCron(cron: string, zone: string | undefined) {
 }
 
 export function make<const S extends Workflow.Spec>(spec: {
+  readonly checks?: typeof CheckOptions.Type;
+  readonly tags?: Tag.Input;
+  readonly reportSelection?: Selection;
   readonly id: string;
   readonly workflow: Workflow.Definition<S>;
   readonly input: NoInfer<S["input"]["Type"]>;
@@ -70,6 +83,9 @@ export function make<const S extends Workflow.Spec>(spec: {
 }): Definition<S> {
   try {
     const allowed = new Set([
+      "checks",
+      "tags",
+      "reportSelection",
       "id",
       "workflow",
       "input",
@@ -82,6 +98,15 @@ export function make<const S extends Workflow.Spec>(spec: {
       throw new Error("Unsupported schedule option");
     }
     const id = identifier(spec.id);
+    const checks = checkSettings("checks" in spec ? spec.checks : {});
+    const reportSelection = authorSelection(
+      "reportSelection" in spec ? spec.reportSelection : {}
+    );
+    const tags = normalize("tags" in spec ? spec.tags : {});
+    validate(
+      snapshot({ ...spec.workflow.tags, ...tags }),
+      spec.workflow.tagSchemas
+    );
     const { expression, timeZone } = validateCron(spec.cron, spec.timeZone);
     const catchUp = spec.catchUp ?? "skip";
     if (catchUp !== "skip") {
@@ -112,10 +137,13 @@ export function make<const S extends Workflow.Spec>(spec: {
     const copied = Schema.decodeUnknownSync(Schema.Json)(structuredClone(json));
     return Object.freeze({
       catchUp: catchUp === "skip" ? catchUp : Object.freeze({ ...catchUp }),
+      checks,
       cron: expression,
       encodedInput: freezeJson(copied),
       id,
       kind: "WorkflowSchedule",
+      reportSelection,
+      tags,
       timeZone,
       workflow: spec.workflow,
       ...(spec.description === undefined

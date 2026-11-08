@@ -1,19 +1,25 @@
 {
   "name": "@effectory/runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
     "./protocol": "./src/protocol.ts",
     "./lake-protocol": "./src/lake-protocol.ts",
+    "./content-rpc": "./src/content-rpc.ts",
+    "./watch-rpc": "./src/watch-rpc.ts",
     "./rpc": "./src/rpc.ts",
     "./extension-protocol": "./src/extension-protocol.ts",
     "./history-protocol": "./src/history-protocol.ts",
     "./system-protocol": "./src/system-protocol.ts",
-    "./schedule-protocol": "./src/schedule-protocol.ts"
+    "./schedule-protocol": "./src/schedule-protocol.ts",
+    "./vault-protocol": "./src/vault-protocol.ts",
+    "./report-protocol": "./src/report-protocol.ts",
+    "./recovery-protocol": "./src/recovery-protocol.ts",
+    "./check-protocol": "./src/check-protocol.ts"
   },
   "dependencies": {
-    "@effectory/core": "workspace:*",
+    "@offtree/effectory-sdk": "workspace:*",
     "effect": "4.0.5"
   }
 }

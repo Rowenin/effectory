@@ -1,4 +1,4 @@
-import { Artifact, Task } from "@effectory/core";
+import { Artifact, Task } from "@offtree/effectory-sdk";
 import { Context, Schema } from "effect";
 
 export class Client extends Context.Service<

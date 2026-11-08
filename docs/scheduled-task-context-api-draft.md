@@ -24,7 +24,7 @@ The property is **omitted** for manual WorkflowRun, direct TaskRun and ordinary 
 ## Proposed example — unimplemented, not typechecked
 
 ```ts
-import { Task } from "@effectory/core";
+import { Task } from "@offtree/effectory-sdk";
 import { Clock, Effect, Schema } from "effect";
 
 const Collect = Task.make(

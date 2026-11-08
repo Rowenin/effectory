@@ -1,7 +1,10 @@
-import type { Application } from "@effectory/core";
 import type { ExtensionLock } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import type { Application } from "@offtree/effectory-sdk";
+import type { Scope } from "effect";
 import { Context, Effect, Layer } from "effect";
+
+import type { VaultStore } from "./vault-store.ts";
 
 export interface ApplicationRevision {
   readonly revision: string;
@@ -18,16 +21,19 @@ export class Catalog extends Context.Service<
   Catalog,
   {
     readonly active: string;
+    readonly vaults?: VaultStore;
+    /** Metadata-only, synchronous admission check; never acquires application services. */
+    readonly assertExecutable: (revision: string) => void;
     readonly get: (
       revision?: string
-    ) => Effect.Effect<ApplicationRevision, OperationError>;
+    ) => Effect.Effect<ApplicationRevision, OperationError, Scope.Scope>;
     readonly prepare: (
       lock?: typeof ExtensionLock.Type
-    ) => Effect.Effect<RevisionCandidate, OperationError>;
+    ) => Effect.Effect<RevisionCandidate, OperationError, Scope.Scope>;
     readonly activate: (
       candidate: RevisionCandidate,
       publish?: () => void
-    ) => Effect.Effect<ApplicationRevision, OperationError>;
+    ) => Effect.Effect<ApplicationRevision, OperationError, Scope.Scope>;
   }
 >()("effectory/Catalog") {}
 
@@ -45,6 +51,14 @@ export function catalogLayer(
         })
       ),
     active,
+    assertExecutable: (revision) => {
+      if (!revisions.has(revision)) {
+        throw new OperationError({
+          code: "RevisionUnavailable",
+          message: `Application revision ${revision} is unavailable for execution`,
+        });
+      }
+    },
     get: (requested = active) => {
       const registry = revisions.get(requested);
       return registry

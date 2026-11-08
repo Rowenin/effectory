@@ -1,4 +1,10 @@
-import { Application, Artifact, Ref, Task, Workflow } from "@effectory/core";
+import {
+  Application,
+  Artifact,
+  Ref,
+  Task,
+  Workflow,
+} from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 const Input = Schema.Struct({ name: Schema.String });

@@ -1,0 +1,329 @@
+{
+  "status": "Harness discovery diagnostics completed; zero-byte Codex override mismatch reproduced; no production fix or model authoring evaluation",
+  "codex": {
+    "removal": {
+      "skillAbsent": true,
+      "userOverridePreserved": true
+    },
+    "repo": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+    "codexVersion": "codex-cli 0.167.0",
+    "results": [
+      {
+        "cwd": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+        "rootMarker": true,
+        "skill": true,
+        "skillPath": true,
+        "managedGuidance": true
+      },
+      {
+        "cwd": "/private/tmp/effectory-harness-discovery/project-R6nsW1/nested",
+        "rootMarker": true,
+        "skill": true,
+        "skillPath": true,
+        "managedGuidance": true
+      }
+    ],
+    "override": {
+      "overrideMarker": true,
+      "rootMarker": false,
+      "skillPath": true
+    },
+    "scope": "Local prompt-rendering diagnostic only; no model turn, delegation or user prompt was submitted. Raw global instruction/config content is not retained."
+  },
+  "claude": {
+    "repo": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+    "results": [
+      {
+        "cwd": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+        "settingSources": ["project"],
+        "version": "2.1.319",
+        "commands": [
+          {
+            "name": "effectory-build",
+            "description": "Build, test, and troubleshoot Effectory tasks and durable workflows using the project's installed SDK and CLI. (project)",
+            "argumentHint": ""
+          }
+        ],
+        "skills": [
+          {
+            "name": "effectory-build",
+            "source": "projectSettings",
+            "path": "/private/tmp/effectory-harness-discovery/project-R6nsW1/.claude/skills/effectory-build/SKILL.md",
+            "tokens": 43
+          }
+        ],
+        "memoryFiles": [
+          {
+            "path": "/private/tmp/effectory-harness-discovery/project-R6nsW1/.claude/rules/effectory.md",
+            "type": "Project",
+            "tokens": 94
+          }
+        ],
+        "apiUsage": null,
+        "promptsSubmitted": 0
+      },
+      {
+        "cwd": "/private/tmp/effectory-harness-discovery/project-R6nsW1/nested",
+        "settingSources": ["project"],
+        "version": "2.1.319",
+        "commands": [
+          {
+            "name": "effectory-build",
+            "description": "Build, test, and troubleshoot Effectory tasks and durable workflows using the project's installed SDK and CLI. (project)",
+            "argumentHint": ""
+          }
+        ],
+        "skills": [
+          {
+            "name": "effectory-build",
+            "source": "projectSettings",
+            "path": "/private/tmp/effectory-harness-discovery/project-R6nsW1/.claude/skills/effectory-build/SKILL.md",
+            "tokens": 43
+          }
+        ],
+        "memoryFiles": [
+          {
+            "path": "/private/tmp/effectory-harness-discovery/project-R6nsW1/.claude/rules/effectory.md",
+            "type": "Project",
+            "tokens": 94
+          }
+        ],
+        "apiUsage": null,
+        "promptsSubmitted": 0
+      },
+      {
+        "cwd": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+        "settingSources": [],
+        "version": "2.1.319",
+        "commands": [],
+        "skills": [],
+        "memoryFiles": [],
+        "apiUsage": null,
+        "promptsSubmitted": 0
+      }
+    ],
+    "scope": "Local SDK initialization, supportedCommands and summary context metadata only. The input iterator yields no user messages; no model turn or token-count API request is submitted. Project settings are isolated, hooks and MCP disabled, persistence off. This is not a model authoring evaluation."
+  },
+  "overrideBoundaries": {
+    "empty": {
+      "beforeRoot": false,
+      "afterRoot": false,
+      "afterSkill": true
+    },
+    "repo": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+    "beforeRoot": false,
+    "afterRoot": false,
+    "afterSkill": true,
+    "setup": {
+      "actions": [
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/SKILL.md"
+        },
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/references/authoring.md"
+        },
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/references/checks.md"
+        },
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/references/composition.md"
+        },
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/references/runtime.md"
+        },
+        {
+          "action": "created",
+          "path": ".agents/skills/effectory-build/references/vaults-and-reports.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/rules/effectory.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/SKILL.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/references/authoring.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/references/checks.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/references/composition.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/references/runtime.md"
+        },
+        {
+          "action": "unchanged",
+          "path": ".claude/skills/effectory-build/references/vaults-and-reports.md"
+        },
+        {
+          "action": "updated",
+          "path": "AGENTS.override.md"
+        },
+        {
+          "action": "updated",
+          "path": ".effectory-agent.json"
+        }
+      ],
+      "harnesses": ["claude-code", "codex"]
+    }
+  },
+  "emptyOverrideCandidate": {
+    "repo": "/private/tmp/effectory-harness-discovery/project-R6nsW1",
+    "before": {
+      "instructionLoaded": false,
+      "skillListed": true,
+      "rootCanaryLoaded": false
+    },
+    "after": {
+      "instructionLoaded": true,
+      "skillListed": true,
+      "rootCanaryLoaded": false
+    },
+    "rootUserTextPreserved": true,
+    "scope": "Manual file-layout stand-in only; the production planner and ownership manifest were not modified. No model turn was submitted."
+  },
+  "emptyOverrideStatus": {
+    "availableBundle": "03c9a5a57d0e12cbc68feb8d0e1281ea0ee8be5011b83dc30a3b27e99dc107a7",
+    "availableHostVersion": "0.1.0",
+    "availableSdkVersions": {
+      "@offtree/effectory-sdk": "0.1.0",
+      "effect": "4.0.5"
+    },
+    "harnesses": ["claude-code", "codex"],
+    "healthy": true,
+    "installedBundle": "03c9a5a57d0e12cbc68feb8d0e1281ea0ee8be5011b83dc30a3b27e99dc107a7",
+    "installedHostVersion": "0.1.0",
+    "installedSdkVersions": {
+      "@offtree/effectory-sdk": "0.1.0",
+      "effect": "4.0.5"
+    },
+    "paths": [
+      {
+        "path": ".agents/skills/effectory-build/SKILL.md",
+        "state": "current"
+      },
+      {
+        "path": ".agents/skills/effectory-build/references/authoring.md",
+        "state": "current"
+      },
+      {
+        "path": ".agents/skills/effectory-build/references/checks.md",
+        "state": "current"
+      },
+      {
+        "path": ".agents/skills/effectory-build/references/composition.md",
+        "state": "current"
+      },
+      {
+        "path": ".agents/skills/effectory-build/references/runtime.md",
+        "state": "current"
+      },
+      {
+        "path": ".agents/skills/effectory-build/references/vaults-and-reports.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/rules/effectory.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/SKILL.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/references/authoring.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/references/checks.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/references/composition.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/references/runtime.md",
+        "state": "current"
+      },
+      {
+        "path": ".claude/skills/effectory-build/references/vaults-and-reports.md",
+        "state": "current"
+      },
+      {
+        "path": "AGENTS.md",
+        "state": "current"
+      }
+    ],
+    "pending": false
+  },
+  "scripts": {
+    "codex.mjs": {
+      "source": "import assert from 'node:assert/strict';\nimport { mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync } from 'node:fs';\nimport path from 'node:path';\nconst base='/tmp/effectory-harness-discovery';\nconst repo=realpathSync(mkdtempSync(path.join(base,'project-')));\nconst binary='/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64';\nconst run=async(args,cwd=repo)=>{\n const p=Bun.spawn(args,{cwd,stdin:'ignore',stdout:'pipe',stderr:'pipe'});const timer=setTimeout(()=>p.kill('SIGKILL'),45000);\n try {const [code,out,err]=await Promise.all([p.exited,new Response(p.stdout).text(),new Response(p.stderr).text()]);assert.equal(code,0,err.slice(0,1000));return out;} finally{clearTimeout(timer);}\n};\nawait run([binary,'init',repo]);await run(['git','init','--quiet']);\nwriteFileSync(path.join(repo,'AGENTS.md'),'Effectory discovery probe root marker: ROOT_ONLY_7e6bf8\\n');\nawait run([binary,'agent','setup','--harness','codex','--harness','claude-code','--repository',repo,'--json']);\nmkdirSync(path.join(repo,'nested'));\nconst results=[];\nfor(const cwd of [repo,path.join(repo,'nested')]){\n const out=await run(['codex','debug','prompt-input'],cwd);\n const parsed=JSON.parse(out);const text=JSON.stringify(parsed);\n const hit={cwd,rootMarker:text.includes('ROOT_ONLY_7e6bf8'),skill:text.includes('effectory-build'),skillPath:text.includes(repo+'/.agents/skills') && text.includes('/effectory-build/SKILL.md'),managedGuidance:text.includes('Effectory')};\n assert.ok(hit.rootMarker && hit.skill && hit.skillPath && hit.managedGuidance,JSON.stringify(hit));results.push(hit);\n}\nwriteFileSync(path.join(repo,'AGENTS.override.md'),'Effectory discovery probe override marker: OVERRIDE_ONLY_1c2a99\\n');\nawait run([binary,'agent','setup','--repository',repo,'--json']);\nconst override=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nconst hit={overrideMarker:override.includes('OVERRIDE_ONLY_1c2a99'),rootMarker:override.includes('ROOT_ONLY_7e6bf8'),skillPath:override.includes(repo+'/.agents/skills') && override.includes('/effectory-build/SKILL.md')};\nassert.ok(hit.overrideMarker && !hit.rootMarker && hit.skillPath,JSON.stringify(hit));\nawait run([binary,'agent','remove','--harness','codex','--repository',repo,'--json']);\nconst removed=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nassert.ok(!removed.includes('- effectory-build:') && removed.includes('OVERRIDE_ONLY_1c2a99'));\nawait run([binary,'agent','setup','--harness','codex','--repository',repo,'--json']);\nconst result={removal:{skillAbsent:true,userOverridePreserved:true},repo,codexVersion:(await run(['codex','--version'])).trim(),results,override:hit,scope:'Local prompt-rendering diagnostic only; no model turn, delegation or user prompt was submitted. Raw global instruction/config content is not retained.'};\nwriteFileSync(path.join(base,'codex-result.json'),JSON.stringify(result,null,2)+'\\n');console.log(JSON.stringify(result,null,2));\n",
+      "sha256": "8d90fe379d3cfdb3f7d9e6366e9ad2979fdd4e0884f05dee9bcc271c18a841b6"
+    },
+    "claude.mjs": {
+      "source": "import assert from 'node:assert/strict';\nimport { readFileSync, writeFileSync } from 'node:fs';\nimport path from 'node:path';\nimport { query } from './sdk/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs';\nconst base='/tmp/effectory-harness-discovery';\nconst {repo}=JSON.parse(readFileSync(path.join(base,'codex-result.json'),'utf8'));\nconst results=[];\nasync function inspect(cwd,settingSources){\n let release;const done=new Promise(r=>release=r);let prompts=0;\n async function* input(){await done;return;}\n const q=query({prompt:input(),options:{cwd,pathToClaudeCodeExecutable:'/Users/davidr/.local/bin/claude',settingSources,persistSession:false,strictMcpConfig:true,mcpServers:{},tools:[\"Skill\"],settings:{disableAllHooks:true,skillsSync:false,pluginSync:false},env:{...process.env,CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:'1'}}});\n const timer=setTimeout(()=>{q.close();release();},45000);\n try {\n  const init=await q.initializationResult();\n  const commands=await q.supportedCommands();\n  const usage=await q.getContextUsage({detail:'summary'});\n  const result={cwd,settingSources,version:init.claude_code_version??null,commands:commands.filter(x=>x.name==='effectory-build'),skills:(usage.skills?.skillFrontmatter??[]).filter(x=>x.name==='effectory-build'),memoryFiles:usage.memoryFiles.filter(x=>x.path.includes('effectory.md')),apiUsage:usage.apiUsage,promptsSubmitted:prompts};\n  results.push(result);return result;\n } finally {clearTimeout(timer);q.close();release();}\n}\nfor(const cwd of [repo,path.join(repo,'nested')]){\n const r=await inspect(cwd,['project']);\n assert.equal(r.commands.length,1,JSON.stringify(r));\n assert.equal(r.skills.length,1,JSON.stringify(r));\n assert.equal(r.memoryFiles.length,1,JSON.stringify(r));\n}\nconst excluded=await inspect(repo,[]);\nassert.equal(excluded.commands.length,0);assert.equal(excluded.memoryFiles.length,0);\nconst result={repo,results,scope:'Local SDK initialization, supportedCommands and summary context metadata only. The input iterator yields no user messages; no model turn or token-count API request is submitted. Project settings are isolated, hooks and MCP disabled, persistence off. This is not a model authoring evaluation.'};\nwriteFileSync(path.join(base,'claude-result.json'),JSON.stringify(result,null,2)+'\\n');console.log(JSON.stringify(result,null,2));\n",
+      "sha256": "a572cc29fb77ccafb7135e51cbafd9b0a8324aacba7960438e04f640837b7bb3"
+    },
+    "whitespace.mjs": {
+      "source": "import { readFileSync, writeFileSync } from 'node:fs';\nimport path from 'node:path';\nconst base='/tmp/effectory-harness-discovery';const {repo}=JSON.parse(readFileSync(path.join(base,'codex-result.json'),'utf8'));\nconst binary='/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64';\nconst run=async(args)=>{const p=Bun.spawn(args,{cwd:repo,stdin:'ignore',stdout:'pipe',stderr:'pipe'});const timer=setTimeout(()=>p.kill('SIGKILL'),45000);try{const [code,out,err]=await Promise.all([p.exited,new Response(p.stdout).text(),new Response(p.stderr).text()]);if(code!==0)throw Error(err.slice(0,800));return out;}finally{clearTimeout(timer);}};\nawait run([binary,'agent','remove','--harness','codex','--repository',repo,'--json']);\nwriteFileSync(path.join(repo,'AGENTS.override.md'),' \\t\\r\\n');\nconst before=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nconst setup=JSON.parse(await run([binary,'agent','setup','--harness','codex','--repository',repo,'--json']));\nconst after=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nwriteFileSync(path.join(repo,'AGENTS.override.md'),'');\nconst emptyBefore=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nawait run([binary,'agent','setup','--harness','codex','--repository',repo,'--json']);\nconst emptyAfter=JSON.stringify(JSON.parse(await run(['codex','debug','prompt-input'])));\nconst result={empty:{beforeRoot:emptyBefore.includes('ROOT_ONLY_7e6bf8'),afterRoot:emptyAfter.includes('ROOT_ONLY_7e6bf8'),afterSkill:emptyAfter.includes('- effectory-build:')},repo,beforeRoot:before.includes('ROOT_ONLY_7e6bf8'),afterRoot:after.includes('ROOT_ONLY_7e6bf8'),afterSkill:after.includes('- effectory-build:'),setup};\nwriteFileSync(path.join(base,'whitespace-result.json'),JSON.stringify(result,null,2)+'\\n');console.log(JSON.stringify(result,null,2));\n",
+      "sha256": "d780231a5a508e5196598edc73553ec5e203820443566543a92d3df768705628"
+    },
+    "empty-candidate.mjs": {
+      "source": "import assert from 'node:assert/strict';\nimport { readFileSync, writeFileSync } from 'node:fs';\nimport path from 'node:path';\nconst base='/tmp/effectory-harness-discovery';const {repo}=JSON.parse(readFileSync(path.join(base,'codex-result.json'),'utf8'));\nconst root=path.join(repo,'AGENTS.md');const override=path.join(repo,'AGENTS.override.md');\nconst old=readFileSync(root,'utf8');const block=old.match(/<!-- effectory:begin -->[\\s\\S]*?<!-- effectory:end -->\\n?/)[0];assert.equal(readFileSync(override,'utf8'),'');\nconst render=async()=>{const p=Bun.spawn(['codex','debug','prompt-input'],{cwd:repo,stdin:'ignore',stdout:'pipe',stderr:'pipe'});const timer=setTimeout(()=>p.kill('SIGKILL'),45000);try{const [code,out,err]=await Promise.all([p.exited,new Response(p.stdout).text(),new Response(p.stderr).text()]);assert.equal(code,0,err.slice(0,500));const text=JSON.stringify(JSON.parse(out));return {instructionLoaded:text.includes('Use the effectory-build skill when authoring or maintaining'),skillListed:text.includes('- effectory-build:'),rootCanaryLoaded:text.includes('ROOT_ONLY_7e6bf8')};}finally{clearTimeout(timer);}};\nconst before=await render();assert.equal(before.instructionLoaded,false);\nwriteFileSync(root,old.replace(block,''));writeFileSync(override,block);\ntry {\n const after=await render();assert.equal(after.instructionLoaded,true);assert.equal(after.skillListed,true);\n assert.ok(readFileSync(root,'utf8').includes('ROOT_ONLY_7e6bf8'));\n const result={repo,before,after,rootUserTextPreserved:true,scope:'Manual file-layout stand-in only; the production planner and ownership manifest were not modified. No model turn was submitted.'};\n writeFileSync(path.join(base,'empty-candidate-result.json'),JSON.stringify(result,null,2)+'\\n');console.log(JSON.stringify(result,null,2));\n}finally{writeFileSync(root,old);writeFileSync(override,'');}\n",
+      "sha256": "761ade965a0e73909282c7d68b970e413904afe0e56d60a0742d0d1e5e42d0db"
+    }
+  },
+  "logs": {
+    "codex.log": "e943636f4863e6e817c4e7bdcaef98092943803e2d242623dc4badf1847727ca",
+    "codex-aliased.log": "07439ff5497289a5a52458447a301ca7bea0d8b4eb05b743e996bf4b5fdc32fc",
+    "claude.log": "6c5701b80711ae96c6d691a526b3f52dd25f80aeba8c59c1215caad5622c76e1",
+    "claude-skill.log": "be0071f2dc986187a40a66ae299aa5271a846257eeb240442de8563707f6ab1a",
+    "whitespace-empty.log": "9d39e59685abef5fe9742bfbb07352d570e1504421080f57164a58c97fa85581",
+    "empty-candidate.log": "ef5f167f181462b11f90139962081df01d9bca259c4974e86a5098c9f22a7601",
+    "sdk-install.log": "764bac3a742b2f3d5522458eb76772f47a2b265726941f9faf6b5663e60b1320"
+  },
+  "versions": {
+    "codex": "0.167.0",
+    "claudeCode": "2.1.319",
+    "claudeAgentSdk": "0.3.319",
+    "bun": "1.4.3"
+  },
+  "limitations": [
+    "These are local metadata/prompt-rendering checks on Darwin ARM64, not model turns or fresh-project authoring evaluations.",
+    "Claude ran with project settings selected, Skill available, hooks and MCP disabled, and no persisted session; input yielded no user messages and context inspection used local summary estimates.",
+    "Raw global instructions, account details and user configuration are not retained.",
+    "The candidate empty-override file layout was a manual stand-in, restored afterward. Production code is unchanged."
+  ],
+  "failedProbes": {
+    "codexLiteralPath": "A first assertion expected an absolute SKILL.md path. Codex uses an alias plus root mapping; the corrected assertion checks both.",
+    "claudeNoSkillTool": "With tools:[], initialization exposed the slash command but context summary omitted skill metadata. Enabling only the Skill tool exposed its project path. No tool was invoked."
+  },
+  "sdkLockSha256": "a080b0a41c61131a7555c14a7f405d4306a814e9c24273ed2ff4773b3761a4c8",
+  "executableSha256": {
+    "codex": "030316ecfbb41f4e7946e584b0063ef333b7a36cd312ba349f2f6869e39b62cc",
+    "claude": "1f53587e92dee8e089fa349188a4cda64fa34ace6e7b0ca2ee278ddaa3cc2ebd",
+    "effectory": "a69d21b724f053b90453e29d9dd408523c4cfc40b76974bdebcc4ff302a286bf"
+  },
+  "sourceAudit": {
+    "capturedFiles": 457,
+    "changed": 0,
+    "added": 0,
+    "missing": 0,
+    "baseline": "docs/runtime-upgrade-format2-certification.json"
+  }
+}

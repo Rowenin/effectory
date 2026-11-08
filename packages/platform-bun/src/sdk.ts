@@ -220,7 +220,7 @@ export function upgradeProject(repository: string, effectoryVersion: string) {
   });
 }
 
-const applicationTemplate = `import { Application, Task, Workflow } from "@effectory/core";
+const applicationTemplate = `import { Application, Task, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 const Input = Schema.Struct({ name: Schema.String });

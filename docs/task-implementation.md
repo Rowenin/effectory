@@ -35,7 +35,7 @@ All properties are readonly. A context is valid only within its active attempt; 
 This example submits a deployment to an application-defined external client and publishes its immutable receipt. `DeploymentClient.create` accepts the shown input and an idempotency key, and returns `DeploymentReceipt.schema.Type` with the domain error represented by `DeploymentError`. These imported application services/codecs are hypothetical; no provider implementation is claimed here.
 
 ```ts
-import { Application, Artifact, Task } from "@effectory/core";
+import { Application, Artifact, Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import {

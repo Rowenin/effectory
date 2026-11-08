@@ -1,0 +1,199 @@
+{
+  "status": "Verified shared acquisition ownership; no implementation change",
+  "build": "c26a3010cee6c4d7dac060b8a4b70388d5c856e5263ad764533db6a5ce9f7357",
+  "target": {
+    "filename": "/tmp/effectory-http-disconnect/release2-bin/effectory-darwin-arm64",
+    "sha256": "0d1ae6d32526f4deb52fa9733d3420112decc9a311de004d6aa305e01ec3f485"
+  },
+  "sourceEvidence": "docs/runtime-http-disconnect-certification.json",
+  "sourceAudit": {
+    "files": 460,
+    "changed": [],
+    "added": [],
+    "missing": []
+  },
+  "direct": [
+    {
+      "mode": "one",
+      "events": [
+        "acquired:old",
+        "building:old",
+        "ready:second",
+        "release-start:old",
+        "release-end:old",
+        "acquired:old",
+        "release-start:old",
+        "release-end:old"
+      ]
+    },
+    {
+      "mode": "all",
+      "events": [
+        "acquired:old",
+        "building:old",
+        "release-start:old",
+        "release-end:old",
+        "acquired:old",
+        "release-start:old",
+        "release-end:old"
+      ]
+    }
+  ],
+  "http": [
+    {
+      "signal": "SIGINT",
+      "mode": "one",
+      "repo": "/tmp/effectory-shared-acquisition/http-uBi6vX",
+      "revision": "b22b2f8f464ba106e7acaf80d11009385ea05ca7d54f79e2a52ad3aad7a95cc7",
+      "events": [
+        "acquired",
+        "building",
+        "read:b",
+        "closed:b",
+        "release-start",
+        "release-end",
+        "acquired",
+        "read:c",
+        "closed:c",
+        "release-start",
+        "release-end"
+      ],
+      "clientResults": [
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        }
+      ],
+      "daemonExit": 0
+    },
+    {
+      "signal": "SIGINT",
+      "mode": "all",
+      "repo": "/tmp/effectory-shared-acquisition/http-RMJOOi",
+      "revision": "128a1efb3b97138b6eee4b385d498202fd0e2eb776e5f116e564cc8017bb74e9",
+      "events": [
+        "acquired",
+        "building",
+        "release-start",
+        "release-end",
+        "acquired",
+        "read:c",
+        "closed:c",
+        "release-start",
+        "release-end"
+      ],
+      "clientResults": [
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 130,
+          "stdoutBytes": 0
+        }
+      ],
+      "daemonExit": 0
+    },
+    {
+      "signal": "SIGKILL",
+      "mode": "one",
+      "repo": "/tmp/effectory-shared-acquisition/http-91zVYE",
+      "revision": "fd85dc215f272a580cc77f36986b4f97742e16c2d240ea89db383581d5bca4e8",
+      "events": [
+        "acquired",
+        "building",
+        "read:b",
+        "closed:b",
+        "release-start",
+        "release-end",
+        "acquired",
+        "read:c",
+        "closed:c",
+        "release-start",
+        "release-end"
+      ],
+      "clientResults": [
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        }
+      ],
+      "daemonExit": 0
+    },
+    {
+      "signal": "SIGKILL",
+      "mode": "all",
+      "repo": "/tmp/effectory-shared-acquisition/http-dNTSGf",
+      "revision": "64a497fa2bfa8f54aa40b907ddfd48e67bdf9e04f807b0f3cdb72b5b6f471503",
+      "events": [
+        "acquired",
+        "building",
+        "release-start",
+        "release-end",
+        "acquired",
+        "read:c",
+        "closed:c",
+        "release-start",
+        "release-end"
+      ],
+      "clientResults": [
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        },
+        {
+          "exit": 137,
+          "stdoutBytes": 0
+        }
+      ],
+      "daemonExit": 0
+    }
+  ],
+  "probes": {
+    "probe.mjs": "import assert from 'node:assert/strict';\nimport { appendFileSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';\nimport { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';\nimport path from 'node:path';\nimport { Effect, Exit, Fiber, Layer } from 'effect';\nimport { Catalog } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/catalog.ts';\nimport { ownershipLayer } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/ownership.ts';\nimport { revisionCatalogLayer } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/revisions.ts';\n\nconst results = [];\nfor (const mode of ['one', 'all']) {\n  const repository = await mkdtemp('/tmp/effectory-shared-acquisition/repo-');\n  const marker = path.join(repository, 'events');\n  const block = path.join(repository, 'block');\n  const acquireGate = path.join(repository, 'acquire-gate');\n  const releaseGate = path.join(repository, 'release-gate');\n  const filename = path.join(repository, 'effectory.ts');\n  const events = () => readFileSync(marker, 'utf8').trim().split('\\n').filter(Boolean);\n  const record = (s) => Effect.sync(() => appendFileSync(marker, s + '\\n'));\n  const until = (condition) => Effect.gen(function* () {\n    while (!condition()) yield* Effect.sleep('5 millis');\n  }).pipe(Effect.timeout('5 seconds'));\n  const application = (label) => `\nimport { appendFileSync, existsSync } from 'node:fs';\nimport { Application } from '@offtree/effectory-sdk';\nimport { Context, Effect, Layer } from 'effect';\nconst Resource = Context.Service('test/SharedAcquisition');\nconst record = (s) => Effect.sync(() => appendFileSync(${JSON.stringify(marker)}, s + ':${label}\\\\n'));\nconst wait = (file) => Effect.gen(function* () { while (!existsSync(file)) yield* Effect.sleep('5 millis'); });\nconst resource = Layer.effect(Resource, Effect.acquireRelease(record('acquired'), () => Effect.gen(function* () {\n  yield* record('release-start');\n  if (${JSON.stringify(label)} === 'old' && existsSync(${JSON.stringify(block)})) yield* wait(${JSON.stringify(releaseGate)});\n  yield* record('release-end');\n})).pipe(Effect.tap(() => ${JSON.stringify(label)} === 'old' && existsSync(${JSON.stringify(block)})\n  ? record('building').pipe(Effect.andThen(wait(${JSON.stringify(acquireGate)}))) : Effect.void)));\nexport default Application.make({}).provide(resource);\n`;\n  try {\n    await mkdir(path.join(repository, '.effectory'));\n    await writeFile(marker, '');\n    await writeFile(filename, application('old'));\n    await Effect.runPromise(Effect.gen(function* () {\n      const catalog = yield* Catalog;\n      const old = catalog.active;\n      yield* Effect.promise(() => writeFile(filename, application('new')));\n      yield* Effect.gen(function* () { yield* catalog.activate(yield* catalog.prepare()); }).pipe(Effect.scoped);\n      writeFileSync(marker, '');\n      writeFileSync(block, 'block');\n      const borrow = (name) => catalog.get(old).pipe(\n        Effect.tap(() => record('ready:' + name)),\n        Effect.andThen(Effect.never), Effect.scoped, Effect.forkScoped\n      );\n      const first = yield* borrow('first');\n      yield* until(() => events().includes('building:old'));\n      const second = yield* borrow('second');\n      // Let the second caller enter the existing pending RcMap lookup.\n      yield* Effect.sleep('25 millis');\n      yield* Fiber.interrupt(first).pipe(Effect.timeout('1 second'));\n      assert.equal(Exit.hasInterrupts(yield* Fiber.await(first)), true);\n      assert.deepEqual(events(), ['acquired:old', 'building:old']);\n      if (mode === 'one') {\n        writeFileSync(acquireGate, 'continue');\n        yield* until(() => events().includes('ready:second'));\n        assert.equal(events().filter(x => x === 'acquired:old').length, 1);\n      }\n      const stopping = yield* Fiber.interrupt(second).pipe(Effect.forkScoped);\n      yield* until(() => events().includes('release-start:old'));\n      assert.equal(stopping.pollUnsafe(), undefined);\n      assert.equal(events().includes('release-end:old'), false);\n      writeFileSync(releaseGate, 'continue');\n      yield* Fiber.join(stopping).pipe(Effect.timeout('1 second'));\n      assert.equal(Exit.hasInterrupts(yield* Fiber.await(second)), true);\n      assert.equal(events().filter(x => x === 'release-end:old').length, 1);\n      if (mode === 'all') assert.equal(events().some(x => x.startsWith('ready:')), false);\n      rmSync(block);\n      yield* catalog.get(old).pipe(Effect.scoped);\n      assert.equal(events().filter(x => x === 'acquired:old').length, 2);\n      assert.equal(events().filter(x => x === 'release-end:old').length, 2);\n      results.push({ mode, events: events() });\n    }).pipe(\n      Effect.ensuring(Effect.sync(() => { writeFileSync(acquireGate, 'continue'); writeFileSync(releaseGate, 'continue'); })),\n      Effect.scoped,\n      Effect.provide(revisionCatalogLayer(repository).pipe(Layer.provide(ownershipLayer(path.join(repository, '.effectory/owner')))))\n    ));\n  } finally {\n    await rm(repository, { recursive: true, force: true });\n  }\n}\nwriteFileSync('/tmp/effectory-shared-acquisition/results.json', JSON.stringify(results, null, 2) + '\\n');\nconsole.log(JSON.stringify(results, null, 2));\n",
+    "http.mjs": "import assert from 'node:assert/strict';\nimport { existsSync, readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';\nimport path from 'node:path';\nimport { harness } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs';\nconst base = '/tmp/effectory-shared-acquisition';\nconst binary = '/tmp/effectory-http-disconnect/release2-bin/effectory-darwin-arm64';\nconst results = [];\nfor (const signal of ['SIGINT', 'SIGKILL']) for (const mode of ['one', 'all']) {\n  const repo = mkdtempSync(path.join(base, 'http-'));\n  const marker = path.join(repo, 'events');\n  const h = harness(repo), clients = [];\n  const all = () => existsSync(marker) ? readFileSync(marker, 'utf8').trim().split('\\n') : [];\n  const set = (file) => writeFileSync(path.join(repo, file), 'continue');\n  try {\n    await h.cli(binary, repo, ['init', repo]);\n    writeFileSync(path.join(repo, 'effectory.ts'), `\nimport { appendFileSync, existsSync } from 'node:fs';\nimport { Application, Vault } from '@offtree/effectory-sdk';\nimport { Effect, Schema } from 'effect';\nconst record = (s) => Effect.sync(() => appendFileSync(${JSON.stringify(marker)}, s + '\\\\n'));\nconst has = (file) => existsSync(${JSON.stringify(repo)} + '/' + file);\nconst wait = (file) => Effect.gen(function* () { while (!has(file)) yield* Effect.sleep('5 millis'); });\nconst Credentials = Vault.make({ id: 'credentials', secrets: { a: Schema.String, b: Schema.String, c: Schema.String } });\nconst provider = Vault.layer(Credentials, () => Effect.acquireRelease(record('acquired'), () => Effect.gen(function* () {\n  yield* record('release-start');\n  if (has('block')) yield* wait('release-gate');\n  yield* record('release-end');\n})).pipe(Effect.andThen(Effect.suspend(() => has('block') ? record('building').pipe(Effect.andThen(wait('acquire-gate'))) : Effect.void)), Effect.as({\n providerId: 'test/shared-acquisition',\n read: (key) => record('read:' + key).pipe(Effect.andThen(Effect.never), Effect.ensuring(record('closed:' + key)))\n})));\nexport default Application.make({ vaults: [Credentials] }).provide(provider);\n`);\n    let daemon = await h.start(binary, repo);\n    const revision = JSON.parse(readFileSync(path.join(repo, '.effectory/active.json'), 'utf8')).revision;\n    await h.cli(binary, repo, ['daemon', 'stop']); await daemon.exited;\n    assert.deepEqual(all(), ['acquired', 'release-start', 'release-end']);\n    writeFileSync(path.join(repo, 'effectory.ts'), \"import { Application } from '@offtree/effectory-sdk'; export default Application.make({});\\n\");\n    daemon = await h.start(binary, repo);\n    const offset = all().length, events = () => all().slice(offset);\n    set('block');\n    const spawn = (key) => {\n      const child = Bun.spawn([binary, 'vault', 'reveal', 'credentials', key, '--revision', revision, '--repository', repo], { cwd: repo, stdout: 'pipe', stderr: 'pipe' });\n      clients.push(child);\n      return { child, result: Promise.all([child.exited, new Response(child.stdout).text(), new Response(child.stderr).text()]) };\n    };\n    const a = spawn('a');\n    await h.until('first acquisition pending', events, e => e.includes('building'), 10000);\n    const b = spawn('b');\n    await Bun.sleep(2500);\n    assert.equal(b.child.exitCode, null);\n    a.child.kill(signal); await a.child.exited;\n    await Bun.sleep(300);\n    assert.deepEqual(events(), ['acquired', 'building']);\n    if (mode === 'one') {\n      set('acquire-gate');\n      await h.until('second read starts', events, e => e.includes('read:b'), 10000);\n      assert.deepEqual(events(), ['acquired', 'building', 'read:b']);\n    }\n    b.child.kill(signal); await b.child.exited;\n    await h.until('last waiter cleanup starts', events, e => e.includes('release-start'), 10000);\n    assert.equal(events().includes('release-end'), false);\n    assert.equal(daemon.exitCode, null);\n    await h.cli(binary, repo, ['daemon', 'status']);\n    set('release-gate');\n    await h.until('last waiter cleanup finishes', events, e => e.includes('release-end'), 10000);\n    assert.equal(events().filter(e => e === 'acquired').length, 1);\n    if (mode === 'all') assert.equal(events().some(e => e.startsWith('read:')), false);\n    rmSync(path.join(repo, 'block'));\n    const c = spawn('c');\n    await h.until('later read starts', events, e => e.includes('read:c'), 10000);\n    c.child.kill(signal); await c.child.exited;\n    await h.until('later borrow releases', events, e => e.filter(x => x === 'release-end').length === 2, 10000);\n    assert.equal(events().filter(e => e === 'acquired').length, 2);\n    const clientResults = await Promise.all([a.result, b.result, c.result]);\n    assert.ok(clientResults.every(r => r[1].length === 0));\n    await h.cli(binary, repo, ['daemon', 'stop']); assert.equal(await daemon.exited, 0);\n    results.push({ signal, mode, repo, revision, events: events(), clientResults: clientResults.map(r => ({ exit: r[0], stdoutBytes: r[1].length })), daemonExit: daemon.exitCode });\n    console.log('passed', signal, mode);\n  } finally {\n    set('acquire-gate'); set('release-gate');\n    for (const c of clients) if (c.exitCode === null) c.kill('SIGKILL');\n    await h.close();\n    writeFileSync(path.join(base, 'http-results.json'), JSON.stringify(results, null, 2) + '\\n');\n  }\n}\n"
+  },
+  "logs": {
+    "probe.log": {
+      "sha256": "0d3ffb277305bb85266047fe3f298ce34a142e9a90d72a03100c36f1f6d76c84",
+      "text": "[\n  {\n    \"mode\": \"one\",\n    \"events\": [\n      \"acquired:old\",\n      \"building:old\",\n      \"ready:second\",\n      \"release-start:old\",\n      \"release-end:old\",\n      \"acquired:old\",\n      \"release-start:old\",\n      \"release-end:old\"\n    ]\n  },\n  {\n    \"mode\": \"all\",\n    \"events\": [\n      \"acquired:old\",\n      \"building:old\",\n      \"release-start:old\",\n      \"release-end:old\",\n      \"acquired:old\",\n      \"release-start:old\",\n      \"release-end:old\"\n    ]\n  }\n]\n"
+    },
+    "http.log": {
+      "sha256": "2f03afa650399ecf400e1ee8f3efc0ab3efb25df0fe24a3610623250bbc22359",
+      "text": "49 |     const b = spawn('b');\n50 |     await Bun.sleep(300);\n51 |     assert.equal(b.child.exitCode, null);\n52 |     a.child.kill(signal); await a.child.exited;\n53 |     await Bun.sleep(300);\n54 |     assert.deepEqual(events(), ['acquired', 'building']);\n                ^\nAssertionError: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  [\n    'acquired',\n    'building',\n+   'release-start'\n  ]\n\n generatedMessage: true,\n     actual: [ \"acquired\", \"building\", \"release-start\" ],\n   expected: [ \"acquired\", \"building\" ],\n   operator: \"deepStrictEqual\",\n       diff: \"simple\",\n       code: \"ERR_ASSERTION\"\n\n      at /private/tmp/effectory-shared-acquisition/http.mjs:54:12\n\nBun v1.4.3 (macOS arm64)\n"
+    },
+    "http-confirmed.log": {
+      "sha256": "2a9ebabf67e6da1cbadbf49f3926139e5da5bcd65907e3ed48f295f49227ccfe",
+      "text": "passed SIGINT one\npassed SIGINT all\npassed SIGKILL one\npassed SIGKILL all\n"
+    }
+  },
+  "limitations": [
+    "Initial HTTP attempt waited only 300 ms for the second CLI and observed acquisition cancellation; it did not establish that the second request arrived. The corrected probe waits 2.5 s and asserts exactly one acquisition before later retry.",
+    "No daemon SIGKILL, nonterminating finalizer, other Effect version or other executable platform guarantee.",
+    "No new full-suite run; the certified source and executable are unchanged."
+  ]
+}

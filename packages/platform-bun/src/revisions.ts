@@ -9,11 +9,20 @@ import {
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { Application } from "@effectory/core";
-import { Digest } from "@effectory/runtime/extension-protocol";
 import type { ExtensionLock } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
-import { Context, Effect, Exit, Layer, Schema, Scope, Semaphore } from "effect";
+import { Application, Vault } from "@offtree/effectory-sdk";
+import { building } from "@offtree/effectory-sdk/internal/vault-tracker";
+import {
+  Context,
+  Effect,
+  Exit,
+  Layer,
+  RcMap,
+  Schema,
+  Scope,
+  Semaphore,
+} from "effect";
 
 import {
   assertUnchanged,
@@ -31,14 +40,17 @@ import { GitHubSourceLive } from "./extension-source.ts";
 import { validateExtensions } from "./extension-validator.ts";
 import { hostAbi, installHostModules } from "./host-runtime.ts";
 import { RepositoryLease } from "./ownership.ts";
+import { RevisionManifest as Manifest } from "./revision-manifest.ts";
+import {
+  assertRevisionExecutable,
+  executionCompatibility,
+  executionContract,
+  revisionExecutionIdentity,
+  runtimeExecutionPolicy,
+} from "./runtime-compatibility.ts";
+import { readRuntimeStorage } from "./runtime-storage-format.ts";
+import { makeVaultStore } from "./vault-store.ts";
 
-const Manifest = Schema.Struct({
-  digest: Digest,
-  effectVersion: Schema.Literal("4.0.5"),
-  extensionDigests: Schema.Array(Digest).check(Schema.isMaxLength(128)),
-  format: Schema.Literal(2),
-  hostAbi: Digest,
-});
 function revisionFile(filename: string, maximum: number) {
   const stat = lstatSync(filename);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maximum) {
@@ -46,7 +58,11 @@ function revisionFile(filename: string, maximum: number) {
   }
   return readFileSync(filename);
 }
-function loadApplication(filename: string, parent: Scope.Scope) {
+function loadApplication(
+  filename: string,
+  parent: Scope.Scope,
+  vaults: typeof Vault.LocalStore.Service
+) {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       const scope = yield* Scope.fork(parent);
@@ -75,12 +91,17 @@ function loadApplication(filename: string, parent: Scope.Scope) {
               return layer as Layer.Layer<Application.Registry, unknown>;
             },
           });
-          const context = yield* Layer.buildWithScope(application, scope).pipe(
-            Effect.mapError(revisionUnavailable)
-          );
+          const context = yield* building(
+            Layer.buildWithScope(application, scope).pipe(
+              Effect.provideService(Vault.LocalStore, vaults)
+            )
+          ).pipe(Effect.mapError(revisionUnavailable));
           return yield* Effect.try({
             catch: revisionUnavailable,
-            try: () => Context.get(context, Application.Registry),
+            try: () => {
+              const registry = Context.get(context, Application.Registry);
+              return registry;
+            },
           });
         })
       ).pipe(
@@ -98,6 +119,8 @@ export const revisionCatalogLayer = (repository: string) =>
     Effect.gen(function* () {
       const lease = yield* RepositoryLease;
       const parent = yield* Effect.scope;
+      const hostContext = yield* Effect.context<never>();
+      const vaults = yield* makeVaultStore(repository, lease);
       const semaphore = yield* Semaphore.make(1);
       const stateDirectory = path.join(repository, ".effectory");
       const revisionsDirectory = path.join(stateDirectory, "revisions");
@@ -110,7 +133,13 @@ export const revisionCatalogLayer = (repository: string) =>
           return hostAbi();
         },
       });
-      const revisions = new Map<string, typeof Application.Registry.Service>();
+      const storage = yield* Effect.try({
+        catch: revisionUnavailable,
+        try: () => readRuntimeStorage(repository),
+      });
+      const revisions = new Map<string, string>();
+      const archived = new Map<string, typeof Manifest.Type>();
+      const executionPolicy = runtimeExecutionPolicy();
       const candidates = new WeakMap<RevisionCandidate, Bundle["inputs"]>();
       let active = "";
       const retained = yield* Effect.try({
@@ -151,7 +180,7 @@ export const revisionCatalogLayer = (repository: string) =>
       for (const revision of retained) {
         const directory = path.join(revisionsDirectory, revision);
         const filename = path.join(directory, "application.mjs");
-        yield* Effect.try({
+        const storedManifest = yield* Effect.try({
           catch: revisionUnavailable,
           try: () => {
             const manifest = Schema.decodeUnknownSync(Manifest)(
@@ -164,17 +193,81 @@ export const revisionCatalogLayer = (repository: string) =>
               { onExcessProperty: "error" }
             );
             if (
-              manifest.hostAbi !== abi ||
               digestOf(`${manifest.hostAbi}/${manifest.digest}`) !== revision ||
               digestOf(revisionFile(filename, 16_777_216)) !== manifest.digest
             ) {
               throw revisionUnavailable();
             }
-            assertTrustedDigests(repository, manifest.extensionDigests);
+            if (
+              storage === null ||
+              executionCompatibility(
+                revisionExecutionIdentity(manifest),
+                executionPolicy
+              ) !== "Unavailable"
+            ) {
+              assertRevisionExecutable(revision, manifest, executionPolicy);
+              assertTrustedDigests(repository, manifest.extensionDigests);
+            }
+            return manifest;
           },
         });
-        revisions.set(revision, yield* loadApplication(filename, parent));
+        if (
+          executionCompatibility(
+            revisionExecutionIdentity(storedManifest),
+            executionPolicy
+          ) === "Unavailable"
+        ) {
+          archived.set(revision, storedManifest);
+        } else {
+          revisions.set(revision, filename);
+        }
+        yield* Effect.yieldNow;
       }
+      const assertExecutable = (revision: string) => {
+        const manifest = archived.get(revision);
+        if (manifest !== undefined) {
+          assertRevisionExecutable(revision, manifest, executionPolicy);
+        }
+        // Every executable entry was integrity- and compatibility-checked before insertion.
+        // This check is safe inside admission transactions: no code or I/O runs.
+        if (!revisions.has(revision)) {
+          throw new OperationError({
+            code: "RevisionUnavailable",
+            message: `Application revision ${revision} is unavailable for execution; use its compatible host`,
+          });
+        }
+      };
+      // Retained bundles are metadata. Only active borrowers own live Layers.
+      // RcMap merges a caller's Context into lookup: restore the catalog's base
+      // Context so a task's tags, tracker or Layer memo map cannot leak here.
+      const loaded = yield* RcMap.make({
+        lookup: (revision: string) =>
+          Effect.gen(function* () {
+            yield* Effect.try({
+              catch: revisionUnavailable,
+              try: () => assertExecutable(revision),
+            });
+            const filename = revisions.get(revision);
+            if (!filename) {
+              return yield* revisionUnavailable();
+            }
+            const scope = yield* Effect.scope;
+            return yield* loadApplication(filename, scope, vaults.service).pipe(
+              Effect.updateContext<never, never>(() =>
+                Context.add(
+                  Context.add(hostContext, Scope.Scope, scope),
+                  Layer.CurrentMemoMap,
+                  Layer.makeMemoMapUnsafe()
+                )
+              )
+            );
+          }),
+      });
+      const get = (revision = active) =>
+        RcMap.get(loaded, revision).pipe(
+          Effect.map((registry) => ({ registry, revision }))
+        );
+      let activeScope: Scope.Closeable | undefined;
       const prepare = (lock?: typeof ExtensionLock.Type) =>
         Effect.gen(function* () {
           const baseRevision = active;
@@ -186,8 +279,16 @@ export const revisionCatalogLayer = (repository: string) =>
           const bundle = yield* buildApplication(repository, lock);
           const contentDigest = digestOf(bundle.source);
           const revision = digestOf(`${abi}/${contentDigest}`);
-          if (!revisions.has(revision)) {
-            if (revisions.size >= 128) {
+          if (archived.has(revision)) {
+            yield* Effect.try({
+              catch: revisionUnavailable,
+              try: () => assertExecutable(revision),
+            });
+          }
+          if (revisions.has(revision)) {
+            yield* get(revision);
+          } else {
+            if (revisions.size + archived.size >= 128) {
               return yield* new OperationError({
                 code: "LimitExceeded",
                 message: "Retained application revision limit reached (128)",
@@ -203,75 +304,137 @@ export const revisionCatalogLayer = (repository: string) =>
                 replaceFile(filename, bundle.source);
               },
             });
-            const registry = yield* loadApplication(filename, parent);
+            revisions.set(revision, filename);
+            // The validation borrow rolls back immediately if publishing the
+            // manifest fails. A successful prepare transfers a borrow to its
+            // caller's Scope before releasing validation's temporary borrow.
+            const caller = yield* Effect.scope;
+            let published = false;
+            yield* Effect.gen(function* () {
+              yield* get(revision);
+              yield* Effect.try({
+                catch: revisionUnavailable,
+                try: () => {
+                  lease.assertActive();
+                  replaceFile(
+                    path.join(directory, "manifest.json"),
+                    JSON.stringify({
+                      digest: contentDigest,
+                      effectVersion: "4.0.5",
+                      executionContract,
+                      extensionDigests: [
+                        ...new Set(
+                          Object.values(lock?.packages ?? {}).map(
+                            (pkg) => pkg.archiveDigest
+                          )
+                        ),
+                      ].toSorted(),
+                      format: 3,
+                      hostAbi: abi,
+                    })
+                  );
+                  published = true;
+                },
+              });
+              yield* get(revision).pipe(
+                Effect.provideService(Scope.Scope, caller)
+              );
+            }).pipe(
+              Effect.scoped,
+              Effect.onExit((exit) =>
+                Effect.sync(() => {
+                  if (Exit.isFailure(exit) && !published) {
+                    revisions.delete(revision);
+                  }
+                })
+              )
+            );
+          }
+          const candidate = Object.freeze({ baseRevision, revision });
+          candidates.set(candidate, bundle.inputs);
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => {
+              candidates.delete(candidate);
+            })
+          );
+          return candidate;
+        }).pipe(semaphore.withPermits(1));
+      const activate = (candidate: RevisionCandidate, publish?: () => void) =>
+        Effect.uninterruptibleMask((restore) =>
+          Effect.gen(function* () {
+            yield* Effect.try({
+              catch: revisionUnavailable,
+              try: () => {
+                if (
+                  !candidates.has(candidate) ||
+                  candidate.baseRevision !== active
+                ) {
+                  throw sourceConflict();
+                }
+              },
+            });
+            // Keep both revisions alive through publication. Existing borrowers of
+            // the old revision remain owners after its active pin is released.
+            const scope = yield* Scope.fork(parent);
+            const result = yield* restore(
+              get(candidate.revision).pipe(
+                Effect.provideService(Scope.Scope, scope)
+              )
+            ).pipe(
+              Effect.onExit((exit) =>
+                Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void
+              )
+            );
+            const previous = activeScope;
             yield* Effect.try({
               catch: revisionUnavailable,
               try: () => {
                 lease.assertActive();
-                // This marker is written only after the application's Layer validates.
+                const inputs = candidates.get(candidate);
+                if (!inputs || candidate.baseRevision !== active) {
+                  throw sourceConflict();
+                }
+                assertUnchanged(inputs);
+                // No asynchronous gap between validation and pointer publication.
+                publish?.();
                 replaceFile(
-                  path.join(directory, "manifest.json"),
-                  JSON.stringify({
-                    digest: contentDigest,
-                    effectVersion: "4.0.5",
-                    extensionDigests: [
-                      ...new Set(
-                        Object.values(lock?.packages ?? {}).map(
-                          (pkg) => pkg.archiveDigest
-                        )
-                      ),
-                    ].toSorted(),
-                    format: 2,
-                    hostAbi: abi,
-                  })
+                  path.join(stateDirectory, "active.json"),
+                  JSON.stringify({ revision: candidate.revision })
                 );
+                active = candidate.revision;
+                activeScope = scope;
+                candidates.delete(candidate);
               },
-            });
-            revisions.set(revision, registry);
-          }
-          const candidate = Object.freeze({ baseRevision, revision });
-          candidates.set(candidate, bundle.inputs);
-          return candidate;
-        }).pipe(semaphore.withPermits(1));
-      const activate = (candidate: RevisionCandidate, publish?: () => void) =>
-        Effect.try({
-          catch: revisionUnavailable,
-          try: () => {
-            lease.assertActive();
-            const inputs = candidates.get(candidate);
-            const registry = revisions.get(candidate.revision);
-            if (!inputs || !registry || candidate.baseRevision !== active) {
-              throw sourceConflict();
-            }
-            assertUnchanged(inputs);
-            // No asynchronous gap between validation, administrative publication and pointer swap.
-            publish?.();
-            replaceFile(
-              path.join(stateDirectory, "active.json"),
-              JSON.stringify({ revision: candidate.revision })
+            }).pipe(
+              Effect.onExit((exit) =>
+                Exit.isFailure(exit) ? Scope.close(scope, exit) : Effect.void
+              )
             );
-            active = candidate.revision;
-            candidates.delete(candidate);
-            return { registry, revision: active };
-          },
-        });
+            // The returned registry is borrowed too: a later activation must not
+            // close it while this caller still uses it.
+            yield* get(candidate.revision);
+            if (previous) {
+              yield* Scope.close(previous, Exit.void);
+            }
+            return result;
+          })
+        ).pipe(semaphore.withPermits(1));
       const extensions = yield* prepareExtensions(repository, {
         requireLock: false,
         trust: false,
       }).pipe(Effect.provide(GitHubSourceLive));
-      yield* activate(yield* prepare(extensions?.lock));
+      yield* Effect.gen(function* () {
+        yield* activate(yield* prepare(extensions?.lock));
+      }).pipe(Effect.scoped);
       return {
         activate,
         get active() {
           return active;
         },
-        get: (revision = active) => {
-          const registry = revisions.get(revision);
-          return registry
-            ? Effect.succeed({ registry, revision })
-            : Effect.fail(revisionUnavailable());
-        },
+        assertExecutable,
+        get,
         prepare,
+        vaults,
       };
     })
   );

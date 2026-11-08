@@ -1,4 +1,7 @@
-import { Schema } from "effect";
+import { CheckSettings } from "@offtree/effectory-sdk/internal/check-schema";
+import { EncodedSelection } from "@offtree/effectory-sdk/internal/report-selection-schema";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
+import { Effect, Schema } from "effect";
 
 import { Cursor, Id, PageLimit } from "./history-protocol.ts";
 import { RunStatus, ScheduleProvenance } from "./protocol.ts";
@@ -45,6 +48,9 @@ export const ScheduleSummary = Schema.Struct({
   workflowId: Id,
 });
 export const ScheduleDescription = Schema.Struct({
+  checks: Schema.optionalKey(CheckSettings),
+  reportSelection: Schema.optionalKey(EncodedSelection),
+  tags: RunTags.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
   ...ScheduleSummary.fields,
   catchUp: Schema.Union([
     Schema.Literal("skip"),

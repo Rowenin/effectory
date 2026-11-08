@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { terminal } from "@effectory/runtime/protocol";
 import {
   Application,
   Artifact,
@@ -11,8 +12,7 @@ import {
   Workflow,
   WorkflowPatch,
   WorkflowSchedule,
-} from "@effectory/core";
-import { terminal } from "@effectory/runtime/protocol";
+} from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 import type { WorkflowEngine } from "effect/workflow/WorkflowEngine";
 

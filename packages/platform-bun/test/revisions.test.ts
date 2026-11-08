@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { Task } from "@effectory/core";
+import type { Task } from "@offtree/effectory-sdk";
 import { Effect, Layer } from "effect";
 
 import { Catalog } from "../src/catalog.ts";
@@ -11,7 +11,7 @@ import { ownershipLayer } from "../src/ownership.ts";
 import { revisionCatalogLayer } from "../src/revisions.ts";
 
 function application(value: string) {
-  return `import { Application, Task } from "@effectory/core";
+  return `import { Application, Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 const task = Task.make({ id: "value", version: 1, input: Schema.Struct({}), success: Schema.String, error: Schema.Never, replay: "idempotent" }, () => Effect.succeed(${JSON.stringify(value)}));
 export default Application.make({ tasks: [task] });`;
@@ -64,7 +64,7 @@ test("source changes retain executable old application revisions with canonical 
         }
         expect(yield* oldTask.execute({}, context)).toBe("first");
         expect(yield* newTask.execute({}, context)).toBe("second");
-      }).pipe(Effect.provide(layer()))
+      }).pipe(Effect.scoped, Effect.provide(layer()))
     );
   } finally {
     await rm(repository, { force: true, recursive: true });
@@ -118,6 +118,7 @@ test("activation rejects stale source and stale candidates while retaining the p
         expect(catalog.active).toBe(third.revision);
         yield* Effect.promise(() => writeFile(filename, application("third")));
       }).pipe(
+        Effect.scoped,
         Effect.provide(
           revisionCatalogLayer(repository).pipe(
             Layer.provide(ownershipLayer(path.join(state, "owner")))
@@ -136,6 +137,7 @@ test("activation rejects stale source and stale candidates while retaining the p
         }
         expect(yield* task.execute({}, context)).toBe("third");
       }).pipe(
+        Effect.scoped,
         Effect.provide(
           revisionCatalogLayer(repository).pipe(
             Layer.provide(ownershipLayer(path.join(state, "owner")))

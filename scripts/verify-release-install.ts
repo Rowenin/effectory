@@ -33,7 +33,7 @@ try {
   await mkdir(repository);
   await writeFile(
     path.join(repository, "effectory.ts"),
-    'import { Application } from "@effectory/core"; export default Application.make({});'
+    'import { Application } from "@offtree/effectory-sdk"; export default Application.make({});'
   );
   const first = await start(repository);
   children.push(first);

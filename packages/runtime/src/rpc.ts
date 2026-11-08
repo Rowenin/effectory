@@ -1,6 +1,10 @@
+import { CheckOptions } from "@offtree/effectory-sdk/internal/check-schema";
+import { EncodedSelection } from "@offtree/effectory-sdk/internal/report-selection-schema";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
 import { Schema } from "effect";
 import { Rpc, RpcGroup } from "effect/rpc";
 
+import { CheckListRequest, CheckPage } from "./check-protocol.ts";
 import {
   OperationListRequest,
   OperationPage,
@@ -28,8 +32,6 @@ import {
   DefinitionPage,
   RunListRequest,
   RunPage,
-  RunWatchRequest,
-  RunWatchFrame,
 } from "./history-protocol.ts";
 import {
   Content,
@@ -37,6 +39,12 @@ import {
   QueryPage,
   VersionListRequest,
   VersionPage,
+  AutomaticReclamationSet,
+  AutomaticReclamationStatus,
+  ReclamationRequest,
+  ReclamationPlan,
+  ReclamationApply,
+  ReclamationReceipt,
 } from "./lake-protocol.ts";
 import {
   OperationError,
@@ -46,6 +54,25 @@ import {
   CancellationRequest,
   CancellationReceipt,
 } from "./protocol.ts";
+import {
+  RecoveryAssessment,
+  RecoveryAssessmentRequest,
+  RecoveryReceipt,
+  RecoveryRequest,
+} from "./recovery-protocol.ts";
+import {
+  ReportSearchRequest,
+  ReportSearchPage,
+  ReportSystemStatus,
+  RunReportsRequest,
+  RunReportsPage,
+  ReportGetReply,
+  ReportRetryRequest,
+  ReportRetryReply,
+  ReportCancelRequest,
+  ReportCancellationReceipt,
+  RunSummarizeReply,
+} from "./report-protocol.ts";
 import {
   ScheduleListRequest,
   ScheduleList,
@@ -63,11 +90,19 @@ import {
   DaemonState,
   DiagnosticReport,
 } from "./system-protocol.ts";
+import * as VaultProtocol from "./vault-protocol.ts";
+import { RunWatch } from "./watch-rpc.ts";
 
 const Id = Schema.NonEmptyString.check(Schema.isMaxLength(200));
 const Definition = { id: Id, revision: Schema.optionalKey(Id) };
 const Input = { ...Definition, input: Schema.Json };
-const Submit = { ...Input, requestKey: Id };
+const Submit = {
+  ...Input,
+  checks: Schema.optionalKey(CheckOptions),
+  reportSelection: Schema.optionalKey(EncodedSelection),
+  requestKey: Id,
+  tags: Schema.optionalKey(RunTags),
+};
 const Decision = { requestKey: Id, waitId: Id };
 export const Hello = Schema.Struct({
   clientVersion: Id,
@@ -95,9 +130,40 @@ export const ServerStatus = Schema.Struct({
   daemon: DaemonState,
   observers: Schema.Int,
   readiness: Schema.Literals(["Ready", "Draining"]),
+  reports: Schema.optionalKey(ReportSystemStatus),
   scheduler: SchedulerStatus,
 });
 export const ControlPlane = RpcGroup.make(
+  Rpc.make("VaultList", {
+    error: OperationError,
+    payload: VaultProtocol.VaultRevision,
+    success: VaultProtocol.VaultList,
+  }),
+  Rpc.make("VaultDescribe", {
+    error: OperationError,
+    payload: VaultProtocol.VaultRequest,
+    success: VaultProtocol.VaultDescription,
+  }),
+  Rpc.make("VaultInit", {
+    error: OperationError,
+    payload: VaultProtocol.VaultRequest,
+    success: VaultProtocol.VaultInitReceipt,
+  }),
+  Rpc.make("VaultPut", {
+    error: OperationError,
+    payload: VaultProtocol.VaultPutRequest,
+    success: VaultProtocol.VaultMutationReceipt,
+  }),
+  Rpc.make("VaultDelete", {
+    error: OperationError,
+    payload: VaultProtocol.VaultDeleteRequest,
+    success: VaultProtocol.VaultMutationReceipt,
+  }),
+  Rpc.make("VaultReveal", {
+    error: OperationError,
+    payload: VaultProtocol.VaultKeyRequest,
+    success: VaultProtocol.VaultReveal,
+  }),
   Rpc.make("ScheduleList", {
     error: OperationError,
     payload: ScheduleListRequest,
@@ -241,16 +307,21 @@ export const ControlPlane = RpcGroup.make(
     payload: Submit,
     success: Run,
   }),
-  Rpc.make("RunWatch", {
-    error: OperationError,
-    payload: RunWatchRequest,
-    stream: true,
-    success: RunWatchFrame,
-  }),
+  RunWatch,
   Rpc.make("RunList", {
     error: OperationError,
     payload: RunListRequest,
     success: RunPage,
+  }),
+  Rpc.make("RunRecoveryGet", {
+    error: OperationError,
+    payload: RecoveryAssessmentRequest,
+    success: RecoveryAssessment,
+  }),
+  Rpc.make("RunRecover", {
+    error: OperationError,
+    payload: RecoveryRequest,
+    success: RecoveryReceipt,
   }),
   Rpc.make("RunCancel", {
     error: OperationError,
@@ -261,6 +332,41 @@ export const ControlPlane = RpcGroup.make(
     error: OperationError,
     payload: { runId: Id },
     success: Run,
+  }),
+  Rpc.make("ReportSearch", {
+    error: OperationError,
+    payload: ReportSearchRequest,
+    success: ReportSearchPage,
+  }),
+  Rpc.make("RunReports", {
+    error: OperationError,
+    payload: RunReportsRequest,
+    success: RunReportsPage,
+  }),
+  Rpc.make("ReportGet", {
+    error: OperationError,
+    payload: { reportId: Id },
+    success: ReportGetReply,
+  }),
+  Rpc.make("ReportRetry", {
+    error: OperationError,
+    payload: ReportRetryRequest,
+    success: ReportRetryReply,
+  }),
+  Rpc.make("ReportCancel", {
+    error: OperationError,
+    payload: ReportCancelRequest,
+    success: ReportCancellationReceipt,
+  }),
+  Rpc.make("RunSummarize", {
+    error: OperationError,
+    payload: { runId: Id },
+    success: RunSummarizeReply,
+  }),
+  Rpc.make("RunChecks", {
+    error: OperationError,
+    payload: CheckListRequest,
+    success: CheckPage,
   }),
   Rpc.make("RunOutputs", {
     error: OperationError,
@@ -322,6 +428,26 @@ export const ControlPlane = RpcGroup.make(
     error: OperationError,
     payload: VersionListRequest,
     success: VersionPage,
+  }),
+  Rpc.make("LakeReclamationAutomaticGet", {
+    error: OperationError,
+    payload: {},
+    success: AutomaticReclamationStatus,
+  }),
+  Rpc.make("LakeReclamationAutomaticSet", {
+    error: OperationError,
+    payload: AutomaticReclamationSet,
+    success: AutomaticReclamationStatus,
+  }),
+  Rpc.make("LakeReclamationPlan", {
+    error: OperationError,
+    payload: ReclamationRequest,
+    success: ReclamationPlan,
+  }),
+  Rpc.make("LakeReclamationApply", {
+    error: OperationError,
+    payload: ReclamationApply,
+    success: ReclamationReceipt,
   }),
   Rpc.make("LakeGet", {
     error: OperationError,

@@ -1,7 +1,6 @@
 import type { Database } from "bun:sqlite";
 import path from "node:path";
 
-import { canonical, encode } from "@effectory/core/internal/boundary";
 import {
   Digest,
   ExtensionChange,
@@ -12,6 +11,7 @@ import {
 } from "@effectory/runtime/extension-protocol";
 import type { OperationListRequest } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import { canonical, encode } from "@offtree/effectory-sdk/internal/boundary";
 import { Schema } from "effect";
 
 import {
@@ -25,6 +25,7 @@ import { lockRevision, validateLock } from "./extension-cache.ts";
 import { operationHistory } from "./operation-history.ts";
 import type { Lease } from "./ownership.ts";
 import type { createPagination } from "./pagination.ts";
+import { encodeStoredLock } from "./runtime-storage-format.ts";
 
 const Row = Schema.Struct({
   candidateJson: Schema.NullOr(Schema.String),
@@ -166,7 +167,10 @@ export function createExtensionJournal(
     if (current !== lockRevision(before) && current !== lockRevision(after)) {
       throw conflict();
     }
-    replaceFile(lockFilename(repository), pending.afterJson);
+    replaceFile(
+      lockFilename(repository),
+      encodeStoredLock(repository, pending.afterJson)
+    );
     boundary?.("lock");
     writeBindings(repository, after);
     boundary?.("bindings");

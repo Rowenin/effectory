@@ -36,7 +36,7 @@ Do not use an unchecked `graph.input<T>()`, cast through `any`, or claim arbitra
 The imported tasks are hypothetical definitions with these contracts: FetchRelease accepts `{ repository }` and returns `{ version, notes }; PublishSummary accepts `{ repository, markdown, channel }`and returns a URL. Their error schemas are included in`ReleaseError`.
 
 ```ts
-import { Ref, Workflow } from "@effectory/core";
+import { Ref, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import { FetchRelease, PublishSummary, ReleaseError } from "./tasks";

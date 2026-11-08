@@ -208,6 +208,59 @@ test("attempt admission holds uncertain manual work but permits idempotent recov
     })
   ));
 
+test("stale live projections cannot overwrite cancellation or stalled finalization", () =>
+  withStore((store) =>
+    Effect.gen(function* () {
+      const run = yield* store.submit(submission, "revision", "owner");
+      yield* store.project(run.runId, "Running");
+      yield* store.cancelRequest(
+        { requestKey: "stop", runId: run.runId },
+        "owner"
+      );
+      for (const stoppedStatus of ["Cancelling", "NeedsAttention"] as const) {
+        if (stoppedStatus === "NeedsAttention") {
+          yield* store.project(run.runId, stoppedStatus);
+        }
+        const before = yield* store.getRun(run.runId);
+        expect(before.status).toBe(stoppedStatus);
+        for (const staleStatus of [
+          "Queued",
+          "Running",
+          "Waiting",
+          "Retrying",
+        ] as const) {
+          expect(yield* store.project(run.runId, staleStatus)).toEqual(before);
+        }
+        expect(yield* store.getRun(run.runId)).toEqual(before);
+      }
+      expect((yield* store.project(run.runId, "Cancelled")).status).toBe(
+        "Cancelled"
+      );
+    })
+  ));
+
+test("a stop fence protects live projection even before its status is reconciled", () =>
+  withStore((store) =>
+    Effect.gen(function* () {
+      const run = yield* store.submit(submission, "revision", "owner");
+      yield* store.project(run.runId, "Waiting");
+      const reason = {
+        _tag: "ExecutionFailure",
+        category: "Control",
+        detail: { deadline: 1 },
+        outcome: "TimedOut",
+      };
+      yield* store.fence(run.runId, reason);
+      const before = yield* store.getRun(run.runId);
+      expect(yield* store.project(run.runId, "Running")).toEqual(before);
+      expect(yield* store.fenceReason(run.runId)).toEqual(reason);
+      expect(
+        (yield* store.project(run.runId, "TimedOut", reason.detail, "Control"))
+          .status
+      ).toBe("TimedOut");
+    })
+  ));
+
 test("repeated terminal projections do not duplicate events or rewrite success", () =>
   withStore((store) =>
     Effect.gen(function* () {

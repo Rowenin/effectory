@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import path from "node:path";
 
-import { Application, Task, Workflow } from "@effectory/core";
+import { Application, Task, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 import { catalogLayer } from "../../src/catalog.ts";

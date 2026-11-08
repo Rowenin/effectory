@@ -1,5 +1,11 @@
 # Implementation readiness and first release
 
+Current V1 direction (2026-11-07): [runtime correctness, upgrade/revision lifecycle and agent harness/skills setup](runtime-v1-plan.md). Additional provider extensions and UI concepts are deferred by the user. The milestones below remain the historical bounded-v0 plan.
+
+Current runtime design research is tracked in [the research queue](runtime-research-queue.md), starting with Effect Scope, Layer ownership and runtime dependency injection.
+
+Historical scope note: this roadmap defined bounded v0. Durable scheduling and scheduled task occurrence context were implemented afterward; references below to cron/schedules as deferred describe the original v0 boundary. Use [implementation status](implementation-status.md) and the [current parity audit](swamp-analysis.md#feature-mapping) for present delivery status.
+
 The bounded v0 implementation and its local/live distribution proof gates are complete; see [current evidence and deferred scope](implementation-status.md). The planning status below records the original proposal, not the latest code coverage.
 
 Status: planning pass 5 of 5. This is the entry point and proposed implementation order for the five planning passes. It refines the earlier [delivery plan](delivery-plan.md). This ledger is the original planning record. Current implemented contracts and test evidence are maintained in [implementation status](implementation-status.md); proposal syntax below should not override those executable contracts.

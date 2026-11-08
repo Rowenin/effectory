@@ -5,7 +5,7 @@
  *   bun scripts/build-binary.ts --target all          # every release target
  *   bun scripts/build-binary.ts --target bun-linux-x64 --outdir dist/bin
  *
- * Each binary embeds Bun, `effect` and `@effectory/core`; projects install the
+ * Each binary embeds Bun, `effect` and `@offtree/effectory-sdk`; projects install the
  * npm SDK only for types. The host ABI is computed from the same sources a
  * source run would hash, so retained revisions stay valid across the two.
  */
@@ -36,12 +36,18 @@ const requested = values.target ?? [`bun-${process.platform}-${process.arch}`];
 const targets = requested.includes("all") ? [...releaseTargets] : requested;
 const outdir = path.resolve(root, values.outdir);
 
-const generated = Bun.spawnSync(
-  [process.execPath, "scripts/generate-host-modules.ts", "--check"],
-  { cwd: root, stderr: "inherit", stdout: "inherit" }
-);
-if (generated.exitCode !== 0) {
-  process.exit(1);
+for (const script of [
+  "scripts/generate-host-modules.ts",
+  "scripts/generate-agent-assets.ts",
+]) {
+  const generated = Bun.spawnSync([process.execPath, script, "--check"], {
+    cwd: root,
+    stderr: "inherit",
+    stdout: "inherit",
+  });
+  if (generated.exitCode !== 0) {
+    process.exit(1);
+  }
 }
 
 const { version } = JSON.parse(

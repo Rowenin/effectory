@@ -1,140 +1,142 @@
-/* oxlint-disable no-redeclare */
-// Runtime schemas and decoded types intentionally share names.
+/* oxlint-disable no-redeclare, oxc/no-barrel-file */
+// Preserve the existing runtime schema exports and their shared object identity.
+import {
+  ContentType,
+  Record,
+} from "@offtree/effectory-sdk/internal/artifact-query-schema";
 import { Schema } from "effect";
 
-const Name = Schema.NonEmptyString.check(Schema.isMaxLength(100));
-export const Field = Schema.Union([
-  Schema.Struct({ tag: Name }),
-  Schema.Struct({
-    json: Schema.Array(Name).check(Schema.isBetweenLength(1, 8)),
-  }),
-  Schema.Struct({
-    metadata: Schema.Literals([
-      "runId",
-      "taskId",
-      "revision",
-      "output",
-      "artifactId",
-      "version",
-      "committedAt",
-      "sequence",
-      "bytes",
-      "schemaId",
-      "schemaVersion",
-      "digest",
-      "attemptId",
-      "invocationPath",
-    ]),
-  }),
-]);
-export type Field = typeof Field.Type;
-export interface Predicate {
-  readonly _tag: "And" | "Or";
-  readonly terms: readonly Expression[];
-}
-export interface Negation {
-  readonly _tag: "Not";
-  readonly term: Expression;
-}
-export interface Comparison {
-  readonly _tag: "Eq" | "Gt" | "Gte" | "Lt" | "Lte";
-  readonly field: Field;
-  readonly value: Schema.Json;
-}
-export interface Membership {
-  readonly _tag: "In";
-  readonly field: Field;
-  readonly values: readonly Schema.Json[];
-}
-export type Expression = Predicate | Negation | Comparison | Membership;
-export const Expression: Schema.Codec<Expression> = Schema.suspend(() =>
-  Schema.Union([
-    Schema.Struct({
-      _tag: Schema.Literals(["And", "Or"]),
-      terms: Schema.Array(Expression).check(Schema.isBetweenLength(1, 64)),
-    }),
-    Schema.TaggedStruct("Not", { term: Expression }),
-    Schema.Struct({
-      _tag: Schema.Literals(["Eq", "Gt", "Gte", "Lt", "Lte"]),
-      field: Field,
-      value: Schema.Json,
-    }),
-    Schema.TaggedStruct("In", {
-      field: Field,
-      values: Schema.Array(Schema.Json).check(Schema.isBetweenLength(1, 32)),
-    }),
-  ])
-);
-export const Equal = Schema.TaggedStruct("Eq", {
-  field: Field,
-  value: Schema.Json,
-});
-export const Query = Schema.Struct({
-  artifact: Schema.Struct({
-    schemaId: Schema.NonEmptyString.check(Schema.isMaxLength(200)),
-    schemaVersion: Schema.Int.check(Schema.isGreaterThan(0)),
-  }),
-  limit: Schema.Int.check(Schema.isBetween({ maximum: 200, minimum: 1 })),
-  orderBy: Schema.optionalKey(
-    Schema.Array(
-      Schema.Struct({
-        direction: Schema.Literals(["asc", "desc"]),
-        field: Field,
-      })
-    ).check(Schema.isBetweenLength(1, 4))
-  ),
-  select: Schema.optionalKey(
-    Schema.Array(Schema.Struct({ field: Field, name: Name })).check(
-      Schema.isBetweenLength(1, 32)
-    )
-  ),
-  version: Schema.Literal(1),
-  versions: Schema.Literals(["all", "latest"]),
-  where: Schema.optionalKey(Expression),
-});
-export type Query = typeof Query.Type;
-export const Record = Schema.Struct({
-  artifactId: Schema.String,
-  attemptId: Schema.String,
-  bytes: Schema.Int,
-  committedAt: Schema.String,
-  digest: Schema.String,
-  invocationPath: Schema.String,
-  output: Schema.String,
-  revision: Schema.String,
-  runId: Schema.String,
-  schemaId: Schema.String,
-  schemaVersion: Schema.Int,
-  sequence: Schema.Int,
-  tags: Schema.Record(Schema.String, Schema.String),
-  taskId: Schema.String,
-  version: Schema.Int,
-});
-export type Record = typeof Record.Type;
-export const QueryRow = Schema.Struct({
-  ...Record.fields,
-  projection: Schema.optionalKey(Schema.Record(Schema.String, Schema.Json)),
-});
-export type QueryRow = typeof QueryRow.Type;
-export const QueryPage = Schema.Struct({
-  cursor: Schema.NullOr(Schema.String),
-  matched: Schema.Int,
-  rows: Schema.Array(QueryRow).check(Schema.isMaxLength(200)),
-  scanned: Schema.Int,
-  scannedBytes: Schema.Int,
-  snapshot: Schema.Int,
-});
-export const Content = Schema.Struct({ metadata: Record, value: Schema.Json });
+import { OperationError } from "./protocol.ts";
+
+export * from "@offtree/effectory-sdk/internal/artifact-query-schema";
 
 export const VersionListRequest = Schema.Struct({
   artifactId: Schema.NonEmptyString.check(Schema.isMaxLength(200)),
   cursor: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4096))),
+  includeReclaimed: Schema.optionalKey(Schema.Boolean),
   limit: Schema.optionalKey(
     Schema.Int.check(Schema.isBetween({ maximum: 200, minimum: 1 }))
   ),
 });
+const Protection = Schema.Struct({
+  consumerRunCount: Schema.Int,
+  consumerRunIds: Schema.Array(Schema.String).check(Schema.isMaxLength(20)),
+  producerRunId: Schema.NullOr(Schema.String),
+  reportSourceRunId: Schema.NullOr(Schema.String),
+  truncated: Schema.Boolean,
+});
 export const VersionPage = Schema.Struct({
   cursor: Schema.NullOr(Schema.String.check(Schema.isMaxLength(4096))),
-  items: Schema.Array(Record).check(Schema.isMaxLength(200)),
+  items: Schema.Array(
+    Schema.Struct({
+      ...Record.fields,
+      protection: Schema.optionalKey(Protection),
+      reclaimedAt: Schema.optionalKey(Schema.String),
+      reclamationPlanId: Schema.optionalKey(Schema.String),
+    })
+  ).check(Schema.isMaxLength(200)),
   snapshot: Schema.Int,
 });
+
+const Positive = Schema.Int.check(Schema.isGreaterThan(0));
+const Identifier = Schema.NonEmptyString.check(Schema.isMaxLength(200));
+export const ReclamationRequest = Schema.Union([
+  Schema.TaggedStruct("Policy", {
+    schemaId: Schema.optionalKey(Identifier),
+    schemaVersion: Schema.optionalKey(Positive),
+  }).check(
+    Schema.makeFilter(
+      (value) =>
+        value.schemaVersion === undefined || value.schemaId !== undefined
+    )
+  ),
+  Schema.TaggedStruct("Selection", {
+    artifactId: Schema.optionalKey(Identifier),
+    keepLatest: Schema.optionalKey(Positive),
+    olderThanMillis: Schema.optionalKey(Positive),
+    schemaId: Identifier,
+    schemaVersion: Schema.optionalKey(Positive),
+  }).check(
+    Schema.makeFilter(
+      (value) =>
+        value.olderThanMillis !== undefined || value.keepLatest !== undefined
+    )
+  ),
+  Schema.TaggedStruct("Version", { artifactId: Identifier, version: Positive }),
+]);
+export type ReclamationRequest = typeof ReclamationRequest.Type;
+export const ReclamationCandidate = Schema.Struct({
+  artifactId: Identifier,
+  bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
+  reason: Schema.Literals(["Age", "VersionCount", "Explicit"]),
+  removesFinalVersion: Schema.Boolean,
+  version: Positive,
+});
+export const ReclamationPlan = Schema.Struct({
+  candidateVersions: Schema.Int,
+  candidates: Schema.Array(ReclamationCandidate).check(
+    Schema.isMaxLength(1000)
+  ),
+  emptiedArtifacts: Schema.Int,
+  expiresAt: Schema.String,
+  hasMore: Schema.Boolean,
+  logicalBytes: Schema.Int,
+  planId: Identifier,
+  protectedBy: Schema.optionalKey(
+    Schema.Struct({
+      consumerVersions: Schema.Int,
+      producerVersions: Schema.Int,
+      reportVersions: Schema.Int,
+    })
+  ),
+  protectedVersions: Schema.Int,
+  reclaimableBlobBytes: Schema.Int,
+});
+export type ReclamationPlan = typeof ReclamationPlan.Type;
+export const ReclamationApply = Schema.Struct({ planId: Identifier });
+export const ReclamationReceipt = Schema.Struct({
+  deletedVersions: Schema.Int,
+  origin: Schema.optionalKey(Schema.Literals(["Manual", "Automatic"])),
+  pendingBytes: Schema.Int,
+  planId: Identifier,
+  reclaimedBytes: Schema.Int,
+  skippedVersions: Schema.Int,
+});
+export type ReclamationReceipt = typeof ReclamationReceipt.Type;
+
+export const AutomaticReclamationSet = Schema.Struct({
+  enabled: Schema.Boolean,
+});
+export const AutomaticReclamationStatus = Schema.Struct({
+  changedAt: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  lastBatch: Schema.NullOr(
+    Schema.Struct({ committedAt: Schema.String, receipt: ReclamationReceipt })
+  ),
+  lastError: Schema.NullOr(
+    Schema.Struct({
+      at: Schema.String,
+      code: OperationError.fields.code,
+      message: Schema.String,
+      planId: Schema.optionalKey(Identifier),
+    })
+  ),
+  lastSweepCompletedAt: Schema.NullOr(Schema.String),
+  lastSweepStartedAt: Schema.NullOr(Schema.String),
+});
+export type AutomaticReclamationStatus = typeof AutomaticReclamationStatus.Type;
+
+export const DownloadRequest = Schema.Struct({
+  artifactId: Identifier,
+  version: Positive,
+});
+export const DownloadMetadata = Schema.Struct({
+  ...Record.fields,
+  contentType: ContentType,
+  kind: Schema.Literal("bytes"),
+});
+export const DownloadFrame = Schema.Union([
+  Schema.TaggedStruct("Metadata", { metadata: DownloadMetadata }),
+  Schema.TaggedStruct("Bytes", { bytes: Schema.Uint8Array }),
+]);
+export type DownloadFrame = typeof DownloadFrame.Type;

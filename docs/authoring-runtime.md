@@ -42,7 +42,7 @@ const ReleaseSummary = Workflow.make(
 );
 ```
 
-Imports are `Effect` and `Schema` from `effect`, and `Task` and `Workflow` from `@effectory/core`. These are design examples, not working exports.
+Imports are `Effect` and `Schema` from `effect`, and `Task` and `Workflow` from `@offtree/effectory-sdk`. These are design examples, not working exports.
 
 ## Construction and execution
 

@@ -1,4 +1,4 @@
-import { Extension, Task } from "@effectory/core";
+import { Extension, Task } from "@offtree/effectory-sdk";
 import { Effect } from "effect";
 
 import { Client, Inspect, Report } from "./contracts.mjs";

@@ -1,4 +1,3 @@
-import { canonical, encode } from "@effectory/core/internal/boundary";
 import {
   GitHubSource,
   LockedPackage,
@@ -10,6 +9,7 @@ import type {
   ExtensionLock,
 } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import { canonical, encode } from "@offtree/effectory-sdk/internal/boundary";
 import { Effect } from "effect";
 
 import { digest, verifyArchive } from "./extension-archive.ts";

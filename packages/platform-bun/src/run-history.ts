@@ -5,6 +5,7 @@ import {
   RunSummary,
 } from "@effectory/runtime/history-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
 import { Schema } from "effect";
 
 import type { createPagination } from "./pagination.ts";
@@ -48,11 +49,22 @@ function readRows(
   const after = timestamp(query.createdAfter);
   const before = timestamp(query.createdBefore);
   const at = position?.acceptedAt ?? null;
+  const tagEntries = Object.entries(query.tags ?? {}).toSorted(([a], [b]) =>
+    a.localeCompare(b)
+  );
+  const tagPredicates = tagEntries
+    .map(
+      () =>
+        "AND runId IN (SELECT runId FROM host_run_tags WHERE principal = ? AND key = ? AND value = ?)"
+    )
+    .join(" ");
   const statement =
-    database.prepare(`SELECT runId, targetId, kind, revision, acceptedAt, status, lastSequence, scheduleJson FROM host_runs
+    database.prepare(`SELECT runId, targetId, kind, revision, acceptedAt, status, lastSequence, scheduleJson, tagsJson, reportJson FROM host_runs
     WHERE principal = ? AND rowid <= ?
       AND (? IS NULL OR acceptedAt >= ?) AND (? IS NULL OR acceptedAt <= ?)
       AND (? IS NULL OR acceptedAt < ? OR (acceptedAt = ? AND runId > ?))
+      AND (? IS NULL OR admissionLane = ?)
+      ${tagPredicates}
     ORDER BY acceptedAt DESC, runId ASC LIMIT 10001`);
   const source = statement.iterate(
     principal,
@@ -64,7 +76,10 @@ function readRows(
     at,
     at,
     at,
-    position?.runId ?? null
+    position?.runId ?? null,
+    query.origin === undefined || query.origin === "all" ? null : query.origin,
+    query.origin === undefined || query.origin === "all" ? null : query.origin,
+    ...tagEntries.flatMap(([key, value]) => [principal, key, value])
   );
   const rows: (typeof RunSummary.Type)[] = [];
   let scanned = 0;
@@ -75,11 +90,17 @@ function readRows(
       const stored = Schema.decodeUnknownSync(
         Schema.Struct({
           ...RunSummary.fields,
+          reportJson: Schema.NullOr(Schema.String),
           scheduleJson: Schema.NullOr(Schema.String),
+          tagsJson: Schema.String,
         })
       )(value);
       const row = Schema.decodeUnknownSync(RunSummary)({
         ...stored,
+        tags: Schema.decodeUnknownSync(RunTags)(JSON.parse(stored.tagsJson)),
+        ...(stored.reportJson === null
+          ? {}
+          : { report: JSON.parse(stored.reportJson) }),
         ...(stored.scheduleJson === null
           ? {}
           : { schedule: JSON.parse(stored.scheduleJson) }),
@@ -112,9 +133,16 @@ export function runHistory(
   value: typeof RunListRequest.Type,
   principal: string
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(RunListRequest)(value, {
-    onExcessProperty: "error",
-  });
+  const { cursor, tags, ...rest } = Schema.decodeUnknownSync(RunListRequest)(
+    value,
+    {
+      onExcessProperty: "error",
+    }
+  );
+  const query = {
+    ...rest,
+    ...(tags && Object.keys(tags).length ? { tags } : {}),
+  };
   const limit = query.limit ?? 50;
   const scope = { kind: "runs", principal, query: { ...query, limit } };
   const token = pages.read(scope, cursor);

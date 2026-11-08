@@ -18,7 +18,7 @@ import { approval, cli, operation, start } from "./fixtures/cli.ts";
 import { publishedExtension } from "./fixtures/published-extension.ts";
 
 const empty =
-  'import { Application } from "@effectory/core"; export default Application.make({});';
+  'import { Application } from "@offtree/effectory-sdk"; export default Application.make({});';
 const accepted = Schema.decodeUnknownSync(ExtensionOperation);
 const inventory = Schema.decodeUnknownSync(ExtensionInventory);
 const run = Schema.decodeUnknownSync(Run);

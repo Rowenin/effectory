@@ -1,10 +1,6 @@
 import { Database } from "bun:sqlite";
 
-import {
-  canonical,
-  checkJsonBudget,
-  jsonLimits,
-} from "@effectory/core/internal/boundary";
+import type { CheckListRequest } from "@effectory/runtime/check-protocol";
 import { RunSummary } from "@effectory/runtime/history-protocol";
 import type {
   LogListRequest,
@@ -20,18 +16,55 @@ import {
   OperationError,
   Outbox,
   Run,
+  ReportProvenance,
   terminal,
   Wait,
   WaitReceipt,
+  ScheduleProvenance as StoredScheduleProvenance,
 } from "@effectory/runtime/protocol";
 import type {
   RunStatus,
   WaitOperation,
   ScheduleProvenance,
 } from "@effectory/runtime/protocol";
+import type {
+  RecoveryAssessmentRequest,
+  RecoveryRequest,
+} from "@effectory/runtime/recovery-protocol";
+import type {
+  ReportSearchRequest,
+  ReportRetryRequest,
+  ReportCancelSingleRequest,
+  ReportCancelSourceRequest,
+  RunReportsRequest,
+} from "@effectory/runtime/report-protocol";
 import type { DrainRequest } from "@effectory/runtime/system-protocol";
+import {
+  canonical,
+  checkJsonBudget,
+  jsonLimits,
+} from "@offtree/effectory-sdk/internal/boundary";
+import type { CheckOptions } from "@offtree/effectory-sdk/internal/check-schema";
+import {
+  CheckSettings,
+  checkSettings,
+} from "@offtree/effectory-sdk/internal/check-schema";
+import type {
+  CheckStart,
+  CheckFinish,
+} from "@offtree/effectory-sdk/internal/check-state";
+import type { PageRequest as ReportPageRequest } from "@offtree/effectory-sdk/internal/report-history";
+import type { EncodedSelection } from "@offtree/effectory-sdk/internal/report-selection-schema";
+import {
+  SelectionDecision,
+  normalizeSelection,
+} from "@offtree/effectory-sdk/internal/report-selection-schema";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
 import { Context, Effect, Layer, Schema } from "effect";
 
+import { createCheckStore } from "./check-store.ts";
+import type { CheckIdentity } from "./check-store.ts";
+import { ExecutionFailure } from "./execution-boundary.ts";
 import {
   authorizeRun,
   eventPage,
@@ -43,12 +76,35 @@ import { createLifecycle } from "./lifecycle.ts";
 import { RepositoryLease } from "./ownership.ts";
 import type { Lease } from "./ownership.ts";
 import { createPagination } from "./pagination.ts";
+import { createRecoveryStore } from "./recovery-store.ts";
+import type { AttemptPolicy, Admission } from "./recovery-store.ts";
+import { installReportAttribution } from "./report-attribution.ts";
+import { createReportInspection } from "./report-inspection.ts";
+import { reportInvocationScan } from "./report-invocations.ts";
+import type { EncodedReportPlan } from "./report-plan.ts";
+import { reportSearch } from "./report-search.ts";
+import { createReportSources } from "./report-sources.ts";
+import type {
+  FailureCategory,
+  IneligibleReason,
+  SourceIdentity,
+} from "./report-sources.ts";
+import { subtreeEvents, subtreeInvocations } from "./report-subtree.ts";
 import { runHistory } from "./run-history.ts";
+import {
+  initializeRunRetirement,
+  retirementEpoch,
+  refuseRetired,
+  refuseRetiredSubmission,
+  retiredRun,
+  retiredHint,
+} from "./run-retirement.ts";
 import { createScheduleStore } from "./schedule-store.ts";
 import { storageError } from "./storage-error.ts";
 
 const RunRow = Schema.Struct({
   acceptedAt: Schema.String,
+  checksJson: Schema.String,
   engineId: Schema.NullOr(Schema.String),
   errorJson: Schema.NullOr(Schema.String),
   fingerprint: Schema.String,
@@ -56,12 +112,15 @@ const RunRow = Schema.Struct({
   kind: Schema.Literals(["task", "workflow"]),
   lastSequence: Schema.Int,
   principal: Schema.String,
+  reportJson: Schema.NullOr(Schema.String),
+  reportSelectionJson: Schema.NullOr(Schema.String),
   requestKey: Schema.String,
   resultJson: Schema.NullOr(Schema.String),
   revision: Schema.String,
   runId: Schema.String,
   scheduleJson: Schema.NullOr(Schema.String),
   status: Schema.String,
+  tagsJson: Schema.String,
   targetId: Schema.String,
 });
 const WaitRow = Schema.Struct({
@@ -79,6 +138,15 @@ const WaitRow = Schema.Struct({
 });
 
 export interface Submit {
+  readonly checks?: typeof CheckOptions.Type;
+  /** Host-resolved pinned attachments; never read from an RPC payload. */
+  readonly reportPlan?: EncodedReportPlan;
+  readonly reportSelection?: typeof EncodedSelection.Type;
+  /** Host-resolved decision, never read from an RPC payload. */
+  readonly resolvedReportSelection?: typeof SelectionDecision.Type;
+  readonly tags?: typeof RunTags.Type;
+  /** Host-resolved metadata; never accepted from an RPC payload. */
+  readonly resolvedTags?: typeof RunTags.Type;
   readonly kind: "task" | "workflow";
   readonly targetId: string;
   readonly revision?: string;
@@ -109,6 +177,61 @@ function json(value: string): Schema.Json {
   return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value));
 }
 
+const ordinaryNamespace = (
+  schedule: typeof ScheduleProvenance.Type | undefined
+) => (schedule === undefined ? "manual" : "schedule");
+
+const submissionChecks = (request: Submit) =>
+  checkSettings(request.checks ?? {});
+
+function submissionFingerprint(request: Submit, scheduled = false) {
+  let selection: typeof EncodedSelection.Type;
+  try {
+    selection = normalizeSelection(request.reportSelection ?? {});
+  } catch {
+    throw error("InvalidInput", "Invalid report selection");
+  }
+  const tags = Schema.decodeUnknownSync(RunTags)(
+    "tags" in request ? request.tags : {}
+  );
+  const checks = submissionChecks(request);
+  return canonical({
+    ...(checks.failOn === "low" ? {} : { checks }),
+    input: request.input,
+    kind: request.kind,
+    revision: request.revision ?? null,
+    targetId: request.targetId,
+    ...(!scheduled && Object.keys(tags).length ? { tags } : {}),
+    ...(!scheduled && Object.keys(selection).length
+      ? { reportSelection: selection }
+      : {}),
+  });
+}
+
+function submissionDecision(request: Submit, isReport: boolean) {
+  if (isReport) {
+    return null;
+  }
+  if (request.resolvedReportSelection) {
+    return canonical(
+      Schema.decodeUnknownSync(SelectionDecision)(
+        request.resolvedReportSelection
+      )
+    );
+  }
+  if (
+    request.reportSelection &&
+    Object.keys(normalizeSelection(request.reportSelection)).length
+  ) {
+    throw error(
+      "InvalidInput",
+      "Report selection must be resolved before admission"
+    );
+  }
+  // Legacy/internal callers have no resolved registry; never invent a historical choice.
+  return null;
+}
+
 const waitOperations: Record<Wait["kind"], readonly WaitOperation[]> = {
   approval: ["approve", "reject"],
   input: ["respond"],
@@ -126,11 +249,29 @@ function pageLimit(limit: number) {
 }
 
 export function createStore(database: Database, lease: Lease) {
+  lease.assertActive();
   const existingRunsTable = database
     .query(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'host_runs'"
     )
     .get();
+  if (
+    existingRunsTable &&
+    database
+      .query("PRAGMA table_info(host_runs)")
+      .all()
+      .some(
+        (raw) =>
+          Schema.decodeUnknownSync(Schema.Struct({ name: Schema.String }))(raw)
+            .name === "admissionNamespace"
+      )
+  ) {
+    // Older hosts explicitly require admissionNamespace. Renaming it makes them
+    // refuse before they can admit a request whose full history was retired.
+    database.exec(
+      "ALTER TABLE host_runs RENAME COLUMN admissionNamespace TO admissionLane"
+    );
+  }
   if (
     existingRunsTable &&
     !database
@@ -140,7 +281,7 @@ export function createStore(database: Database, lease: Lease) {
         (column) =>
           Schema.decodeUnknownSync(Schema.Struct({ name: Schema.String }))(
             column
-          ).name === "admissionNamespace"
+          ).name === "admissionLane"
       )
   ) {
     throw error(
@@ -157,10 +298,15 @@ export function createStore(database: Database, lease: Lease) {
       runId TEXT PRIMARY KEY, kind TEXT NOT NULL, targetId TEXT NOT NULL, revision TEXT NOT NULL,
       inputJson TEXT NOT NULL, principal TEXT NOT NULL, requestKey TEXT NOT NULL, fingerprint TEXT NOT NULL,
       engineId TEXT, status TEXT NOT NULL, acceptedAt TEXT NOT NULL, resultJson TEXT, errorJson TEXT,
-      lastSequence INTEGER NOT NULL DEFAULT 0, admissionNamespace TEXT NOT NULL DEFAULT 'manual', scheduleJson TEXT, UNIQUE(principal, admissionNamespace, requestKey)
+      lastSequence INTEGER NOT NULL DEFAULT 0, admissionLane TEXT NOT NULL DEFAULT 'manual', scheduleJson TEXT, tagsJson TEXT NOT NULL DEFAULT '{}', UNIQUE(principal, admissionLane, requestKey)
     );
     CREATE INDEX IF NOT EXISTS host_runs_status ON host_runs(status);
     CREATE INDEX IF NOT EXISTS host_runs_history ON host_runs(principal, acceptedAt DESC, runId ASC);
+    CREATE TABLE IF NOT EXISTS host_run_tags (
+      runId TEXT NOT NULL REFERENCES host_runs(runId), principal TEXT NOT NULL,
+      key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(runId, key)
+    );
+    CREATE INDEX IF NOT EXISTS host_run_tags_lookup ON host_run_tags(principal, key, value, runId);
     CREATE TABLE IF NOT EXISTS host_invocations (
       runId TEXT NOT NULL REFERENCES host_runs(runId), nodeId TEXT NOT NULL, engineId TEXT NOT NULL, payloadJson TEXT NOT NULL,
       PRIMARY KEY(runId, nodeId)
@@ -200,6 +346,34 @@ export function createStore(database: Database, lease: Lease) {
     );
   `);
 
+  database.transaction(() => {
+    lease.assertActive();
+    const columns = Schema.decodeUnknownSync(
+      Schema.Array(Schema.Struct({ name: Schema.String }))
+    )(database.query("PRAGMA table_info(host_runs)").all());
+    if (!columns.some((column) => column.name === "checksJson")) {
+      database.exec(
+        `ALTER TABLE host_runs ADD COLUMN checksJson TEXT NOT NULL DEFAULT '{"failOn":"low"}'`
+      );
+    }
+    if (!columns.some((column) => column.name === "tagsJson")) {
+      database.exec(
+        "ALTER TABLE host_runs ADD COLUMN tagsJson TEXT NOT NULL DEFAULT '{}'"
+      );
+    }
+    if (!columns.some((column) => column.name === "reportSelectionJson")) {
+      database.exec(
+        "ALTER TABLE host_runs ADD COLUMN reportSelectionJson TEXT"
+      );
+    }
+    if (!columns.some((column) => column.name === "reportJson")) {
+      database.exec("ALTER TABLE host_runs ADD COLUMN reportJson TEXT");
+    }
+    database.exec(
+      "CREATE INDEX IF NOT EXISTS host_runs_origin_status ON host_runs(admissionLane, status)"
+    );
+  })();
+
   database
     .query("INSERT OR IGNORE INTO host_page_secret VALUES (1, ?)")
     .run(crypto.randomUUID());
@@ -210,8 +384,14 @@ export function createStore(database: Database, lease: Lease) {
       .query("SELECT secret FROM host_page_secret WHERE singleton = 1")
       .get()
   );
-  const pagination = createPagination(secret);
+  const pagination = createPagination(secret, () => retirementEpoch(database));
   const lifecycle = createLifecycle(database);
+  const reportSources = database.transaction(() => {
+    lease.assertActive();
+    installReportAttribution(database);
+    return createReportSources(database);
+  })();
+  initializeRunRetirement(database);
   let storageFailures = 0;
   const perform = <A>(body: () => A) =>
     Effect.try({
@@ -235,7 +415,11 @@ export function createStore(database: Database, lease: Lease) {
       .query("SELECT * FROM host_runs WHERE runId = ?")
       .get(runId);
     if (!raw) {
-      throw error("NotFound", `Run not found: ${runId}`);
+      const retired = retiredRun(database, runId);
+      throw error(
+        "NotFound",
+        retired ? retiredHint(runId) : `Run not found: ${runId}`
+      );
     }
     const row = Schema.decodeUnknownSync(RunRow)(raw);
     return Schema.decodeUnknownSync(Run)({
@@ -243,6 +427,22 @@ export function createStore(database: Database, lease: Lease) {
       error: row.errorJson === null ? null : json(row.errorJson),
       input: json(row.inputJson),
       result: row.resultJson === null ? null : json(row.resultJson),
+      ...(row.reportJson === null
+        ? {}
+        : {
+            report: Schema.decodeUnknownSync(ReportProvenance)(
+              json(row.reportJson)
+            ),
+          }),
+      ...(row.reportSelectionJson === null
+        ? {}
+        : {
+            reportSelection: Schema.decodeUnknownSync(SelectionDecision)(
+              json(row.reportSelectionJson)
+            ),
+          }),
+      checks: Schema.decodeUnknownSync(CheckSettings)(json(row.checksJson)),
+      tags: Schema.decodeUnknownSync(RunTags)(json(row.tagsJson)),
       ...(row.scheduleJson === null
         ? {}
         : { schedule: json(row.scheduleJson) }),
@@ -293,6 +493,24 @@ export function createStore(database: Database, lease: Lease) {
       .query("UPDATE host_runs SET lastSequence = ? WHERE runId = ?")
       .run(sequence, runId);
   };
+  const recovery = createRecoveryStore(
+    database,
+    lease,
+    pagination,
+    getRun,
+    event,
+    (runId, status) => {
+      const run = getRun(runId);
+      if (terminal.has(run.status) || run.status === status) {
+        return;
+      }
+      database
+        .query("UPDATE host_runs SET status=? WHERE runId=?")
+        .run(status, runId);
+      reportSources.records.project(getRun(runId));
+      event(runId, `status/${run.lastSequence + 1}`, "RunStatus", { status });
+    }
+  );
   let telemetryWriteFailures = 0;
   const telemetry = (
     runId: string,
@@ -465,6 +683,7 @@ export function createStore(database: Database, lease: Lease) {
         null
       );
     }
+    reportSources.records.project(getRun(runId));
     enqueue("Cancel", runId);
     event(runId, "cancel", "CancellationRequested", { actor, reason });
     return getRun(runId);
@@ -475,24 +694,28 @@ export function createStore(database: Database, lease: Lease) {
     resolvedRevision: string,
     principal: string,
     schedule?: typeof ScheduleProvenance.Type,
-    now?: number
+    now?: number,
+    report?: typeof ReportProvenance.Type
   ) =>
     database.transaction(() => {
-      const fingerprint = canonical({
-        input: request.input,
-        kind: request.kind,
-        revision: request.revision ?? null,
-        targetId: request.targetId,
-      });
+      const namespace =
+        report === undefined ? ordinaryNamespace(schedule) : "report";
+      const fingerprint = submissionFingerprint(
+        request,
+        schedule !== undefined
+      );
+      refuseRetiredSubmission(
+        database,
+        principal,
+        namespace,
+        request.requestKey,
+        fingerprint
+      );
       const prior = database
         .query(
-          "SELECT * FROM host_runs WHERE principal = ? AND admissionNamespace = ? AND requestKey = ?"
+          "SELECT * FROM host_runs WHERE principal = ? AND admissionLane = ? AND requestKey = ?"
         )
-        .get(
-          principal,
-          schedule === undefined ? "manual" : "schedule",
-          request.requestKey
-        );
+        .get(principal, namespace, request.requestKey);
       if (prior) {
         const row = Schema.decodeUnknownSync(RunRow)(prior);
         if (row.fingerprint !== fingerprint) {
@@ -521,17 +744,28 @@ export function createStore(database: Database, lease: Lease) {
       )(
         database
           .query(
-            "SELECT COUNT(*) AS count FROM host_runs WHERE status NOT IN ('Succeeded','Failed','Rejected','TimedOut','Cancelled')"
+            report === undefined
+              ? "SELECT COUNT(*) AS count FROM host_runs WHERE admissionLane != 'report' AND status NOT IN ('Succeeded','Failed','Rejected','TimedOut','Cancelled')"
+              : "SELECT COUNT(*) AS count FROM host_runs WHERE admissionLane = 'report' AND status NOT IN ('Succeeded','Failed','Rejected','TimedOut','Cancelled','NeedsAttention')"
           )
           .get()
       );
-      if (count >= 1000) {
-        throw error("LimitExceeded", "Repository already has 1000 active runs");
+      if (count >= (report === undefined ? 1000 : 4)) {
+        throw error(
+          "LimitExceeded",
+          report === undefined
+            ? "Repository already has 1000 active runs"
+            : "Report admission limit reached (4)"
+        );
       }
+      const selection = submissionDecision(request, report !== undefined);
       const runId = crypto.randomUUID();
+      const tags = Schema.decodeUnknownSync(RunTags)(
+        request.resolvedTags ?? request.tags ?? {}
+      );
       database
         .query(
-          "INSERT INTO host_runs(runId, kind, targetId, revision, inputJson, principal, requestKey, fingerprint, status, acceptedAt, admissionNamespace, scheduleJson) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Queued', ?, ?, ?)"
+          "INSERT INTO host_runs(runId, kind, targetId, revision, inputJson, principal, requestKey, fingerprint, status, acceptedAt, admissionLane, scheduleJson, tagsJson, reportJson, reportSelectionJson, checksJson) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Queued', ?, ?, ?, ?, ?, ?, ?)"
         )
         .run(
           runId,
@@ -543,18 +777,138 @@ export function createStore(database: Database, lease: Lease) {
           request.requestKey,
           fingerprint,
           new Date(now ?? Date.now()).toISOString(),
-          schedule === undefined ? "manual" : "schedule",
-          schedule === undefined ? null : canonical(schedule)
+          namespace,
+          schedule === undefined ? null : canonical(schedule),
+          canonical(tags),
+          report === undefined
+            ? null
+            : canonical(ReportProvenance.make(report)),
+          selection,
+          canonical(submissionChecks(request))
         );
+      for (const [key, value] of Object.entries(tags)) {
+        database
+          .query(
+            "INSERT INTO host_run_tags(runId, principal, key, value) VALUES (?, ?, ?, ?)"
+          )
+          .run(runId, principal, key, value);
+      }
+      if (report === undefined) {
+        reportSources.capture(getRun(runId), request.reportPlan ?? []);
+      }
       enqueue("Dispatch", runId);
       event(runId, "accepted", "RunAccepted", {
         revision: resolvedRevision,
       });
       return getRun(runId);
     })();
+  const requestCancellation = (
+    value: typeof CancellationRequest.Type,
+    actor: string
+  ) =>
+    database.transaction(() => {
+      if (!Schema.is(CancellationRequest)(value)) {
+        throw error("InvalidInput", "Invalid cancellation request");
+      }
+      const request = Schema.decodeUnknownSync(CancellationRequest)(value, {
+        onExcessProperty: "error",
+      });
+      refuseRetired(database, "run", request.runId, actor, true);
+      const authorized = database
+        .query("SELECT runId FROM host_runs WHERE runId = ? AND principal = ?")
+        .get(request.runId, actor);
+      if (!authorized) {
+        throw error("NotFound", "Run was not found");
+      }
+      const reason = request.reason ?? null;
+      const fingerprint = canonical({ reason });
+      const previous = database
+        .query(
+          "SELECT fingerprint, receiptJson FROM host_cancellation_receipts WHERE runId = ? AND requestKey = ? AND actor = ?"
+        )
+        .get(request.runId, request.requestKey, actor);
+      if (previous) {
+        const row = Schema.decodeUnknownSync(
+          Schema.Struct({
+            fingerprint: Schema.String,
+            receiptJson: Schema.String,
+          })
+        )(previous);
+        if (row.fingerprint !== fingerprint) {
+          throw error(
+            "Conflict",
+            "Cancellation request key was already used with a different reason"
+          );
+        }
+        return Schema.decodeUnknownSync(CancellationReceipt)(
+          JSON.parse(row.receiptJson)
+        );
+      }
+      const { count } = Schema.decodeUnknownSync(
+        Schema.Struct({ count: Schema.Int })
+      )(
+        database
+          .query(
+            "SELECT COUNT(*) AS count FROM host_cancellation_receipts WHERE runId = ?"
+          )
+          .get(request.runId)
+      );
+      if (count >= 64) {
+        throw error(
+          "LimitExceeded",
+          "Cancellation receipt limit reached for this run (64)"
+        );
+      }
+      const run = cancelRun(request.runId, reason, actor);
+      const receipt: typeof CancellationReceipt.Type = {
+        acceptedAt: new Date().toISOString(),
+        actor,
+        reason,
+        requestKey: request.requestKey,
+        runId: request.runId,
+        status: run.status,
+      };
+      database
+        .query("INSERT INTO host_cancellation_receipts VALUES (?, ?, ?, ?, ?)")
+        .run(
+          request.runId,
+          request.requestKey,
+          actor,
+          fingerprint,
+          JSON.stringify(receipt)
+        );
+      return receipt;
+    })();
+  const checks = createCheckStore(
+    database,
+    lease,
+    pagination,
+    recovery.live,
+    event
+  );
   const schedules = createScheduleStore(database, pagination, {
     accepting: () => lifecycle.accepting,
-    getRun,
+    getRun: (id) => {
+      const retired = retiredRun(database, id);
+      if (!retired) {
+        return getRun(id);
+      }
+      const raw = database
+        .query<{ scheduleJson: string | null }, [string]>(
+          "SELECT scheduleJson FROM host_retired_runs WHERE runId=?"
+        )
+        .get(id);
+      return {
+        ...retired,
+        ...(raw?.scheduleJson
+          ? {
+              schedule: Schema.decodeUnknownSync(StoredScheduleProvenance)(
+                JSON.parse(raw.scheduleJson)
+              ),
+            }
+          : {}),
+      };
+    },
     submit: submitRun,
   });
   const scheduleCall =
@@ -592,99 +946,22 @@ export function createStore(database: Database, lease: Lease) {
     admitAttempt: (
       runId: string,
       nodeId: string,
-      activityAttempt: number,
+      attempt: number,
       replay: "manual" | "idempotent",
-      policy: {
-        readonly deadline?: number;
-        readonly attemptTimeout?: number;
-      } = {}
+      policy: AttemptPolicy = {}
     ) =>
       perform(() =>
-        database.transaction(() => {
-          const run = getRun(runId);
-          if (
-            terminal.has(run.status) ||
-            run.status === "Cancelling" ||
-            database
-              .query("SELECT runId FROM host_fences WHERE runId = ?")
-              .get(runId)
-          ) {
-            return "Cancelled" as const;
-          }
-          if (run.status === "NeedsAttention") {
-            return "NeedsAttention" as const;
-          }
-          const prior = database
-            .query(
-              "SELECT entries, startedAt FROM host_attempts WHERE runId = ? AND nodeId = ? AND activityAttempt = ?"
-            )
-            .get(runId, nodeId, activityAttempt);
-          const startedAt = prior
-            ? Schema.decodeUnknownSync(
-                Schema.Struct({ startedAt: Schema.Finite })
-              )(prior).startedAt
-            : Date.now();
-          const deadline = Math.min(
-            policy.deadline ?? Number.POSITIVE_INFINITY,
-            policy.attemptTimeout === undefined
-              ? Number.POSITIVE_INFINITY
-              : startedAt + policy.attemptTimeout
-          );
-          if (Date.now() >= deadline) {
-            database
-              .query(
-                "INSERT INTO host_fences VALUES (?, ?, ?) ON CONFLICT(runId) DO UPDATE SET reasonJson = COALESCE(host_fences.reasonJson, excluded.reasonJson)"
-              )
-              .run(
-                runId,
-                canonical({
-                  _tag: "ExecutionFailure",
-                  category: "Control",
-                  detail: { deadline, nodeId },
-                  outcome: "TimedOut",
-                }),
-                Date.now()
-              );
-            return "TimedOut" as const;
-          }
-          if (prior && replay === "manual") {
-            database
-              .query(
-                "UPDATE host_runs SET status = 'NeedsAttention' WHERE runId = ?"
-              )
-              .run(runId);
-            event(
-              runId,
-              `attention/${nodeId}/${activityAttempt}`,
-              "NeedsAttention",
-              { nodeId }
-            );
-            return "NeedsAttention" as const;
-          }
-          database
-            .query(
-              "INSERT INTO host_attempts VALUES (?, ?, ?, ?, 1, ?) ON CONFLICT(runId, nodeId, activityAttempt) DO UPDATE SET owner = excluded.owner, entries = entries + 1"
-            )
-            .run(runId, nodeId, activityAttempt, lease.token, startedAt);
-          event(
-            runId,
-            `attempt/${nodeId}/${activityAttempt}`,
-            "AttemptStarted",
-            {
-              attempt: activityAttempt,
-              deadline: Number.isFinite(deadline) ? deadline : null,
-              nodeId,
-              startedAt,
-            }
-          );
-          return "Admitted" as const;
-        })()
+        database.transaction(
+          () =>
+            recovery.admit(runId, nodeId, attempt, replay, policy, false).status
+        )()
       ),
     appendEvent: (
       runId: string,
       key: string,
       tag: string,
-      payload: Schema.Json
+      payload: Schema.Json,
+      path?: string
     ) =>
       perform(() =>
         database.transaction(() => {
@@ -692,6 +969,13 @@ export function createStore(database: Database, lease: Lease) {
             throw error("LimitExceeded", "Event exceeds 8 KiB");
           }
           event(runId, key, tag, payload);
+          if (path !== undefined) {
+            database
+              .query(
+                "UPDATE host_report_paths SET path=?,bytes=? WHERE runId=? AND kind='events' AND position=(SELECT sequence FROM host_events WHERE runId=? AND eventKey=?)"
+              )
+              .run(path, Buffer.byteLength(path), runId, runId, key);
+          }
         })()
       ),
     attemptStartedAt: (runId: string, nodeId: string, attempt: number) =>
@@ -710,87 +994,33 @@ export function createStore(database: Database, lease: Lease) {
     cancel: (runId: string) =>
       perform(() => database.transaction(() => cancelRun(runId))()),
     cancelRequest: (value: typeof CancellationRequest.Type, actor: string) =>
-      perform(() =>
-        database.transaction(() => {
-          if (!Schema.is(CancellationRequest)(value)) {
-            throw error("InvalidInput", "Invalid cancellation request");
-          }
-          const request = Schema.decodeUnknownSync(CancellationRequest)(value, {
-            onExcessProperty: "error",
-          });
-          const authorized = database
-            .query(
-              "SELECT runId FROM host_runs WHERE runId = ? AND principal = ?"
-            )
-            .get(request.runId, actor);
-          if (!authorized) {
-            throw error("NotFound", "Run was not found");
-          }
-          const reason = request.reason ?? null;
-          const fingerprint = canonical({ reason });
-          const previous = database
-            .query(
-              "SELECT fingerprint, receiptJson FROM host_cancellation_receipts WHERE runId = ? AND requestKey = ? AND actor = ?"
-            )
-            .get(request.runId, request.requestKey, actor);
-          if (previous) {
-            const row = Schema.decodeUnknownSync(
-              Schema.Struct({
-                fingerprint: Schema.String,
-                receiptJson: Schema.String,
-              })
-            )(previous);
-            if (row.fingerprint !== fingerprint) {
-              throw error(
-                "Conflict",
-                "Cancellation request key was already used with a different reason"
-              );
-            }
-            return Schema.decodeUnknownSync(CancellationReceipt)(
-              JSON.parse(row.receiptJson)
-            );
-          }
-          const { count } = Schema.decodeUnknownSync(
-            Schema.Struct({ count: Schema.Int })
-          )(
-            database
-              .query(
-                "SELECT COUNT(*) AS count FROM host_cancellation_receipts WHERE runId = ?"
-              )
-              .get(request.runId)
-          );
-          if (count >= 64) {
-            throw error(
-              "LimitExceeded",
-              "Cancellation receipt limit reached for this run (64)"
-            );
-          }
-          const run = cancelRun(request.runId, reason, actor);
-          const receipt: typeof CancellationReceipt.Type = {
-            acceptedAt: new Date().toISOString(),
-            actor,
-            reason,
-            requestKey: request.requestKey,
-            runId: request.runId,
-            status: run.status,
-          };
-          database
-            .query(
-              "INSERT INTO host_cancellation_receipts VALUES (?, ?, ?, ?, ?)"
-            )
-            .run(
-              request.runId,
-              request.requestKey,
-              actor,
-              fingerprint,
-              JSON.stringify(receipt)
-            );
-          return receipt;
-        })()
-      ),
+      perform(() => requestCancellation(value, actor)),
+    checkFinish: (
+      identity: CheckIdentity,
+      sequence: number,
+      result: CheckFinish
+    ) => perform(() => checks.finish(identity, sequence, result)),
+    checkList: (request: typeof CheckListRequest.Type, principal: string) =>
+      perform(() => checks.list(request, principal)),
+    checkReconcile: () => perform(() => checks.reconcile()),
+    checkStart: (identity: CheckIdentity, input: CheckStart) =>
+      perform(() => checks.start(identity, input)),
     daemonStatus: () => perform(() => lifecycle.status()),
     drain: (request: typeof DrainRequest.Type) =>
       perform(() => lifecycle.drain(request)),
+    enterWorkflowInvocation: (runId: string, path: string) =>
+      perform(() =>
+        database.transaction(() => {
+          const stopped = database
+            .query("SELECT reasonJson FROM host_fences WHERE runId=?")
+            .get(runId);
+          if (stopped || terminal.has(getRun(runId).status)) {
+            return false;
+          }
+          reportSources.enterWorkflow(runId, path);
+          return true;
+        })()
+      ),
     eventPage: (request: typeof EventListRequest.Type, principal: string) =>
       perform(() =>
         database.transaction(() =>
@@ -906,7 +1136,7 @@ export function createStore(database: Database, lease: Lease) {
         }
         return getRun(runId);
       }),
-    getWait: (waitId: string, principal?: string) =>
+    getWait: (waitId: string, principal?: string, mutation = false) =>
       perform(() => {
         if (
           principal !== undefined &&
@@ -916,6 +1146,7 @@ export function createStore(database: Database, lease: Lease) {
             )
             .get(waitId, principal)
         ) {
+          refuseRetired(database, "wait", waitId, principal, mutation);
           throw error("NotFound", "Wait was not found");
         }
         return getWait(waitId);
@@ -925,7 +1156,7 @@ export function createStore(database: Database, lease: Lease) {
         counts: {
           activeRuns: database
             .query(
-              "SELECT runId FROM host_runs WHERE status IN ('Queued','Running','Waiting','Retrying','Cancelling','NeedsAttention') LIMIT 1001"
+              "SELECT runId FROM host_runs WHERE admissionLane != 'report' AND status IN ('Queued','Running','Waiting','Retrying','Cancelling','NeedsAttention') LIMIT 1001"
             )
             .all().length,
           openWaitsLowerBound: database
@@ -951,6 +1182,28 @@ export function createStore(database: Database, lease: Lease) {
       })),
     history: (request: typeof RunListRequest.Type, principal: string) =>
       perform(() => runHistory(database, pagination, request, principal)),
+    invocationFacts: (runId: string) =>
+      perform(() =>
+        database.transaction(() => {
+          const run = getRun(runId);
+          const row = database
+            .query("SELECT reasonJson FROM host_fences WHERE runId = ?")
+            .get(runId);
+          const reason = row
+            ? Schema.decodeUnknownSync(
+                Schema.Struct({ reasonJson: Schema.NullOr(Schema.String) })
+              )(row).reasonJson
+            : null;
+          return {
+            fenced: row !== null,
+            reason:
+              reason === null
+                ? null
+                : Schema.decodeUnknownSync(ExecutionFailure)(json(reason)),
+            status: run.status,
+          };
+        })()
+      ),
     invocationScan: (
       request: typeof OutputListRequest.Type,
       principal: string
@@ -1017,24 +1270,23 @@ export function createStore(database: Database, lease: Lease) {
       ),
     lookupSubmission: (request: Submit, principal: string) =>
       perform(() => {
+        refuseRetiredSubmission(
+          database,
+          principal,
+          "manual",
+          request.requestKey,
+          submissionFingerprint(request)
+        );
         const prior = database
           .query(
-            "SELECT * FROM host_runs WHERE principal = ? AND admissionNamespace = 'manual' AND requestKey = ?"
+            "SELECT * FROM host_runs WHERE principal = ? AND admissionLane = 'manual' AND requestKey = ?"
           )
           .get(principal, request.requestKey);
         if (!prior) {
           return null;
         }
         const row = Schema.decodeUnknownSync(RunRow)(prior);
-        if (
-          row.fingerprint !==
-          canonical({
-            input: request.input,
-            kind: request.kind,
-            revision: request.revision ?? null,
-            targetId: request.targetId,
-          })
-        ) {
+        if (row.fingerprint !== submissionFingerprint(request)) {
           throw error(
             "Conflict",
             "Request key was used for another submission"
@@ -1047,20 +1299,32 @@ export function createStore(database: Database, lease: Lease) {
         database.transaction(() => {
           const raw = database
             .query(
-              "SELECT runId, targetId, kind, revision, acceptedAt, status, lastSequence, scheduleJson FROM host_runs WHERE runId = ? AND principal = ?"
+              "SELECT runId, targetId, kind, revision, acceptedAt, status, lastSequence, scheduleJson, tagsJson, reportJson FROM host_runs WHERE runId = ? AND principal = ?"
             )
             .get(runId, principal);
           if (!raw) {
+            refuseRetired(database, "run", runId, principal);
             throw error("NotFound", "Run was not found");
           }
           const storedSchedule = Schema.decodeUnknownSync(
             Schema.Struct({ scheduleJson: Schema.NullOr(Schema.String) })
           )(raw).scheduleJson;
+          const storedReport = Schema.decodeUnknownSync(
+            Schema.Struct({ reportJson: Schema.NullOr(Schema.String) })
+          )(raw).reportJson;
           const run = Schema.decodeUnknownSync(RunSummary)({
             ...raw,
+            tags: Schema.decodeUnknownSync(RunTags)(
+              json(
+                Schema.decodeUnknownSync(
+                  Schema.Struct({ tagsJson: Schema.String })
+                )(raw).tagsJson
+              )
+            ),
             ...(storedSchedule === null
               ? {}
               : { schedule: json(storedSchedule) }),
+            ...(storedReport === null ? {} : { report: json(storedReport) }),
           });
           if (
             !Number.isSafeInteger(after) ||
@@ -1174,11 +1438,31 @@ export function createStore(database: Database, lease: Lease) {
         )
       ),
     pagination,
-    project: (runId: string, status: RunStatus, payload: Schema.Json = null) =>
+    project: (
+      runId: string,
+      status: RunStatus,
+      payload: Schema.Json = null,
+      category: FailureCategory | null = null
+    ) =>
       perform(() =>
         database.transaction(() => {
           const run = getRun(runId);
           if (terminal.has(run.status) || run.status === status) {
+            return run;
+          }
+          if (
+            (status === "Running" ||
+              status === "Waiting" ||
+              status === "Queued" ||
+              status === "Retrying") &&
+            (recovery.held(runId) ||
+              database
+                .query("SELECT 1 FROM host_fences WHERE runId = ?")
+                .get(runId) !== null)
+          ) {
+            // A continuation or reconciliation can arrive after a stop was
+            // accepted. Check the durable fence in this same transaction;
+            // a caller's earlier run snapshot cannot authorize resumption.
             return run;
           }
           database
@@ -1193,10 +1477,49 @@ export function createStore(database: Database, lease: Lease) {
                 : null,
               runId
             );
+          reportSources.project(getRun(runId), category);
+          reportSources.records.project(getRun(runId));
           event(runId, `status/${run.lastSequence + 1}`, "RunStatus", {
             status,
           });
           return getRun(runId);
+        })()
+      ),
+    recover: (
+      request: typeof RecoveryRequest.Type,
+      principal: string,
+      revisionAvailable = true
+    ) =>
+      perform(() =>
+        database.transaction(() => {
+          refuseRetired(database, "run", request.runId, principal, true);
+          return recovery.recover(request, principal, revisionAvailable);
+        })()
+      ),
+    recoveryComplete: (runId: string, nodeId: string) =>
+      perform(() =>
+        database.transaction(() => recovery.supersede(runId, nodeId))()
+      ),
+    recoveryGet: (
+      request: typeof RecoveryAssessmentRequest.Type,
+      principal: string,
+      revisionAvailable = true
+    ) =>
+      perform(() =>
+        database.transaction(() =>
+          recovery.assess(request, principal, revisionAvailable)
+        )()
+      ),
+    recoveryLookup: (request: typeof RecoveryRequest.Type, principal: string) =>
+      perform(() => {
+        refuseRetired(database, "run", request.runId, principal, true);
+        return recovery.lookup(request, principal);
+      }),
+    recoveryWork: (after = 0) =>
+      perform(() =>
+        database.transaction(() => {
+          recovery.stopped();
+          return recovery.work(after);
         })()
       ),
     registerInvocation: (
@@ -1242,8 +1565,270 @@ export function createStore(database: Database, lease: Lease) {
           database
             .query("INSERT INTO host_invocations VALUES (?, ?, ?, ?)")
             .run(runId, nodeId, engineId, canonical(payload));
+          reportSources.invocation(getRun(runId), engineId, payload);
         })()
       ),
+    registerWorkflowInvocation: (
+      runId: string,
+      path: string,
+      targetId: string
+    ) =>
+      perform(() =>
+        database.transaction(() =>
+          reportSources.workflow(getRun(runId), path, targetId)
+        )()
+      ),
+    releaseAttempt: (
+      runId: string,
+      nodeId: string,
+      attempt: number,
+      admission: Admission
+    ) => {
+      if (admission.status === "Admitted") {
+        recovery.release(runId, nodeId, attempt, admission.entry);
+      }
+    },
+    reportAdvance: (position: number) =>
+      perform(() => reportSources.advance(position)),
+    reportAggregate: (runId: string, principal: string) =>
+      perform(() =>
+        createReportInspection(
+          database,
+          pagination,
+          reportSources.records
+        ).aggregate(runId, principal)
+      ),
+    reportCancel: (
+      request: typeof ReportCancelSingleRequest.Type,
+      principal: string
+    ) =>
+      perform(() => {
+        refuseRetired(database, "report", request.reportId, principal, true);
+        return reportSources.records.cancel(
+          request,
+          principal,
+          getRun,
+          requestCancellation
+        );
+      }),
+    reportCancelSource: (
+      request: typeof ReportCancelSourceRequest.Type,
+      principal: string
+    ) =>
+      perform(() => {
+        refuseRetired(database, "run", request.sourceRunId, principal, true);
+        return reportSources.records.cancellation.accept(request, principal);
+      }),
+    reportCancellationDrain: () =>
+      perform(() =>
+        reportSources.records.cancellation.drain((request, principal) =>
+          reportSources.records.cancel(
+            request,
+            principal,
+            getRun,
+            requestCancellation
+          )
+        )
+      ),
+    reportContext: (runId: string) =>
+      perform(() => {
+        const run = getRun(runId);
+        if (run.report === undefined) {
+          throw error("Unavailable", "Run is not a report execution");
+        }
+        const context = reportSources.records.load(run.report.reportId);
+        if (context.row.reportRunId !== runId) {
+          throw error(
+            "Unavailable",
+            "Report execution provenance does not match"
+          );
+        }
+        return context;
+      }),
+    reportGet: (id: string, principal?: string) =>
+      perform(() => reportSources.records.get(id, getRun, principal)),
+    reportIds: (runId: string) =>
+      perform(() => reportSources.records.ids(runId)),
+    reportInspect: (id: string, principal: string) =>
+      perform(() =>
+        database.transaction(() =>
+          createReportInspection(
+            database,
+            pagination,
+            reportSources.records
+          ).get(id, principal, getRun)
+        )()
+      ),
+    reportInvocationDetails: (runId: string, invocationId: string) =>
+      perform(() => reportSources.invocationDetails(runId, invocationId)),
+    reportInvocationScan: (
+      runId: string,
+      principal: string,
+      request: ReportPageRequest
+    ) =>
+      perform(() =>
+        database.transaction(() =>
+          reportInvocationScan(database, pagination, runId, principal, request)
+        )()
+      ),
+    reportList: (request: typeof RunReportsRequest.Type, principal: string) =>
+      perform(() =>
+        database.transaction(() =>
+          createReportInspection(
+            database,
+            pagination,
+            reportSources.records
+          ).list(request, principal)
+        )()
+      ),
+    reportMaterialize: (sourceId: string) =>
+      perform(() => reportSources.materialize(sourceId)),
+    reportObservationError: (sourceId: string, message: string | null) =>
+      perform(() => reportSources.observationError(sourceId, message)),
+    reportPendingSources: (
+      phase: "Armed" | "Ready" | "Materialized",
+      after = 0
+    ) => perform(() => reportSources.pending(phase, after)),
+    reportPlan: (runId: string) => perform(() => reportSources.plan(runId)),
+    reportPromote: () =>
+      perform(() =>
+        database.transaction(() => {
+          const id = reportSources.records.candidate();
+          if (id === null) {
+            return null;
+          }
+          const { entry, row, source } = reportSources.records.load(id);
+          if (source.status === null) {
+            throw error("Unavailable", "Report source has not settled");
+          }
+          const root = getRun(source.runId);
+          const provenance = ReportProvenance.make({
+            attachmentId: entry.attachmentId,
+            execution: entry.execution,
+            generation: row.generation,
+            reportId: id,
+            sourceInvocationId: source.invocationId,
+            sourceRunId: source.runId,
+          });
+          const run = submitRun(
+            {
+              checks: root.checks ?? { failOn: "low" },
+              input: source,
+              kind: "task",
+              requestKey: id,
+              resolvedTags: root.tags,
+              revision: source.revision,
+              targetId: entry.reporterId,
+            },
+            source.revision,
+            row.principal,
+            undefined,
+            undefined,
+            provenance
+          );
+          reportSources.records.bind(id, run);
+          return run;
+        })()
+      ),
+    reportRetry: (
+      request: typeof ReportRetryRequest.Type,
+      principal: string,
+      assertExecutable: (revision: string) => void
+    ) =>
+      perform(() => {
+        refuseRetired(database, "report", request.reportId, principal, true);
+        return reportSources.records.retry(
+          request,
+          principal,
+          getRun,
+          assertExecutable
+        );
+      }),
+    reportScan: () => perform(() => reportSources.scan()),
+    reportSearch: (
+      request: typeof ReportSearchRequest.Type,
+      principal: string
+    ) => reportSearch(database, pagination, request, principal, perform),
+    reportSettleSource: (
+      sourceId: string,
+      status: (typeof SourceIdentity.Type)["status"],
+      category: FailureCategory | null,
+      reason: typeof IneligibleReason.Type | null
+    ) =>
+      perform(() => reportSources.settle(sourceId, status, category, reason)),
+    reportSubtreeEvents: (
+      runId: string,
+      principal: string,
+      sourceId: string,
+      path: string,
+      request: Parameters<typeof subtreeEvents>[6]
+    ) =>
+      subtreeEvents(
+        database,
+        pagination,
+        runId,
+        principal,
+        sourceId,
+        path,
+        request,
+        perform
+      ),
+    reportSubtreeInvocations: (
+      runId: string,
+      principal: string,
+      sourceId: string,
+      path: string,
+      request: ReportPageRequest
+    ) =>
+      subtreeInvocations(
+        database,
+        pagination,
+        runId,
+        principal,
+        sourceId,
+        path,
+        request,
+        perform
+      ),
+    reportSystemStatus: () =>
+      perform(() =>
+        createReportInspection(
+          database,
+          pagination,
+          reportSources.records
+        ).system()
+      ),
+    reportWorkflowDetails: (runId: string, invocationId: string) =>
+      perform(() => reportSources.workflowDetails(runId, invocationId)),
+    reserveAttempt: (
+      runId: string,
+      nodeId: string,
+      attempt: number,
+      replay: "manual" | "idempotent",
+      policy: AttemptPolicy = {}
+    ) =>
+      perform(() => {
+        let acquired: Admission | undefined;
+        try {
+          return database.transaction(() => {
+            acquired = recovery.admit(
+              runId,
+              nodeId,
+              attempt,
+              replay,
+              policy,
+              true
+            );
+            return acquired;
+          })();
+        } catch (error_) {
+          // A failed SQLite commit must not leave an in-memory reservation.
+          if (acquired?.status === "Admitted") {
+            recovery.release(runId, nodeId, attempt, acquired.entry);
+          }
+          throw error_;
+        }
+      }),
     scheduleError: scheduleCall("recordError"),
     scheduleGet: scheduleCall("describe"),
     scheduleHistory: scheduleCall("history"),
@@ -1270,6 +1855,7 @@ export function createStore(database: Database, lease: Lease) {
     ) =>
       perform(() => {
         const result = database.transaction(() => {
+          refuseRetired(database, "wait", request.waitId, actor, true);
           const wait = getWait(request.waitId);
           authorizeRun(database, wait.runId, actor);
           checkJsonBudget(request.input ?? null);

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { Artifact } from "@effectory/core";
+import { Artifact } from "@offtree/effectory-sdk";
 import { Schema } from "effect";
 
 test("queryable fields use encoded types through references, optional values and array paths", () => {

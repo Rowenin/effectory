@@ -30,7 +30,7 @@ Label key: **[code]** means read in source, **[probe]** means I ran it with `bun
 | F16 | The active revision pointer is an in-memory `active` plus `active.json` on disk, **not SQLite**. `activate` accepts a synchronous `publish` callback that runs before the pointer swap. `get(revision = active)` returns `{registry, revision}`. | [code] `revisions.ts:256-296` |
 | F17 | Host code timestamps with `Date.now()` / `new Date()` throughout (e.g. `host-store.ts:642,1294`, `runner.ts:64`). No host service reads Effect `Clock` today. `effect/testing/TestClock` (`adjust`, `setTime`, `layer`) exists. | [code] |
 | F18 | `NeedsAttention` is non-terminal and is set when finalization stalls (`runner.ts:60-78`). `Waiting` can last up to 365 days (wait timeouts use `durationMillis`, max 365 days). | [code] `protocol.ts:5-25`, `policy.ts` |
-| F19 | The codebase already has a `WorkflowPatch.make` namespace: a two-word `Workflow*` namespace exported from `@effectory/core`. | [code] `index.ts`, `workflow-patch.ts` |
+| F19 | The codebase already has a `WorkflowPatch.make` namespace: a two-word `Workflow*` namespace exported from `@offtree/effectory-sdk`. | [code] `index.ts`, `workflow-patch.ts` |
 
 ## 2. Blockers
 

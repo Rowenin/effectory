@@ -81,7 +81,7 @@ This assumes `Summary` describes `{ text: string }`. Formatting does not need to
 The recommended minimal entry point is:
 
 ```ts
-import { Application } from "@effectory/core";
+import { Application } from "@offtree/effectory-sdk";
 
 import { FetchRelease } from "./tasks/fetch-release";
 import { ReleaseSummary } from "./workflows/release-summary";

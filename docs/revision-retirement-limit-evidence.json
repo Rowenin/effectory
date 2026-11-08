@@ -1,0 +1,54 @@
+{
+  "status": "Existing implementation behavior reproduced; proposed reclamation is unimplemented",
+  "result": {
+    "root": "/tmp/effectory-revision-retirement-research/daemon-proof/repo-HzGSk9",
+    "build": "fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2",
+    "binarySha256": "a69d21b724f053b90453e29d9dd408523c4cfc40b76974bdebcc4ff302a286bf",
+    "retained": 128,
+    "neverActivated": 127,
+    "initialActive": "a4aaf9ec97e5a85d181be8758001db42cc138b86ee9693a1ed6871def36c8472",
+    "refusal": {
+      "code": 5,
+      "err": "Retained application revision limit reached (128)\n",
+      "out": ""
+    },
+    "restoredSourceRun": {
+      "acceptedAt": "2026-11-08T04:01:59.524Z",
+      "checks": {
+        "failOn": "low"
+      },
+      "engineId": "dc1ea27a5c2afe39dee03d66e8bfc250",
+      "error": null,
+      "input": {},
+      "kind": "task",
+      "lastSequence": 4,
+      "reportSelection": {
+        "excluded": [],
+        "requested": {},
+        "required": [],
+        "selected": []
+      },
+      "requestKey": "8424bc5a-919c-4800-bfed-42b3b65317c0",
+      "result": "candidate-0",
+      "revision": "a4aaf9ec97e5a85d181be8758001db42cc138b86ee9693a1ed6871def36c8472",
+      "runId": "4a9aabd6-7319-41c9-94e1-f9278c87e580",
+      "status": "Succeeded",
+      "tags": {},
+      "targetId": "value"
+    },
+    "scope": "Prepared candidates use the real source catalog at the exact binary ABI. Refusal, restart, task execution and stop use the actual compiled daemon/CLI. No bundle deletion was attempted."
+  },
+  "probeScript": "import assert from 'node:assert/strict';\nimport { mkdirSync, mkdtempSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';\nimport path from 'node:path';\nimport { Effect, Layer } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/effect/src/index.ts';\nimport { Catalog } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/catalog.ts';\nimport { revisionCatalogLayer } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/revisions.ts';\nimport { ownershipLayer } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/ownership.ts';\nimport { hostAbi } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/packages/platform-bun/src/host-runtime.ts';\nimport { harness } from '/Users/davidr/.t3/worktrees/effectory/t3-21743e89/scripts/upgrade-proof/process.mjs';\nconst evidence='/tmp/effectory-revision-retirement-research/daemon-proof';\nconst root=mkdtempSync(path.join(evidence,'repo-')); const state=path.join(root,'.effectory');mkdirSync(state);\nconst file=path.join(root,'effectory.ts');\nconst source=n=>`import { Application, Task } from '@offtree/effectory-sdk'; import { Effect, Schema } from 'effect'; const task=Task.make({ id:'value',version:1,input:Schema.Struct({}),success:Schema.String,error:Schema.Never,replay:'idempotent' },()=>Effect.succeed(${JSON.stringify('candidate-'+n)})); export default Application.make({tasks:[task]});\\n`;\nconst binary='/tmp/effectory-format2-upgrade/release-bin/effectory-darwin-arm64';const h=harness(root);\nassert.equal(hostAbi(),'fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2');\nwriteFileSync(file,source(0));\nprocess.chdir(root);\ntry {\n const active=await Effect.runPromise(Effect.gen(function*(){const c=yield* Catalog;for(let n=1;n<128;n++){yield* Effect.sync(()=>writeFileSync(file,source(n)));yield* c.prepare().pipe(Effect.scoped);}return c.active;}).pipe(Effect.scoped,Effect.provide(revisionCatalogLayer(root).pipe(Layer.provide(ownershipLayer(path.join(state,'state.sqlite.owner')))))));\n const retained=readdirSync(path.join(state,'revisions')).filter(x=>/^[a-f0-9]{64}$/.test(x));assert.equal(retained.length,128);\n writeFileSync(file,source(128));\n const refusal=await h.raw(binary,root,['daemon','serve'],30000);assert.equal(refusal.code,5);assert.match(refusal.err,/Retained application revision limit reached \\(128\\)/);\n writeFileSync(file,source(0));const daemon=await h.start(binary,root);\n const run=await h.cli(binary,root,['task','run','value','--input','{}']);assert.equal(run.status,'Succeeded');\n await h.cli(binary,root,['daemon','stop']);await daemon.exited;\n const result={root,build:hostAbi(),binarySha256:new Bun.CryptoHasher('sha256').update(readFileSync(binary)).digest('hex'),retained:128,neverActivated:127,initialActive:active,refusal,restoredSourceRun:run,scope:'Prepared candidates use the real source catalog at the exact binary ABI. Refusal, restart, task execution and stop use the actual compiled daemon/CLI. No bundle deletion was attempted.'};\n writeFileSync(path.join(evidence,'result.json'),JSON.stringify(result,null,2)+'\\n');console.log(JSON.stringify(result,null,2));\n} finally {await h.close();}\n",
+  "probeSha256": "0ad1ec1b3b6cf556426f70f23f6450664cfe00562519091ca9673252452f2b2b",
+  "successfulLogSha256": "229935ef3399b2dabbee275f8ea3c071e829f5489a5adb2126b9857d2a9e9f8e",
+  "failedSetup": {
+    "logSha256": "5ccd614356aa8c56f10e2f96be2e714b0e9ff7319765472e3a15eed9b2157906",
+    "explanation": "Initial source-catalog preparation ran under the workspace cwd while the binary daemon ran under the disposable repository cwd. Bundler path comments changed the content digest, so restoring source did not match a retained bundle. The corrected probe uses the repository cwd for both. The first run is not a passing restoration proof."
+  },
+  "limits": [
+    "Only Darwin ARM64 and the recorded release build were tested.",
+    "Candidate preparation uses the actual source catalog; startup refusal, restored startup and task execution use the compiled executable.",
+    "No deletion, dependency scanner, journal, corruption recovery or retirement API has been implemented or tested.",
+    "All credentials and task data belong to disposable synthetic repositories."
+  ]
+}

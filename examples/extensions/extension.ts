@@ -1,4 +1,9 @@
-import { Extension, Task, Workflow, WorkflowPatch } from "@effectory/core";
+import {
+  Extension,
+  Task,
+  Workflow,
+  WorkflowPatch,
+} from "@offtree/effectory-sdk";
 import { Effect } from "effect";
 
 import {

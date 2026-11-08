@@ -3,10 +3,11 @@ import type {
   RunOutput,
 } from "@effectory/runtime/history-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
-import { Cause, Effect, Exit, Option } from "effect";
+import { Effect } from "effect";
 
 import { HostStore } from "./host-store.ts";
-import { leafExecution } from "./interpreter.ts";
+import { normalizeInvocation, outputFields } from "./invocation-outcome.ts";
+import { nativeTaskResult } from "./native-history.ts";
 
 /** Reads native Effect outcomes; host invocation records contain no task results. */
 export const runOutputs = (
@@ -16,6 +17,7 @@ export const runOutputs = (
   Effect.gen(function* () {
     const store = yield* HostStore;
     const page = yield* store.invocationScan(request, principal);
+    const facts = yield* store.invocationFacts(request.runId);
     const items: (typeof RunOutput.Type)[] = [];
     let bytes = 0;
     let position = 0;
@@ -25,44 +27,12 @@ export const runOutputs = (
         more = true;
         break;
       }
-      const state = yield* leafExecution.poll(row.engineId);
-      let item: typeof RunOutput.Type = {
-        error: null,
+      const state = yield* nativeTaskResult(row.engineId);
+      const item: typeof RunOutput.Type = {
+        ...outputFields(normalizeInvocation(state, facts)),
         nodeId: row.nodeId,
-        result: null,
-        status: "Pending",
         taskId: row.taskId,
       };
-      if (Option.isSome(state)) {
-        if (state.value._tag === "Suspended") {
-          item = { ...item, status: "Suspended" };
-        } else if (Exit.isSuccess(state.value.exit)) {
-          item = {
-            ...item,
-            result: state.value.exit.value,
-            status: "Succeeded",
-          };
-        } else {
-          const failure = Cause.findErrorOption(state.value.exit.cause);
-          item = Option.isSome(failure)
-            ? {
-                ...item,
-                error: {
-                  category: failure.value.category,
-                  detail: failure.value.detail,
-                },
-                status: failure.value.outcome,
-              }
-            : {
-                ...item,
-                error: {
-                  category: "Defect",
-                  message: "Task execution failed unexpectedly",
-                },
-                status: "Failed",
-              };
-        }
-      }
       bytes += Buffer.byteLength(JSON.stringify(item));
       if (bytes > 2_097_152) {
         more = true;

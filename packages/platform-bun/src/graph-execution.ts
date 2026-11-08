@@ -1,7 +1,7 @@
-import { Ref, Workflow as WorkflowAuthoring } from "@effectory/core";
-import type { Application, Workflow } from "@effectory/core";
-import type { Boundary } from "@effectory/core/internal/boundary";
-import { decode } from "@effectory/core/internal/boundary";
+import { Ref, Workflow as WorkflowAuthoring } from "@offtree/effectory-sdk";
+import type { Application, Workflow } from "@offtree/effectory-sdk";
+import type { Boundary } from "@offtree/effectory-sdk/internal/boundary";
+import { decode } from "@offtree/effectory-sdk/internal/boundary";
 import { Effect, Schema } from "effect";
 import { DurableDeferred } from "effect/workflow";
 

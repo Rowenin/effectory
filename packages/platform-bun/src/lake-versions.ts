@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 
+import type { VersionPage } from "@effectory/runtime/lake-protocol";
 import {
   VersionListRequest,
   Record as ArtifactRecord,
@@ -7,6 +8,8 @@ import {
 import { OperationError } from "@effectory/runtime/protocol";
 import { Schema } from "effect";
 
+import { versionProtection } from "./lake-protection.ts";
+import { cursorSnapshot, reclamationEpoch } from "./lake-retention-store.ts";
 import type { createPagination } from "./pagination.ts";
 
 export function lakeVersions(
@@ -19,12 +22,37 @@ export function lakeVersions(
     value,
     { onExcessProperty: "error" }
   );
+  const limit = query.limit ?? 50;
+  const scope = {
+    kind: "lake-versions",
+    principal,
+    query: { ...query, limit },
+  };
+  // Authorize against historical identity before inspecting another actor's cursor.
+  if (
+    !database
+      .query(
+        "SELECT 1 FROM lake_records WHERE principal = ? AND artifactId = ? LIMIT 1"
+      )
+      .get(principal, query.artifactId)
+  ) {
+    throw new OperationError({
+      code: "NotFound",
+      message: "Artifact was not found",
+    });
+  }
+  const token = pages.read(scope, cursor);
+  const epoch = reclamationEpoch(database, principal);
+  const previousSnapshot = token
+    ? cursorSnapshot(token.snapshot, epoch, "version")
+    : undefined;
+  const retained = query.includeReclaimed ? "" : "AND reclaimedAt IS NULL";
   const latest = Schema.decodeUnknownSync(
     Schema.Struct({ value: Schema.NullOr(Schema.Int) })
   )(
     database
       .query(
-        "SELECT MAX(version) AS value FROM lake_records WHERE principal = ? AND artifactId = ?"
+        `SELECT MAX(version) AS value FROM lake_records WHERE principal = ? AND artifactId = ? ${retained}`
       )
       .get(principal, query.artifactId)
   ).value;
@@ -34,23 +62,14 @@ export function lakeVersions(
       message: "Artifact was not found",
     });
   }
-  const limit = query.limit ?? 50;
-  const scope = {
-    kind: "lake-versions",
-    principal,
-    query: { ...query, limit },
-  };
-  const token = pages.read(scope, cursor);
-  const snapshot = token
-    ? Schema.decodeUnknownSync(Schema.Int)(token.snapshot)
-    : latest;
+  const snapshot = previousSnapshot ?? latest;
   const after = token
     ? Schema.decodeUnknownSync(Schema.Int)(token.position)
     : 0;
   const statement = database.prepare(
-    "SELECT metadataJson FROM lake_records WHERE principal = ? AND artifactId = ? AND version > ? AND version <= ? ORDER BY version LIMIT ?"
+    `SELECT metadataJson,reclaimedAt,reclamationPlanId FROM lake_records WHERE principal = ? AND artifactId = ? AND version > ? AND version <= ? ${retained} ORDER BY version LIMIT ?`
   );
-  const items: ArtifactRecord[] = [];
+  const items: (typeof VersionPage.Type)["items"][number][] = [];
   let bytes = 0;
   let more = false;
   try {
@@ -61,17 +80,36 @@ export function lakeVersions(
       snapshot,
       limit + 1
     )) {
-      const { metadataJson } = Schema.decodeUnknownSync(
-        Schema.Struct({ metadataJson: Schema.String })
-      )(raw);
+      const { metadataJson, reclaimedAt, reclamationPlanId } =
+        Schema.decodeUnknownSync(
+          Schema.Struct({
+            metadataJson: Schema.String,
+            reclaimedAt: Schema.NullOr(Schema.String),
+            reclamationPlanId: Schema.NullOr(Schema.String),
+          })
+        )(raw);
       bytes += Buffer.byteLength(metadataJson);
       if (items.length >= limit || bytes > 1_048_576) {
         more = true;
         break;
       }
-      items.push(
-        Schema.decodeUnknownSync(ArtifactRecord)(JSON.parse(metadataJson))
+      const record = Schema.decodeUnknownSync(ArtifactRecord)(
+        JSON.parse(metadataJson)
       );
+      items.push({
+        ...record,
+        ...(reclaimedAt === null
+          ? { protection: versionProtection(database, record.sequence) }
+          : {}),
+        ...(reclaimedAt === null
+          ? {}
+          : {
+              reclaimedAt,
+              reclamationPlanId: Schema.decodeUnknownSync(Schema.String)(
+                reclamationPlanId
+              ),
+            }),
+      });
     }
   } finally {
     statement.finalize();
@@ -86,7 +124,7 @@ export function lakeVersions(
     cursor: more
       ? pages.write(
           scope,
-          snapshot,
+          { epoch, value: snapshot },
           items.at(-1)?.version ?? after,
           token?.expires ?? Date.now() + 3_600_000
         )

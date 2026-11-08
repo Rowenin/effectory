@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Artifact } from "@effectory/core";
+import { Artifact } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import { createStore } from "../src/host-store.ts";

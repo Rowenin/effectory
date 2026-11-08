@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import corePackage from "@effectory/core/package.json" with { type: "json" };
+import corePackage from "@offtree/effectory-sdk/package.json" with { type: "json" };
 import { plugin } from "bun";
 
 import { effectVersion, hostModuleLoaders } from "./host-modules.generated.ts";
@@ -19,14 +19,14 @@ export const compiled =
 
 /** The SDK versions application and extension code runs against. */
 export const hostVersions = {
-  "@effectory/core": corePackage.version,
+  "@offtree/effectory-sdk": corePackage.version,
   effect: effectVersion,
 } as const;
 
 /** Hash of the host sources that define the retained-revision contract. */
 export function sourceAbi() {
   const roots = [
-    path.dirname(fileURLToPath(import.meta.resolve("@effectory/core"))),
+    path.dirname(fileURLToPath(import.meta.resolve("@offtree/effectory-sdk"))),
     path.dirname(
       fileURLToPath(import.meta.resolve("@effectory/runtime/protocol"))
     ),
@@ -54,7 +54,7 @@ export function hostAbi() {
 const installed = Symbol.for("effectory.hostModules");
 
 /**
- * Serve `effect` and `@effectory/core` to every later import from this host's
+ * Serve `effect` and `@offtree/effectory-sdk` to every later import from this host's
  * own instances. Application revisions and extension modules are loaded from
  * disk and must share them. The table covers every public entry point, so a
  * project's own `node_modules` copy is never used for them. (Bun does not run

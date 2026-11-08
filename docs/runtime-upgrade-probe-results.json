@@ -1,0 +1,1275 @@
+{
+  "date": "2026-11-07",
+  "kind": "research-probes-not-release-certification",
+  "effect": "4.0.5",
+  "hostSourceAbi": "4d6236b8d28b46d608744f70c3869afb755f6084bfd0cdef7576ac051a0e38df",
+  "mechanism": "Real host layers and SQLite engine in separate Bun processes; controlled EFFECTORY_HOST_ABI definitions simulate distinct build identities.",
+  "processExitCodes": [0, 0, 1, 0, 1, 1, 0],
+  "refusedStartupSchemaObservation": {
+    "legacyColumnBefore": true,
+    "legacyColumnAfter": true,
+    "newColumnAfter": false
+  },
+  "waitingWorkflow": {
+    "root": "/tmp/effectory-upgrade-wait-UISEPh",
+    "waiting": {
+      "runId": "d1a34831-fd49-49e0-bc54-0904f3470a44",
+      "revision": "ca6dd11e465d9f366f5e5b408aa37a23990b32c0a46b9d5375aeb505b730c51d",
+      "status": "Waiting"
+    },
+    "incompatible": {
+      "code": 1,
+      "error": "OperationError: Application could not be bundled or its retained revision could not be loaded",
+      "run": {
+        "runId": "d1a34831-fd49-49e0-bc54-0904f3470a44",
+        "status": "Waiting",
+        "revision": "ca6dd11e465d9f366f5e5b408aa37a23990b32c0a46b9d5375aeb505b730c51d"
+      },
+      "wait": {
+        "status": "Open"
+      }
+    },
+    "restored": {
+      "runId": "d1a34831-fd49-49e0-bc54-0904f3470a44",
+      "revision": "ca6dd11e465d9f366f5e5b408aa37a23990b32c0a46b9d5375aeb505b730c51d",
+      "status": "Succeeded",
+      "result": "done"
+    },
+    "actions": "first\n"
+  },
+  "scratchFiles": {
+    "host.ts": "2705c1f5391c8609fbce43b178d3d12fa46cb3f0f63145e677d848ac79ee686e",
+    "probe.ts": "bb48f861a911dfb23a9af4e4eca1efa41a0e271fa70d7cc42f9cb1afb9342599",
+    "results.log": "4bfcd2e6f8d6a8820f2719770bdf9932c0adb97437c82628bceb57642fc56784",
+    "wait-host.ts": "a44b931186c96742336b1f03c9888b3ada9da9b165daba6f1cc9c3e7819ab0e0",
+    "wait-probe.ts": "1ce8e55c6ecd07d9512043b7c00c002702d336935d9942cb58f0f40bb683b8f0",
+    "wait-results.log": "448ed6fe2e8f40bec058855f66ddce4168aadca2dd20f18f1b1e46fb89587f02"
+  },
+  "notProved": [
+    "Different released/compiled host implementations",
+    "Effect version upgrade",
+    "Real schema migration/downgrade",
+    "All refusal paths are non-mutating",
+    "HTTP daemon lifecycle",
+    "Uncertain manual task replay"
+  ],
+  "repositoryChecks": "Not run: documentation/research only. No production code changed.",
+  "inspectionWithoutApplication": {
+    "date": "2026-11-07",
+    "mechanism": "Copy of completed probe-2 repository; removed source and retained bundle; separate subprocesses use normal host, HostStore only, or HostStore plus installed native engine without Catalog/interpreter/runner.",
+    "repository": "/tmp/effectory-inspection-copy-MZ3G6Z",
+    "observations": [
+      {
+        "mode": "normal-host",
+        "exitCode": 1,
+        "changedTableRows": [],
+        "error": "OperationError: Application could not be bundled or its retained revision could not be loaded"
+      },
+      {
+        "mode": "stored",
+        "exitCode": 0,
+        "changedTableRows": [],
+        "status": "Succeeded",
+        "events": 8,
+        "waits": 1,
+        "outputs": null
+      },
+      {
+        "mode": "native",
+        "exitCode": 0,
+        "changedTableRows": [],
+        "status": "Succeeded",
+        "events": 8,
+        "waits": 1,
+        "outputs": {
+          "cursor": null,
+          "items": [
+            {
+              "error": null,
+              "result": "done",
+              "status": "Succeeded",
+              "nodeId": "[\"first\"]",
+              "taskId": "first"
+            }
+          ],
+          "snapshot": 1
+        }
+      },
+      {
+        "mode": "stored-legacy",
+        "exitCode": 0,
+        "changedTableRows": ["host_runs"],
+        "status": "Succeeded",
+        "events": 8,
+        "waits": 1,
+        "outputs": null,
+        "legacyColumnBefore": true,
+        "legacyColumnAfter": false,
+        "newColumnAfter": true
+      }
+    ],
+    "taskAudit": "Original task audit remained exactly one line; no task re-executed.",
+    "scratchFiles": {
+      "/tmp/effectory-upgrade-inspection-probe/read.ts": "25951f03c16d665705271f3c6a6ace9d00ca9e2c5089467c16ddc3f37a652415",
+      "/tmp/effectory-upgrade-inspection-probe/probe.ts": "94ec4c84f043d2b8c8ac1cea4080339d17d2414d1c6ed02ce610ec7a6c19e6f9",
+      "/tmp/effectory-upgrade-inspection-probe/results.log": "1219579a5d2f2e9568411375a9760ba2f68e107251738ca222279358b5dbf1ab"
+    },
+    "limits": [
+      "Single settled workflow, one task output, one approval; no report/artifact fixtures in this probe.",
+      "No changed Effect engine version, no released binary pair, no read-only storage API.",
+      "Unchanged table-row hashes do not prove no SQLite writes, schema writes, WAL/SHM changes, or locks.",
+      "Synthetic predecessor column demonstrates constructor migration only, not a certified historical database."
+    ]
+  },
+  "unknownOutboxWork": {
+    "date": "2026-11-07",
+    "mechanism": "Real CLI and daemon, installed engine, copied disposable repository; synthetic FutureOperation row inserted before startup.",
+    "repository": "/tmp/effectory-outbox-copy-Tu93Tl",
+    "startupReadiness": "Ready",
+    "readinessWhileBlocked": "Ready",
+    "acceptedRunStatus": "Queued",
+    "unknownRow": {
+      "kind": "FutureOperation",
+      "delivered": 0
+    },
+    "retryWarnings": 40,
+    "afterRemovingOnlyInjectedRow": {
+      "runId": "4211de37-ece5-456d-9996-6a81328991f6",
+      "status": "Succeeded",
+      "result": "Hello, Future"
+    },
+    "shutdown": "daemon stop exited 0; driver asserted endpoint metadata removed",
+    "scratchFiles": {
+      "/tmp/effectory-outbox-upgrade-probe/probe.ts": "e639060f59fa0c380e4c4ee6b04830fb0a0d3cd7de1525f0063f7df29cdf7da9",
+      "/tmp/effectory-outbox-upgrade-probe/results.log": "52400bdd3c59b7465d86db702a5739e3ae3503addcead8ea58c634fc4bbb8d39",
+      "/tmp/effectory-outbox-upgrade-probe/stderr.log": "619b7269ed4eed993cd2895a810a67b98a6b7c3f5f4cf90234319afe261cce61"
+    },
+    "limits": [
+      "Fault injection, not an actual newer release producing a new intent.",
+      "Only the synthetic row was deleted to isolate causality; deleting real durable work is not an operator remedy.",
+      "No missing-run orphan, unknown item beyond the first 200, interrupted preflight or changed native format was tested.",
+      "No production behavior was changed."
+    ]
+  },
+  "revisionOwnership": {
+    "date": "2026-11-07",
+    "mechanism": "Real revisionCatalogLayer and ownershipLayer in fresh Bun subprocesses, three bundled retained application revisions, synthetic scoped resource Layers.",
+    "repository": "/tmp/effectory-revision-ownership-HAmjXx",
+    "observedRetainedOrder": ["first", "third", "second"],
+    "cases": [
+      {
+        "mode": "normal",
+        "exit": {
+          "mode": "normal",
+          "ownershipReacquired": true,
+          "tag": "Success"
+        },
+        "acquired": 3,
+        "released": 3,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "invalid-manifest",
+        "exit": {
+          "mode": "invalid-manifest",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": false,
+          "defects": false,
+          "error": "OperationError: Application could not be bundled or its retained revision could not be loaded"
+        },
+        "acquired": 1,
+        "released": 1,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "fail",
+        "exit": {
+          "mode": "fail",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": false,
+          "defects": false,
+          "error": "OperationError: Application could not be bundled or its retained revision could not be loaded"
+        },
+        "acquired": 2,
+        "released": 2,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "die",
+        "exit": {
+          "mode": "die",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": false,
+          "defects": true,
+          "error": "Error: synthetic provider setup defect"
+        },
+        "acquired": 2,
+        "released": 2,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "interrupt",
+        "exit": {
+          "mode": "interrupt",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": true,
+          "defects": false,
+          "error": "InterruptError: All fibers interrupted without error {"
+        },
+        "acquired": 2,
+        "released": 2,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "fail-and-cleanup-die",
+        "exit": {
+          "mode": "fail-and-cleanup-die",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": false,
+          "defects": false,
+          "error": "OperationError: Application could not be bundled or its retained revision could not be loaded"
+        },
+        "acquired": 2,
+        "released": 2,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      },
+      {
+        "mode": "cleanup-die",
+        "exit": {
+          "mode": "cleanup-die",
+          "ownershipReacquired": true,
+          "tag": "Failure",
+          "interrupted": false,
+          "defects": true,
+          "error": "Error: synthetic cleanup defect"
+        },
+        "acquired": 3,
+        "released": 3,
+        "eachAcquiredIdReleasedExactlyOnce": true
+      }
+    ],
+    "causeMappingProbe": [
+      {
+        "name": "plain-scope",
+        "events": ["cleanup"],
+        "defects": true,
+        "cause": "Error: acquire-failure\nError: cleanup-defect"
+      },
+      {
+        "name": "layer-build",
+        "events": ["cleanup"],
+        "defects": true,
+        "cause": "Error: acquire-failure\nError: cleanup-defect"
+      },
+      {
+        "name": "layer-provide",
+        "events": ["cleanup"],
+        "defects": true,
+        "cause": "Error: acquire-failure\nError: cleanup-defect"
+      },
+      {
+        "name": "mapped-layer",
+        "events": ["cleanup"],
+        "defects": false,
+        "cause": "Error: mapped"
+      }
+    ],
+    "scratchFiles": {
+      "/tmp/effectory-revision-ownership-probe/host.ts": "8c334568d3d1da0bcdf4b0c96ae66e14395fa0f251c57b16efb10916efa1afce",
+      "/tmp/effectory-revision-ownership-probe/probe.ts": "94ff59cd6bc10ea0a506b110566debf4201522d7f6c333dc5d18dd0f1385f7f0",
+      "/tmp/effectory-revision-ownership-probe/results.log": "9091a583b8242a9ce6830e60a411c4e5b83791b5c68b740186aa53e8ce89c837",
+      "/tmp/effectory-revision-ownership-probe/layer-cause.ts": "92f2e45742f64b8d671a50a4473011a647d0c42d8b5fe6bcc4e43469bcee6623",
+      "/tmp/effectory-revision-ownership-probe/layer-cause.log": "b200434ee595392750dc5944f880753d40782196e4687a5b779612cc139789e6"
+    },
+    "limits": [
+      "Finalizers were synchronous synthetic callbacks, not real remote provider resources.",
+      "No SIGKILL finalization claim, stuck finalizer, dynamic-import side-effect cancellation or revision eviction tested.",
+      "Same installed Effect/host implementation; no cross-version certification.",
+      "Scratch evidence, not a checked-in regression suite."
+    ]
+  },
+  "nativeReadOnlyInspection": {
+    "root": "/tmp/effectory-readonly-native-C1YI3g",
+    "writerSignal": "SIGKILL",
+    "results": [
+      {
+        "state": "clean",
+        "code": 1,
+        "mode": "readonly",
+        "error": "SqlError caused by SQLiteError: unable to open database file",
+        "changed": []
+      },
+      {
+        "state": "clean",
+        "code": 0,
+        "mode": "immutable",
+        "value": "done",
+        "marker": "checkpoint-old",
+        "writeRefused": true,
+        "storageLayer": "function",
+        "changed": []
+      },
+      {
+        "state": "crashed-wal",
+        "code": 0,
+        "mode": "readonly",
+        "value": "done",
+        "marker": "wal-new",
+        "writeRefused": true,
+        "storageLayer": "function",
+        "changed": [".effectory/state.sqlite-shm"]
+      },
+      {
+        "state": "crashed-wal",
+        "code": 0,
+        "mode": "immutable",
+        "value": "done",
+        "marker": "checkpoint-old",
+        "writeRefused": true,
+        "storageLayer": "function",
+        "changed": []
+      },
+      {
+        "state": "recovered-copy",
+        "code": 0,
+        "mode": "immutable",
+        "value": "done",
+        "marker": "wal-new",
+        "writeRefused": true,
+        "storageLayer": "function",
+        "changed": [],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "sourceUnchanged": true
+      }
+    ],
+    "originalTaskExecutions": 1,
+    "mechanism": "Installed MessageStorage storage-only Layer, read-only SQL client, installed RPC/Workflow result codec; no engine, runner, Catalog or HostStore construction.",
+    "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+    "scratchFiles": {
+      "/tmp/effectory-readonly-native-probe/read.ts": "992a45a4103f0d00daa747ea15212371a28676e08769b47d7531b7cf32020a0c",
+      "/tmp/effectory-readonly-native-probe/writer.ts": "9986953be92522b766c713cb9f0c0ef659d034c71cda84956f1b8c3a9cf3b49d",
+      "/tmp/effectory-readonly-native-probe/probe.ts": "8c790796acf7161db573701386176698e347a0f560cbea055357a0d6b60cf832",
+      "/tmp/effectory-readonly-native-probe/results-final.log": "7d2992c7deaf8bf4b8e978be19f73bde7e07d6a0fae377a399d93f66839f2673"
+    },
+    "installedFiles": {
+      "/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/.bun/effect@4.0.5/node_modules/effect/dist/cluster/SqlMessageStorage.js": "74dc076511fdef2fdd58e6fa83a8410dea89cc49f7816025c6d0bcba6b4e6930",
+      "/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/.bun/effect@4.0.5/node_modules/effect/dist/cluster/MessageStorage.js": "e9f9a2f3207ba6768dcb85a600fe3f545375184789cb9ae6ede9df3b7459dedd",
+      "/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/.bun/effect@4.0.5/node_modules/effect/dist/cluster/Envelope.js": "ec4ca4ee6f309284607171a23df971726d8fd7459df4b84b6ebc5e8af0f94175",
+      "/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/.bun/effect@4.0.5/node_modules/effect/dist/workflow/Workflow.js": "1eb4f253d50d00857c4a1e0fa231b1d06a03286a19c1b0bac72cf10c0368630c",
+      "/Users/davidr/.t3/worktrees/effectory/t3-21743e89/node_modules/.bun/@effect+sql-sqlite-bun@4.0.5+23d53938ecc4ddad/node_modules/@effect/sql-sqlite-bun/dist/SqliteClient.js": "06852b9821ed465b5028259f5081544195adc7d7555b5f41b9ba974470a1a158"
+    },
+    "limits": [
+      "One already-checkpointed successful task result; WAL freshness tested with a synthetic marker table.",
+      "File inventory and content hashes, not access-time preservation or absence of transient operations.",
+      "No other Effect version, release binary, authorization, paging, concurrent source writes or copy-failure handling.",
+      "No production implementation; private copy recovery is a feasibility probe only."
+    ]
+  },
+  "walDamageInspection": {
+    "root": "/tmp/effectory-wal-corruption-B3COh6",
+    "source": "/tmp/effectory-readonly-native-C1YI3g/dirty",
+    "sourceUnchanged": true,
+    "sqlite": {
+      "version": "3.51.0"
+    },
+    "results": [
+      {
+        "name": "intact",
+        "walBytes": 4152,
+        "walDigest": "ab501b99ea2b0a81f06fdb9a535d57e8ace6ba74a0bf8162dae3c098eff12b4e",
+        "marker": {
+          "value": "wal-new"
+        },
+        "integrity": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "changedCopyPaths": [
+          ".effectory/state.sqlite-wal",
+          ".effectory/state.sqlite",
+          ".effectory/state.sqlite-shm"
+        ]
+      },
+      {
+        "name": "last-byte-flipped",
+        "walBytes": 4152,
+        "walDigest": "c33fedb0a0b62c6cb6bbc6e2bbc9e30139aa0affedd44a9a15a943494f1cbb95",
+        "marker": {
+          "value": "checkpoint-old"
+        },
+        "integrity": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "changedCopyPaths": [
+          ".effectory/state.sqlite-wal",
+          ".effectory/state.sqlite-shm"
+        ]
+      },
+      {
+        "name": "one-byte-short",
+        "walBytes": 4151,
+        "walDigest": "e86eb1db2c7bc79f5a8a186e7472bc5fa46a3ec7cbc2f8d6de5e350910595d65",
+        "marker": {
+          "value": "checkpoint-old"
+        },
+        "integrity": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "changedCopyPaths": [
+          ".effectory/state.sqlite-wal",
+          ".effectory/state.sqlite-shm"
+        ]
+      },
+      {
+        "name": "header-only",
+        "walBytes": 32,
+        "walDigest": "5064a0c8dcab6d41c007f8ed2beab58fdaa88dc29549dc6d0f2d1efff71cea96",
+        "marker": {
+          "value": "checkpoint-old"
+        },
+        "integrity": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "changedCopyPaths": [
+          ".effectory/state.sqlite-wal",
+          ".effectory/state.sqlite-shm"
+        ]
+      },
+      {
+        "name": "extra-partial-tail",
+        "walBytes": 4177,
+        "walDigest": "82d46ade3cffeb23238a5f624477ab3558dc1ada7e42d43c5b75ec4436cbcd19",
+        "marker": {
+          "value": "wal-new"
+        },
+        "integrity": [
+          {
+            "integrity_check": "ok"
+          }
+        ],
+        "checkpoint": {
+          "busy": 0,
+          "log": 0,
+          "checkpointed": 0
+        },
+        "changedCopyPaths": [
+          ".effectory/state.sqlite-wal",
+          ".effectory/state.sqlite",
+          ".effectory/state.sqlite-shm"
+        ]
+      }
+    ],
+    "probeSha256": "2eb1b288860d9df7f7ddabfa0af7aefe7008932baa65ca44d84f1e3c8b55f85a",
+    "limits": [
+      "Synthetic marker, not a newly committed native task result",
+      "Faults injected before copy recovery, not a supported repair",
+      "No proof of distinguishing acknowledged damage from uncommitted tail using only recovered SQL",
+      "No source file-content changes; access times not measured"
+    ]
+  },
+  "refusalOrdering": {
+    "kind": "controlled-ABI-startup-ordering-not-release-upgrade",
+    "date": "2026-11-07",
+    "scriptSha256": "5339c3dc4182bf2e62076c1355d2fa30df8623f485e11e62d4cd59fcd6f70f65",
+    "cases": [
+      {
+        "mode": "orphan",
+        "before": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionLane",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [],
+          "retirement": [],
+          "marker": false,
+          "orphan": true
+        },
+        "after": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionLane",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [],
+          "retirement": [],
+          "marker": false,
+          "orphan": false
+        },
+        "refusedExit": 1,
+        "originalHostExit": 0,
+        "faultSignal": null
+      },
+      {
+        "mode": "marker",
+        "before": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionNamespace",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [],
+          "retirement": [],
+          "marker": true,
+          "orphan": false
+        },
+        "after": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionLane",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [],
+          "retirement": [],
+          "marker": false,
+          "orphan": false
+        },
+        "refusedExit": 1,
+        "originalHostExit": 0,
+        "faultSignal": null
+      },
+      {
+        "mode": "accepted-intent",
+        "before": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionLane",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [
+            {
+              "runId": "8495047d-ae79-4627-83da-9a88e5e54031",
+              "status": "Succeeded"
+            }
+          ],
+          "retirement": [
+            {
+              "planId": "23b02355-db86-41f6-88e4-8108e3df8e0c",
+              "state": "Applying",
+              "receiptJson": null
+            }
+          ],
+          "marker": true,
+          "orphan": false
+        },
+        "after": {
+          "columns": [
+            "runId",
+            "kind",
+            "targetId",
+            "revision",
+            "inputJson",
+            "principal",
+            "requestKey",
+            "fingerprint",
+            "engineId",
+            "status",
+            "acceptedAt",
+            "resultJson",
+            "errorJson",
+            "lastSequence",
+            "admissionLane",
+            "scheduleJson",
+            "tagsJson",
+            "checksJson",
+            "reportSelectionJson",
+            "reportJson"
+          ],
+          "runs": [],
+          "retirement": [
+            {
+              "planId": "23b02355-db86-41f6-88e4-8108e3df8e0c",
+              "state": "Complete",
+              "receiptJson": "{\"completedAt\":\"2026-11-07T19:53:50.302Z\",\"deletedRows\":{\"host_events\":2,\"host_outbox\":1,\"host_report_paths\":2,\"host_run_completions\":1,\"host_runs\":1},\"planId\":\"23b02355-db86-41f6-88e4-8108e3df8e0c\",\"retiredFamilies\":1,\"retiredRuns\":1,\"startedAt\":\"2026-11-07T19:53:49.214Z\"}"
+            }
+          ],
+          "marker": false,
+          "orphan": false
+        },
+        "refusedExit": 1,
+        "originalHostExit": 0,
+        "faultSignal": "SIGKILL"
+      }
+    ]
+  },
+  "compiledBaselineAndMarkerFence": {
+    "build": {
+      "abi": "9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97",
+      "built": [
+        {
+          "bytes": 81430130,
+          "file": "/tmp/effectory-upgrade-baseline/effectory-darwin-arm64",
+          "target": "bun-darwin-arm64"
+        }
+      ],
+      "version": "0.1.0"
+    },
+    "sourceFiles": 381,
+    "matchesWakeVerification": true,
+    "binarySha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+    "markerProbe": {
+      "kind": "current-compiled-host-existing-marker-not-a-universal-downgrade-fence",
+      "repository": "/tmp/effectory-downgrade-marker-uX9f4a/repository",
+      "binarySha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+      "before": [
+        {
+          "id": "synthetic",
+          "state": "Ready"
+        }
+      ],
+      "daemon": {
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Snapshot copy is incomplete; restore to a fresh destination before starting the daemon\n"
+      },
+      "reset": {
+        "exitCode": 0,
+        "stdout": "{\"discarded\":true,\"vault\":\"synthetic\"}\n",
+        "stderr": ""
+      },
+      "after": []
+    },
+    "files": {
+      "build.log": "b5a07d3405917a1337f1d5bce4877255565ffa0b8f65506a82b3ff1adc3d79a0",
+      "marker-probe.ts": "b42d8b292f318c5aa9675d0e3a7a69417c3da7c769413dec83a0f530c9ff5a81",
+      "marker.log": "098f2a9023ef3377f238e5152b1520537e955475b3822a7e2eb95dfe9d47a546",
+      "marker-results.json": "098f2a9023ef3377f238e5152b1520537e955475b3822a7e2eb95dfe9d47a546",
+      "source-manifest.json": "13e3b63e1ba531d4e473182b168d435c035427a858775b5ec62397b6be7ba7d2"
+    }
+  },
+  "candidatePredecessorFormatFences": {
+    "kind": "candidate-format-fences-against-actual-predecessor",
+    "binarySha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+    "results": [
+      {
+        "args": ["daemon", "serve"],
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Repository credentials are unavailable\n",
+        "unchanged": true,
+        "dataUnchanged": true,
+        "changed": []
+      },
+      {
+        "args": [
+          "run",
+          "reclaim",
+          "plan",
+          "--completed-before",
+          "2027-01-01T00:00:00Z"
+        ],
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Run reclamation storage operation failed\n",
+        "unchanged": true,
+        "dataUnchanged": true,
+        "changed": []
+      },
+      {
+        "args": [
+          "run",
+          "reclaim",
+          "inspect",
+          "07538384-4914-4ada-a29a-ef3494ab85b3"
+        ],
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Run reclamation storage operation failed\n",
+        "unchanged": true,
+        "dataUnchanged": true,
+        "changed": []
+      },
+      {
+        "args": ["vault", "reset", "synthetic", "--discard"],
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Vault Corrupt: unsupported database version\n",
+        "unchanged": false,
+        "dataUnchanged": true,
+        "changed": ["repository/.effectory/vaults.sqlite-shm"]
+      },
+      {
+        "args": [
+          "vault",
+          "key",
+          "import",
+          "synthetic",
+          "--file",
+          "/tmp/effectory-downgrade-fences-prNmxt/recovery-key.json"
+        ],
+        "exitCode": 3,
+        "stdout": "",
+        "stderr": "Vault Corrupt: unsupported database version\n",
+        "unchanged": true,
+        "dataUnchanged": true,
+        "changed": []
+      },
+      {
+        "args": ["extension", "restore"],
+        "exitCode": 2,
+        "stdout": "",
+        "stderr": "Extension lock or repository files are invalid or unavailable\n",
+        "unchanged": true,
+        "dataUnchanged": true,
+        "changed": []
+      }
+    ],
+    "limitations": [
+      "Old SQLite opens can change SHM before refusing; byte-for-byte immutability is NOT established",
+      "No migration implementation tested",
+      "No partial-fence crash window tested",
+      "No actual old/new-host execution compatibility tested"
+    ],
+    "evidence": {
+      "fence-probe.ts": {
+        "path": "/tmp/effectory-upgrade-baseline/fence-probe.ts",
+        "sha256": "a24771b8b5461ce2b9a0573977a53abc028aa549e35c88dcb14dfeecda0e23c2"
+      },
+      "fence.log": {
+        "path": "/tmp/effectory-upgrade-baseline/fence.log",
+        "sha256": "0bfe8322ef04529080c2ea14162f49f54dbf58b8d81a2cbc373c815e9279da67"
+      },
+      "fence-results.json": {
+        "path": "/tmp/effectory-upgrade-baseline/fence-results.json",
+        "sha256": "0bfe8322ef04529080c2ea14162f49f54dbf58b8d81a2cbc373c815e9279da67"
+      }
+    }
+  },
+  "revisionRcMapPrimitive": {
+    "result": {
+      "kind": "real-effect-RcMap-with-stand-in-layer",
+      "events": [
+        "acquire:host/1",
+        "acquire:host/2",
+        "release:host/1",
+        "acquire:host/3",
+        "release:host/3",
+        "acquire:host/4",
+        "release:host/4",
+        "release:host/2",
+        "acquire:caller/5",
+        "release:caller/5",
+        "acquire:host/6",
+        "release:host/6"
+      ],
+      "acquisitions": 6,
+      "releases": 6,
+      "callerContextOverridesCapturedContext": true,
+      "explicitHostContextPreventsCallerCapture": true,
+      "limits": [
+        "Not the real revision catalog",
+        "No run/provider operation integration",
+        "No shutdown race proof"
+      ]
+    },
+    "evidence": {
+      "revision-rcmap-probe.ts": {
+        "path": "/tmp/effectory-upgrade-baseline/revision-rcmap-probe.ts",
+        "sha256": "85e4c29f31f8a470d5555c027636a70a908a21f3f076daa5cdd7f1896c9090ec"
+      },
+      "revision-rcmap.log": {
+        "path": "/tmp/effectory-upgrade-baseline/revision-rcmap.log",
+        "sha256": "3dc557260fa0ee3159fba70c2679579c40264a0523d287834ff02b75809fa11a"
+      },
+      "revision-rcmap-typecheck.log": {
+        "path": "/tmp/effectory-upgrade-baseline/revision-rcmap-typecheck.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "probe-tsconfig.json": {
+        "path": "/tmp/effectory-upgrade-baseline/probe-tsconfig.json",
+        "sha256": "0f83f703e8289516696f958a041a4f11230430f2bb665cdcfa6466001f5c8efb"
+      }
+    }
+  },
+  "partialCandidateFences": {
+    "results": {
+      "kind": "partial-candidate-fence-with-actual-predecessor-offline-writer",
+      "binarySha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+      "commands": [
+        {
+          "args": ["daemon", "serve"],
+          "exitCode": 3,
+          "stdout": "",
+          "stderr": "Repository credentials are unavailable\n"
+        },
+        {
+          "args": ["vault", "reset", "synthetic", "--discard"],
+          "exitCode": 0,
+          "stdout": "{\"discarded\":true,\"vault\":\"synthetic\"}\n",
+          "stderr": ""
+        },
+        {
+          "args": ["vault", "reset", "synthetic", "--discard"],
+          "exitCode": 3,
+          "stdout": "",
+          "stderr": "Vault Corrupt: unsupported database version\n"
+        }
+      ],
+      "credentialFenceDidNotProtectVault": true,
+      "logicalFreshnessDetectedReset": true,
+      "formatOnlyAbortPreservedReset": true,
+      "restoringOriginalCopyWouldResurrectDeletedValue": true,
+      "limitations": [
+        "No production transition or intent implementation",
+        "No process kill during intent persistence",
+        "No multi-database migration",
+        "No old/new execution replay certification",
+        "Semantic comparison is a scratch whole-table model, not a bounded production scanner"
+      ]
+    },
+    "evidence": {
+      "partial-fence-probe.ts": {
+        "path": "/tmp/effectory-upgrade-baseline/partial-fence-probe.ts",
+        "sha256": "8a031acb5b3f918e8ad7bbb44669a44bfe4ba5471e60e066498d81d554e6f3e3"
+      },
+      "partial-fence.log": {
+        "path": "/tmp/effectory-upgrade-baseline/partial-fence.log",
+        "sha256": "df75f4a132ff08454434e9a7bf8f08c9610ec4ef875ef90edb3a929d6b660f97"
+      },
+      "partial-fence-results.json": {
+        "path": "/tmp/effectory-upgrade-baseline/partial-fence-results.json",
+        "sha256": "df75f4a132ff08454434e9a7bf8f08c9610ec4ef875ef90edb3a929d6b660f97"
+      }
+    }
+  },
+  "scopedRevisionImplementationVerification": {
+    "result": {
+      "capturedFiles": 398,
+      "changed": [],
+      "added": [],
+      "fullSuiteExit": 0,
+      "tests": 610,
+      "failed": 0,
+      "assertions": 5430,
+      "testFiles": 151,
+      "seconds": 1601.83
+    },
+    "evidence": {
+      "catalog-owned-activity-typecheck.log": {
+        "path": "/tmp/effectory-upgrade-baseline/catalog-owned-activity-typecheck.log",
+        "sha256": "02faf82affa81b7012552b7fb0ecb31dda100ae4ba9d17ae79475897c627683f"
+      },
+      "catalog-owned-activity-check.log": {
+        "path": "/tmp/effectory-upgrade-baseline/catalog-owned-activity-check.log",
+        "sha256": "319ffb1771f551993dac38d5192dd40fefac1e91dc7e6689c690f9db753ac828"
+      },
+      "catalog-owned-activity-full-tests.log": {
+        "path": "/tmp/effectory-upgrade-baseline/catalog-owned-activity-full-tests.log",
+        "sha256": "50809ddc92d08e9f10fb4b95dfe90ee5f670c2c1f102e9610d35a01ece45059d"
+      },
+      "catalog-owned-activity-source-manifest.json": {
+        "path": "/tmp/effectory-upgrade-baseline/catalog-owned-activity-source-manifest.json",
+        "sha256": "49e3da0c3ce21db73532ded765c2d4261cc521c5932c81b0dede93d98e2a0fe9"
+      },
+      "catalog-owned-activity-stability.json": {
+        "path": "/tmp/effectory-upgrade-baseline/catalog-owned-activity-stability.json",
+        "sha256": "ac47ae1872052c79daa5b2978d3d648337e30250e863924145e8793994475feb"
+      }
+    }
+  },
+  "originalHostRecoveryCopy": {
+    "kind": "actual-predecessor-recovery-copy-replay",
+    "predecessorSha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+    "runId": "59811286-5aae-4ffe-bd6d-e6bf7c8d79b2",
+    "revision": "577279add5a307167944a420cc7c8e564f0eda9322b79f8825288a6f4e097f25",
+    "copyDigest": "c9401b55ce9553d47716de2314e54f1ea1f71c268b243c4afc84837426c32c73",
+    "copyEntries": 13,
+    "preserved": [
+      "accepted run identity",
+      "pinned revision",
+      "completed manual activity result",
+      "pending approval identity",
+      "submission request-key receipt"
+    ],
+    "completedManualHandlerExecutions": 1,
+    "result": "already-completed-continued",
+    "limitations": [
+      "Uses the real recovery-copy component, not an implemented upgrade apply transition",
+      "No migration or new-host execution was exercised",
+      "Does not certify an execution/storage edge",
+      "Restoration used a stopped temporary repository and a fresh destination; external effects after the snapshot were not simulated"
+    ],
+    "evidence": {
+      "original-host-copy-probe.ts": {
+        "path": "/tmp/effectory-upgrade-baseline/original-host-copy-probe.ts",
+        "sha256": "1a24d08ad1ce30ca88c13181df0b3f5fbf3662fd2f6b5eb6578a23f41e80bf5f"
+      },
+      "original-host-copy-results.json": {
+        "path": "/tmp/effectory-upgrade-baseline/original-host-copy-results.json",
+        "sha256": "af863ffb604438ffab28f2e886b395db32d2c0c7dc1cb69519b7c833ac7debfe"
+      },
+      "original-host-copy.log": {
+        "path": "/tmp/effectory-upgrade-baseline/original-host-copy.log",
+        "sha256": "af863ffb604438ffab28f2e886b395db32d2c0c7dc1cb69519b7c833ac7debfe"
+      }
+    }
+  },
+  "upgradeComponentsLinux": {
+    "kind": "single-build-component-checks-not-transition-certification",
+    "platform": "linux-arm64",
+    "bun": "1.4.3",
+    "image": "oven/bun:1.4.3",
+    "imageId": "sha256:3755480cb7c04fb95b5ae2f59236da1ace9f1a49c718b224837125ab1116ea4a",
+    "sourceManifest": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-source-manifest.json",
+    "sourceManifestSha256": "261aa8d887021bd43830bfad15adda61944f679431cfd109967e627957e1afcb",
+    "tests": 57,
+    "failed": 0,
+    "assertions": 275,
+    "files": 7,
+    "seconds": 27.34,
+    "log": "/tmp/effectory-upgrade-baseline/upgrade-components-linux.log",
+    "logSha256": "d2a8c17f314e2353c2b88e6b711fd5feb9e3d46861fea14b7be9fb91020f74bd",
+    "limits": [
+      "No old/new Linux executable edge tested",
+      "No completed upgrade apply or original-host rollback tested on Linux",
+      "Container resource cap was 4 GiB and 2 CPUs; timings are not performance guarantees"
+    ]
+  },
+  "upgradeComponentsVerification": {
+    "exitCode": 0,
+    "captured": 411,
+    "current": 411,
+    "changed": [],
+    "missing": [],
+    "added": [],
+    "tests": 653,
+    "failed": 0,
+    "assertions": 5634,
+    "testFiles": 156,
+    "seconds": 1548.31,
+    "evidence": {
+      "upgrade-components-guarded-typecheck.log": {
+        "path": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-typecheck.log",
+        "sha256": "2d96cf8ae30be970c2c5ca6701903f8b331ef61506e056e30e3949111ef50fa5"
+      },
+      "upgrade-components-guarded-check.log": {
+        "path": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-check.log",
+        "sha256": "405df1a5d3a703359c893138a658f52fd448daa094419df98d8ef16d292a31e6"
+      },
+      "upgrade-components-guarded-full-tests.log": {
+        "path": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-full-tests.log",
+        "sha256": "e1b235df74db151c98e5dcd6961e69ea646e7d1128955946b77effdcfefdf976"
+      },
+      "upgrade-components-guarded-source-manifest.json": {
+        "path": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-source-manifest.json",
+        "sha256": "261aa8d887021bd43830bfad15adda61944f679431cfd109967e627957e1afcb"
+      },
+      "upgrade-components-guarded-stability.json": {
+        "path": "/tmp/effectory-upgrade-baseline/upgrade-components-guarded-stability.json",
+        "sha256": "9598cf6b0ddbae3d210d9f187e665fd9e36358b0f5eb0ea7c717532b42caddf9"
+      }
+    },
+    "scope": "Component checkpoint before the subsequent transition-entry guards and native reply-header correction"
+  },
+  "transitionGuardVerification": {
+    "captured": 414,
+    "current": 414,
+    "changed": [],
+    "missing": [],
+    "added": [],
+    "tests": 30,
+    "failed": 0,
+    "assertions": 276,
+    "testFiles": 7,
+    "seconds": 58.01,
+    "scope": "Focused verification after transition guard and native reply-header edits; not a new full-suite run",
+    "evidence": {
+      "transition-gate-typecheck-final.log": {
+        "path": "/tmp/effectory-upgrade-baseline/transition-gate-typecheck-final.log",
+        "sha256": "fd073fd41dc74218ee656d6ee17ba6bbdef39a910bc964c02f5da8adde183a14"
+      },
+      "transition-gate-check-final.log": {
+        "path": "/tmp/effectory-upgrade-baseline/transition-gate-check-final.log",
+        "sha256": "4afa5272bfee1048a2bedf60453327d52dab2d02f7854ca651fa09bb7f074892"
+      },
+      "transition-gate-final-tests.log": {
+        "path": "/tmp/effectory-upgrade-baseline/transition-gate-final-tests.log",
+        "sha256": "91a9851d2482c7082e1f02b77e12a3c3df8642d968d0bdb4e4e93ead336ab0de"
+      },
+      "transition-gate-source-manifest.json": {
+        "path": "/tmp/effectory-upgrade-baseline/transition-gate-source-manifest.json",
+        "sha256": "2fb00d871395da87d0faa882627c6592871cd504b1f9707b09e80cf44af19955"
+      },
+      "transition-gate-stability.json": {
+        "path": "/tmp/effectory-upgrade-baseline/transition-gate-stability.json",
+        "sha256": "d6a960f5ec1f183b4d64e1d18232e7bdb100d4771d5caf8bb440eb9dacf274fd"
+      },
+      "native-history-kind-probe.log": {
+        "path": "/tmp/effectory-upgrade-baseline/native-history-kind-probe.log",
+        "sha256": "6462ef47b55c7965dcda45877d00f5d67c1a126495ce097d15b296a3ccfed009"
+      },
+      "native-history-kind-fixed-probe.log": {
+        "path": "/tmp/effectory-upgrade-baseline/native-history-kind-fixed-probe.log",
+        "sha256": "faf1601b7a52bc9d925d64df9e500c7756a076868300f51ae73b38de9f74918c"
+      }
+    }
+  },
+  "upgradeJournalAndVaultIdentity": {
+    "status": "component implementation; full transition and CLI remain incomplete",
+    "journalCrashBoundaries": [
+      "active acceptance before history publication",
+      "history publication",
+      "terminal receipt before pointer removal",
+      "pointer removal"
+    ],
+    "actualPredecessorVaultWrite": {
+      "kind": "actual-predecessor-vault-write-detection",
+      "predecessorSha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+      "beforeDigest": "96b58011f280ccdcb8083cfc778a609ffd828eb1f32c46ee0e3bdf38b4e75d92",
+      "afterResetDigest": "c13e0b1a05a885ccb869f66c7005d4ed9ac0002a24dfd1f3c60c7d9ad3afad91",
+      "oldResetExit": 0,
+      "fencedResetExit": 3,
+      "fencedError": "Vault Corrupt: unsupported database version",
+      "limitations": [
+        "Source vault initialized by current compatible format-1 VaultStore",
+        "Fence stamped directly in fixture, not by an upgrade transition",
+        "Only vault subsystem exercised; no certification of a complete edge"
+      ]
+    },
+    "evidence": [
+      {
+        "path": "/tmp/effectory-upgrade-baseline/vault-identity-old-writer.ts",
+        "sha256": "ef2d3701533be8b01fd7bcb94ea68092b87c5ebefc343f0c4fc22d83f92bf1d8"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/vault-identity-old-writer-results.json",
+        "sha256": "8e543ea61d282ff6930180ee446f3fe31d945aaacd3afa46b7f92445cc7cf508"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/vault-identity-old-writer.log",
+        "sha256": "8e543ea61d282ff6930180ee446f3fe31d945aaacd3afa46b7f92445cc7cf508"
+      }
+    ],
+    "limitations": [
+      "No production execution certification added",
+      "No CLI or migration executor connected",
+      "Journal crash tests use synthetic migration names"
+    ],
+    "linuxComponentCheck": {
+      "platform": "linux-arm64",
+      "image": "oven/bun:1.4.3",
+      "imageId": "sha256:3755480cb7c04fb95b5ae2f59236da1ace9f1a49c718b224837125ab1116ea4a",
+      "memory": "2 GiB",
+      "cpus": 1,
+      "passed": 26,
+      "failed": 0,
+      "assertions": 163,
+      "files": 4,
+      "seconds": 8.41,
+      "path": "/tmp/effectory-upgrade-baseline/journal-linux.log",
+      "sha256": "b88b5b246248f4654b327ba937723e22f616241d95a013def6003147a38ef815",
+      "limitation": "Component tests only; no actual old/new Linux host transition"
+    },
+    "fullVerification": {
+      "typecheck": "passed",
+      "formattingAndLint": "passed",
+      "passed": 671,
+      "failed": 0,
+      "assertions": 5803,
+      "files": 160,
+      "seconds": 1482.58,
+      "sourceStability": {
+        "captured": 412,
+        "changed": [],
+        "added": [],
+        "missing": []
+      },
+      "logs": [
+        {
+          "path": "/tmp/effectory-upgrade-baseline/journal-final-typecheck.log",
+          "sha256": "1cf043f2f80782fc6667c9bd494b1cd199a843cffcf2f252f15be2d6d97812c5"
+        },
+        {
+          "path": "/tmp/effectory-upgrade-baseline/journal-final-check.log",
+          "sha256": "fcb3182bf268e06ecac97ee6b463f7cbd10f473a0d92939ed48d4d17cee4e542"
+        },
+        {
+          "path": "/tmp/effectory-upgrade-baseline/journal-full-tests.log",
+          "sha256": "faddea2274130cae6ce00c31cd1635683411a39c9549a7891650944972987ba4"
+        },
+        {
+          "path": "/tmp/effectory-upgrade-baseline/journal-source-manifest.json",
+          "sha256": "a2ddefa39f8fcae8173aab7d30ce6d3d5aa8e93a417255f3dc1596326ebaef5f"
+        },
+        {
+          "path": "/tmp/effectory-upgrade-baseline/journal-stability.json",
+          "sha256": "7f54df715e473b1982fc2b82e9fa288a188f68246ca280d70ac3605c96fc9ca4"
+        }
+      ]
+    }
+  },
+  "offlineUpgradeCommands": {
+    "status": "plan/inspect and refusal paths implemented; migration executor and certification incomplete",
+    "compiledPredecessorAndTargetProbe": {
+      "kind": "actual-predecessor-and-compiled-target-offline-plan-refusal",
+      "predecessorSha256": "a17138f58bb9f1514d12e4bbcb54fa610067f993bd87f14caca0edf5cc55f13f",
+      "targetSha256": "06261153f48065039b6a1b1fdb9f49a4b1609509cba94f6f77e7e52d1e0739a7",
+      "targetBuild": "da951f21e79ce74861f7ceafb21b7752aa182eb2ded15974fb03e90219684779",
+      "planId": "1c4f57d3-362d-4a70-b8ca-ea502137d03f",
+      "runId": "39cea369-1e10-475f-bd9e-74090cf66410",
+      "revision": "577279add5a307167944a420cc7c8e564f0eda9322b79f8825288a6f4e097f25",
+      "status": "Unsupported",
+      "applyExit": 5,
+      "sourceIdentityUnchanged": "8998c489b52682d7887bc4994619ec123349f55502d1b5c6aa04330455ad6b2f",
+      "completedManualHandlerExecutions": 1,
+      "oldHostOutcome": "Succeeded",
+      "limitations": [
+        "No migration or target-host replay performed",
+        "Target intentionally refuses every uncertified storage transition",
+        "Does not certify a compatible or breaking upgrade edge"
+      ]
+    },
+    "verification": {
+      "typecheck": "passed",
+      "formattingAndLint": "passed",
+      "fullSuite": "running; commands-full-tests.log, exec session 33656; do not restart while alive"
+    },
+    "files": [
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-build.log",
+        "sha256": "557328add7f3ce852da4aa63235aa8cb15e6a31b91a528bdc4b84257e7304345"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-old-host.ts",
+        "sha256": "2d9ad0717ec35fb54591c0135ca00db1e336b6fb2a4a6f47f579ac57dd07d5ec"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-old-host.log",
+        "sha256": "50fc081c84fae3f220c4aa9fb7dac87809f2d7d41b7c4c4d17d9f9da331d24c9"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-old-host-results.json",
+        "sha256": "50fc081c84fae3f220c4aa9fb7dac87809f2d7d41b7c4c4d17d9f9da331d24c9"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-source-manifest.json",
+        "sha256": "f7adebebd52a1ffacc6e100a0ada9858a7576a96399303daa2b642e6a204af34"
+      },
+      {
+        "path": "/tmp/effectory-upgrade-baseline/commands-tests2.log",
+        "sha256": "d3ec632785c7220b3561b05c2870057401a07c7c73cb98367183b5f25dd6377a"
+      }
+    ]
+  }
+}

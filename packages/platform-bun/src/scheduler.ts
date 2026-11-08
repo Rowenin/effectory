@@ -1,10 +1,12 @@
 /* oxlint-disable promise/prefer-await-to-then, promise/prefer-await-to-callbacks -- Effect.catch is typed Effect recovery, not Promise chaining. */
 import { OperationError } from "@effectory/runtime/protocol";
+import { snapshot, validate } from "@offtree/effectory-sdk/internal/tag-state";
 import { Clock, Effect, Layer } from "effect";
 
 import { Catalog } from "./catalog.ts";
 import { HostStore } from "./host-store.ts";
 import { validatePolicies } from "./policies.ts";
+import { resolveReportPlan } from "./report-plan.ts";
 
 /** One observed revision per wake; the store fences admission inside its transaction. */
 export const startScheduler = Effect.gen(function* () {
@@ -16,7 +18,7 @@ export const startScheduler = Effect.gen(function* () {
     const application = yield* catalog.get();
     const now = yield* Clock.currentTimeMillis;
     if (application.revision !== observed) {
-      yield* Effect.try({
+      const reports = yield* Effect.try({
         catch: () =>
           new OperationError({
             code: "InvalidInput",
@@ -24,15 +26,35 @@ export const startScheduler = Effect.gen(function* () {
               "Scheduled workflow execution policy is invalid or unsupported",
           }),
         try: () => {
+          const resolved = new Map<
+            string,
+            ReturnType<typeof resolveReportPlan>
+          >();
           for (const schedule of application.registry.schedules.values()) {
+            validate(
+              snapshot({ ...schedule.workflow.tags, ...schedule.tags }),
+              schedule.workflow.tagSchemas
+            );
             validatePolicies(application.registry, schedule.workflow.id);
+            resolved.set(
+              schedule.id,
+              resolveReportPlan(
+                application.registry,
+                "workflow",
+                schedule.workflow.id,
+                schedule.reportSelection
+              )
+            );
           }
+          return resolved;
         },
       });
       yield* store.scheduleReconcile(
         application.registry.schedules,
         application.revision,
-        now
+        now,
+        new Map([...reports].map(([id, report]) => [id, report.plan])),
+        new Map([...reports].map(([id, report]) => [id, report.decision]))
       );
       observed = application.revision;
     }
@@ -47,6 +69,7 @@ export const startScheduler = Effect.gen(function* () {
     }
     restart = false;
   }).pipe(
+    Effect.scoped,
     Effect.catch((error) =>
       Clock.currentTimeMillis.pipe(
         Effect.flatMap((now) => store.scheduleError(null, error, now)),

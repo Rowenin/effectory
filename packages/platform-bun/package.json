@@ -1,6 +1,6 @@
 {
   "name": "@effectory/platform-bun",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -11,13 +11,15 @@
     "./backup": "./src/backup.ts",
     "./host": "./src/host-runtime.ts",
     "./internal": "./src/internal-commands.ts",
-    "./sdk": "./src/sdk.ts"
+    "./sdk": "./src/sdk.ts",
+    "./run-reclamation": "./src/run-reclamation.ts",
+    "./upgrade": "./src/upgrade-commands.ts"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.5",
     "@effect/sql-sqlite-bun": "4.0.5",
-    "@effectory/core": "workspace:*",
     "@effectory/runtime": "workspace:*",
+    "@offtree/effectory-sdk": "workspace:*",
     "effect": "4.0.5"
   }
 }

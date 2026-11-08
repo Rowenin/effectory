@@ -1,4 +1,4 @@
-import { Application, Extension, Task, Workflow } from "@effectory/core";
+import { Application, Extension, Task, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 import { Publish } from "./contracts.ts";

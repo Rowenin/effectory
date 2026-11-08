@@ -115,4 +115,4 @@ export const listDefinitions = (
       items,
       revision: application.revision,
     };
-  });
+  }).pipe(Effect.scoped);

@@ -14,6 +14,7 @@ import {
 import { lockRevision, restoreCache } from "./extension-cache.ts";
 import { GitHubSourceLive } from "./extension-source.ts";
 import { ownershipLayer, RepositoryLease } from "./ownership.ts";
+import { assertRuntimeWriter } from "./runtime-writer-guard.ts";
 
 const failure = (cause: unknown) =>
   cause instanceof OperationError
@@ -35,6 +36,7 @@ export function prepareExtensions(
       catch: failure,
       try: () => {
         lease.assertActive();
+        assertRuntimeWriter(repository);
         if (!existsSync(lockFilename(repository))) {
           if (options.requireLock) {
             throw new OperationError({

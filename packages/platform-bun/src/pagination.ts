@@ -1,10 +1,11 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
-import { canonical } from "@effectory/core/internal/boundary";
 import { OperationError } from "@effectory/runtime/protocol";
+import { canonical } from "@offtree/effectory-sdk/internal/boundary";
 import { Schema } from "effect";
 
 const Token = Schema.Struct({
+  epoch: Schema.optionalKey(Schema.Int),
   expires: Schema.Finite,
   fingerprint: Schema.String,
   position: Schema.Json,
@@ -21,7 +22,7 @@ const fingerprint = (scope: PageScope) =>
     .digest("hex");
 const invalid = () =>
   new OperationError({ code: "InvalidInput", message: "Invalid page cursor" });
-export function createPagination(secret: string) {
+export function createPagination(secret: string, epoch?: () => number) {
   const read = (scope: PageScope, cursor?: string) => {
     if (cursor === undefined) {
       return null;
@@ -51,6 +52,12 @@ export function createPagination(secret: string) {
     } catch {
       throw invalid();
     }
+    if (epoch && (token.epoch ?? 0) !== epoch()) {
+      throw new OperationError({
+        code: "CursorExpired",
+        message: "History was reclaimed; start a new query",
+      });
+    }
     if (token.expires <= Date.now()) {
       throw new OperationError({
         code: "CursorExpired",
@@ -73,6 +80,7 @@ export function createPagination(secret: string) {
   ) => {
     const body = Buffer.from(
       canonical({
+        ...(epoch ? { epoch: epoch() } : {}),
         expires,
         fingerprint: fingerprint(scope),
         position,

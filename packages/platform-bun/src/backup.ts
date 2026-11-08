@@ -11,6 +11,7 @@ import {
   openSync,
   readFileSync,
   readSync,
+  readdirSync,
   realpathSync,
   writeFileSync,
   unlinkSync,
@@ -18,15 +19,21 @@ import {
 import { chmod, copyFile, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { checkJsonBudget, canonical } from "@effectory/core/internal/boundary";
 import { OperationError } from "@effectory/runtime/protocol";
+import {
+  checkJsonBudget,
+  canonical,
+} from "@offtree/effectory-sdk/internal/boundary";
 import { Effect, Schema } from "effect";
 
 import { ownershipLayer, RepositoryLease } from "./ownership.ts";
 import type { Lease } from "./ownership.ts";
+import { retirementMarker } from "./run-reclamation.ts";
+import { snapshotMarker } from "./snapshot-marker.ts";
 import { storageError } from "./storage-error.ts";
+import { assertUpgradeIdle } from "./upgrade-transition-gate.ts";
 
-export const snapshotMarker = "effectory.snapshot-incomplete";
+export { snapshotMarker } from "./snapshot-marker.ts";
 const manifestName = "effectory.snapshot.json";
 const maximumBytes = 1_073_741_824;
 const maximumFileBytes = 134_217_728;
@@ -59,7 +66,8 @@ function excluded(relative: string) {
       ".effectory/daemon.log",
     ].includes(relative) ||
     relative.startsWith(".effectory/state.sqlite.owner") ||
-    relative === ".effectory/state.sqlite-shm"
+    relative === ".effectory/state.sqlite-shm" ||
+    relative === ".effectory/vaults.sqlite-shm"
   );
 }
 function validPath(relative: string) {
@@ -217,10 +225,25 @@ async function copySnapshot(
   lease: Lease
 ) {
   lease.assertActive();
+  assertUpgradeIdle(source);
   if (existsSync(path.join(source, snapshotMarker))) {
     throw failure(
       "Conflict",
       "Snapshot source contains an incomplete-copy marker"
+    );
+  }
+  if (existsSync(path.join(source, ".effectory", retirementMarker))) {
+    throw failure(
+      "Conflict",
+      "Unfinished run reclamation; resume run reclaim apply or start the daemon before backup"
+    );
+  }
+  // Filesystem-only check: even opening SQLite read-only can create a WAL shm file.
+  const staging = path.join(source, ".effectory", "blobs", ".binary-staging");
+  if (!restoring && existsSync(staging) && readdirSync(staging).length > 0) {
+    throw failure(
+      "Conflict",
+      "Unfinished binary installation work; run effectory daemon start then effectory daemon stop before backup. If recovery fails, fix its reported cause or make a verified offline filesystem copy."
     );
   }
   const files = await inventory(source);

@@ -84,7 +84,12 @@ export async function publishedExtension(
       path.join(directory, "contracts.mts"),
       path.join(directory, "extension.mts"),
     ],
-    external: ["effect", "effect/*", "@effectory/core", "@effectory/core/*"],
+    external: [
+      "effect",
+      "effect/*",
+      "@offtree/effectory-sdk",
+      "@offtree/effectory-sdk/*",
+    ],
     format: "esm",
     naming: {
       asset: "[name]-[hash].[ext]",

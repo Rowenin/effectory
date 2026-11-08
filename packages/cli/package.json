@@ -1,6 +1,6 @@
 {
-  "name": "@effectory/cli",
-  "version": "0.0.0",
+  "name": "@offtree/effectory-cli",
+  "version": "0.1.0",
   "private": true,
   "bin": {
     "effectory": "./src/main.ts"

@@ -1,4 +1,4 @@
-import type { Application, Workflow } from "@effectory/core";
+import type { Application, Workflow } from "@offtree/effectory-sdk";
 import type { Schema } from "effect";
 
 /** Templates retain every declared branch; this is a plan, not a prediction. */

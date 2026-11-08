@@ -16,7 +16,7 @@ Other choices: no generation precondition on pause/resume, which act on stable I
 ## Consumer authoring
 
 ```ts
-import { Application, WorkflowSchedule } from "@effectory/core";
+import { Application, WorkflowSchedule } from "@offtree/effectory-sdk";
 
 const HourlyCheck = WorkflowSchedule.make({
   id: "hourly-release-check",

@@ -3,9 +3,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Application, Ref, Task, Workflow } from "@effectory/core";
 import { terminal } from "@effectory/runtime/protocol";
+import { Application, Ref, Task, Workflow } from "@offtree/effectory-sdk";
 import { Deferred, Effect, Layer, Schema } from "effect";
+import type { MessageStorage } from "effect/cluster/MessageStorage";
+import type { SqlClient } from "effect/sql/SqlClient";
 import type { WorkflowEngine } from "effect/workflow/WorkflowEngine";
 
 import { catalogLayer } from "../src/catalog.ts";
@@ -19,7 +21,11 @@ async function withHost<A, E>(
   body: Effect.Effect<
     A,
     E,
-    typeof Runner.Service | typeof HostStore.Service | WorkflowEngine
+    | typeof Runner.Service
+    | typeof HostStore.Service
+    | WorkflowEngine
+    | MessageStorage
+    | SqlClient
   >
 ) {
   const directory = await mkdtemp(path.join(tmpdir(), "effectory-operators-"));

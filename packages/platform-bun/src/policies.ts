@@ -1,9 +1,9 @@
-import type { Application } from "@effectory/core";
-import { Workflow } from "@effectory/core";
+import type { Application } from "@offtree/effectory-sdk";
+import { Workflow } from "@offtree/effectory-sdk";
 import {
   boundedInteger,
   durationMillis,
-} from "@effectory/core/internal/policy";
+} from "@offtree/effectory-sdk/internal/policy";
 
 function validateRetry(
   registry: typeof Application.Registry.Service,

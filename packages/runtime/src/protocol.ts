@@ -1,7 +1,11 @@
+import { CheckSettings } from "@offtree/effectory-sdk/internal/check-schema";
+import { Provenance } from "@offtree/effectory-sdk/internal/report-record";
+import { SelectionDecision } from "@offtree/effectory-sdk/internal/report-selection-schema";
 /* oxlint-disable no-redeclare */
 // Schemas share their names with their decoded types in TypeScript's separate namespaces.
-import { Occurrence } from "@effectory/core/internal/schedule-occurrence";
-import { Schema } from "effect";
+import { Occurrence } from "@offtree/effectory-sdk/internal/schedule-occurrence";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
+import { Effect, Schema } from "effect";
 
 export const RunStatus = Schema.Literals([
   "Queued",
@@ -26,20 +30,25 @@ export const terminal = new Set<RunStatus>([
 ]);
 
 export const ScheduleProvenance = Occurrence;
+export const ReportProvenance = Provenance;
 
 export const Run = Schema.Struct({
   acceptedAt: Schema.String,
+  checks: Schema.optionalKey(CheckSettings),
   engineId: Schema.NullOr(Schema.String),
   error: Schema.NullOr(Schema.Json),
   input: Schema.Json,
   kind: Schema.Literals(["task", "workflow"]),
   lastSequence: Schema.Int,
+  report: Schema.optionalKey(ReportProvenance),
+  reportSelection: Schema.optionalKey(SelectionDecision),
   requestKey: Schema.String,
   result: Schema.NullOr(Schema.Json),
   revision: Schema.String,
   runId: Schema.String,
   schedule: Schema.optionalKey(ScheduleProvenance),
   status: RunStatus,
+  tags: RunTags.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
   targetId: Schema.String,
 });
 export type Run = typeof Run.Type;

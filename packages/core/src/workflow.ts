@@ -5,9 +5,12 @@ import type { Boundary } from "./boundary.ts";
 import { DefinitionError, definitionError } from "./errors.ts";
 import { boundedInteger, durationMillis } from "./policy.ts";
 import * as Ref from "./ref.ts";
+import { declarations } from "./tag-state.ts";
+import type * as MetadataTag from "./tag.ts";
 import type * as Task from "./task.ts";
 
 export interface Spec {
+  readonly tags?: MetadataTag.Declarations;
   readonly id: string;
   readonly version: number;
   readonly input: Boundary;
@@ -252,6 +255,10 @@ export class Builder extends Context.Service<Builder, GraphBuilder>()(
 ) {}
 
 export interface Definition<S extends Spec = Spec> {
+  readonly tags: Readonly<Record<string, string>>;
+  readonly tagSchemas: Readonly<
+    Record<string, Schema.Codec<unknown, string, never, never>>
+  >;
   readonly kind: "Workflow";
   readonly id: S["id"];
   readonly spec: S;
@@ -514,7 +521,9 @@ export function make<const S extends Spec>(
 ): Definition<S> {
   identifier(spec.id);
   version(spec.version);
+  const metadata = declarations("tags" in spec ? spec.tags : {});
   return Object.freeze({
+    ...metadata,
     build: buildScope(spec, () => construction),
     errorSchema: spec.error,
     id: spec.id,

@@ -1,9 +1,25 @@
-import { Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { DefinitionError } from "./errors.ts";
 
 /** Boundaries cannot depend on services during encoding or decoding. */
 export type Boundary = Schema.Codec<unknown, unknown, never, never>;
+
+/** Validate/map every typed failure without discarding accompanying cleanup causes. */
+export function mapFailureCause<E, E2, R>(
+  cause: Cause.Cause<E>,
+  failure: (error: E) => Effect.Effect<never, E2, R>
+): Effect.Effect<Cause.Cause<E2>, never, R> {
+  return Effect.forEach(cause.reasons, (reason) =>
+    Cause.isFailReason(reason)
+      ? Effect.exit(Effect.suspend(() => failure(reason.error))).pipe(
+          Effect.map((exit): readonly Cause.Reason<E2>[] =>
+            Exit.isFailure(exit) ? exit.cause.reasons : []
+          )
+        )
+      : Effect.succeed([reason])
+  ).pipe(Effect.map((reasons) => Cause.fromReasons(reasons.flat())));
+}
 
 export function identifier(value: string): string {
   if (!/^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/u.test(value)) {

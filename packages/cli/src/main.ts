@@ -4,7 +4,6 @@ import { closeSync, mkdirSync, openSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { BunRuntime, BunServices } from "@effect/platform-bun";
-import { checkJsonBudget } from "@effectory/core/internal/boundary";
 import { repositorySnapshot } from "@effectory/platform-bun/backup";
 import { connect } from "@effectory/platform-bun/client";
 import { serve, Endpoint } from "@effectory/platform-bun/daemon";
@@ -20,12 +19,14 @@ import {
   selfCommand,
 } from "@effectory/platform-bun/host";
 import { runInternalCommand } from "@effectory/platform-bun/internal";
+import { reclaimRuns } from "@effectory/platform-bun/run-reclamation";
 import {
   initProject,
   projectStatus,
   projectWarning,
   upgradeProject,
 } from "@effectory/platform-bun/sdk";
+import { runtimeUpgrade } from "@effectory/platform-bun/upgrade";
 import { OperationListRequest } from "@effectory/runtime/extension-protocol";
 import {
   WaitListRequest,
@@ -38,16 +39,53 @@ import {
   RunStatus,
 } from "@effectory/runtime/protocol";
 import { ScheduleListRequest } from "@effectory/runtime/schedule-protocol";
+import { checkJsonBudget } from "@offtree/effectory-sdk/internal/boundary";
 import { Cause, Console, Effect, Exit, Option, Schema, Stream } from "effect";
 import { Argument, Command, Flag } from "effect/cli";
 import { RpcClientError } from "effect/rpc";
 
+import { createWatchClient } from "../../platform-bun/src/watch-client.ts";
 import cliPackage from "../package.json" with { type: "json" };
+import { agentMutation, agentStatus } from "./agent-files.ts";
+import { checksPreflight, checkLaunch, checkDestination } from "./checks.ts";
+import { download } from "./download.ts";
 import { writeJsonLine } from "./json-lines.ts";
+import { exportJUnit } from "./junit.ts";
+import { consumeObservation, stopForeground } from "./observation.ts";
+import { createProgress } from "./progress.ts";
+import {
+  automaticRetentionFor,
+  parseReclamation,
+  retentionFor,
+} from "./reclamation.ts";
+import {
+  recoveryRequest,
+  recoveryRetry,
+  recoveryGuidance,
+} from "./recovery.ts";
+import {
+  searchPreflight,
+  searchRequest,
+  searchContinuation,
+} from "./report-search.ts";
+import { selectionFlags, selectionFor } from "./report-selection.ts";
+import {
+  reportExit,
+  reportsPreflight,
+  runOrigin,
+  reportText,
+  waitReport,
+  waitReports,
+} from "./reports.ts";
+import { tagsFor } from "./tags.ts";
+import { offlineVault, readSecret, writeSecret } from "./vault-io.ts";
 
 const root = Command.make("effectory").pipe(
   Command.withSharedFlags({
-    json: Flag.Boolean("json").pipe(Flag.withDefault(false)),
+    json: Flag.Boolean("json").pipe(
+      Flag.withDefault(false),
+      Flag.withDescription("Compact JSON output; suppress human progress")
+    ),
     repository: Flag.String("repository").pipe(Flag.withDefault(process.cwd())),
   })
 );
@@ -60,6 +98,10 @@ const inputFlags = {
 const idFlag = Argument.String("id");
 const requestKeyFlag = Flag.String("request-key").pipe(Flag.optional);
 const revisionFlag = Flag.String("revision").pipe(Flag.optional);
+const tagFlag = Flag.String("tag").pipe(
+  Flag.atMost(32),
+  Flag.withDescription("Run metadata as KEY=VALUE (repeatable)")
+);
 const pageFlags = {
   cursor: Flag.String("cursor").pipe(Flag.optional),
   limit: Flag.Int("limit").pipe(Flag.withDefault(50)),
@@ -146,56 +188,141 @@ function parseInput(input: Option.Option<string>, file: Option.Option<string>) {
   });
 }
 
-function observe(client: Client, runId: string, untilWaiting: boolean) {
-  return Effect.gen(function* () {
-    yield* client.RunWatch({ runId }).pipe(
-      Stream.takeUntil(
-        (frame) =>
-          frame._tag === "Snapshot" &&
-          (terminal.has(frame.run.status) ||
-            (untilWaiting &&
-              (frame.run.status === "Waiting" ||
-                frame.run.status === "NeedsAttention")))
-      ),
-      Stream.runDrain
-    );
-    const run = yield* client.RunGet({ runId });
-    yield* print(run);
-    exitCode = terminal.has(run.status) ? 1 : 4;
-    if (run.status === "Succeeded") {
-      exitCode = 0;
+type WatchClient = Effect.Success<ReturnType<typeof createWatchClient>>;
+
+function observationHint(
+  runId: string,
+  accepted: boolean,
+  after?: number,
+  cursorKind = "written"
+) {
+  return (error: unknown) => {
+    let recovery = ` Resume run watch ${runId} --jsonl --after-sequence ${after ?? 0}.`;
+    if (error instanceof OperationError && error.code === "LimitExceeded") {
+      recovery =
+        after === undefined ? "" : ` Last event ${cursorKind}: ${after}.`;
     }
+    return Console.error(
+      `${accepted ? `Run ${runId} was accepted. ` : ""}Inspect with run get ${runId}.${recovery}`
+    ).pipe(Effect.catchCause(() => Effect.void));
+  };
+}
+
+function watchPreflight(client: Client, submission: boolean, runId?: string) {
+  return Effect.gen(function* () {
+    const config = yield* root;
+    const status = yield* client.SystemStatus({});
+    const watch = yield* createWatchClient(
+      path.resolve(config.repository),
+      status
+    ).pipe(
+      Effect.mapError((error) =>
+        error instanceof OperationError && error.code === "Unavailable"
+          ? new OperationError({
+              code: error.code,
+              message: `${error.message} ${submission ? "To submit without observing, use --background." : `Inspect with run get ${runId}.`}`,
+            })
+          : error
+      )
+    );
+    return { status, watch };
+  });
+}
+
+function observe(
+  client: Client,
+  watch: WatchClient,
+  runId: string,
+  untilWaiting: boolean,
+  afterSequence = 0,
+  junit?: { readonly output?: string }
+) {
+  return Effect.gen(function* () {
+    const config = yield* root;
+    const progress = createProgress(!config.json, afterSequence);
+    return yield* Effect.gen(function* () {
+      yield* watch.RunWatch({ afterSequence, runId }).pipe(
+        Stream.takeUntilEffect((frame) =>
+          progress.process(frame, (snapshot) =>
+            untilWaiting
+              ? stopForeground(snapshot, () =>
+                  client
+                    .WaitList({ limit: 1, runId, status: "Open" })
+                    .pipe(Effect.map((waits) => waits.items.length > 0))
+                )
+              : Effect.succeed(terminal.has(snapshot.run.status))
+          )
+        ),
+        Stream.runDrain,
+        consumeObservation
+      );
+      const run = yield* client.RunGet({ runId });
+      if (junit === undefined) {
+        yield* print(run);
+      } else if (terminal.has(run.status)) {
+        yield* exportJUnit(client, run, junit.output);
+      } else {
+        yield* Console.error(
+          `Run ${runId} was accepted. Export after completion with effectory run junit ${runId}.`
+        ).pipe(Effect.ignoreCause);
+      }
+      exitCode = terminal.has(run.status) ? 1 : 4;
+      if (run.status === "Succeeded") {
+        exitCode = 0;
+      }
+      if (exitCode === 4) {
+        const supportsRecovery = yield* client.SystemStatus({}).pipe(
+          Effect.map((status) =>
+            status.capabilities.includes("run.recovery.v1")
+          ),
+          Effect.catch(() => Effect.succeed(false))
+        );
+        yield* Console.error(
+          `Outside action is available or the run needs attention. Inspect run waits ${runId} and run get ${runId}.${supportsRecovery && run.status === "NeedsAttention" ? ` Assess uncertain tasks with run recover ${runId}.` : ""}`
+        ).pipe(Effect.catchCause(() => Effect.void));
+      }
+    }).pipe(
+      // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Effect callback, not a Promise.
+      Effect.tapError((error) =>
+        observationHint(
+          runId,
+          untilWaiting,
+          progress.cursor,
+          config.json ? "consumed" : "displayed"
+        )(error)
+      )
+    );
   });
 }
 function observeJsonLines(
   client: Client,
+  watch: WatchClient,
   runId: string,
   afterSequence: number
 ) {
-  return Effect.gen(function* () {
+  return Effect.suspend(() => {
     let after = afterSequence;
-    yield* client.RunWatch({ afterSequence, runId }).pipe(
-      Stream.runForEach((frame) =>
-        writeJsonLine(frame).pipe(
-          Effect.tap(() =>
-            Effect.sync(() => {
-              if (frame._tag === "Event") {
-                after = frame.event.sequence;
-              }
-            })
-          )
-        )
-      ),
-      Effect.tapError((error) =>
-        error instanceof OperationError
-          ? Effect.void
-          : Console.error(
-              `Observation disconnected. Resume run watch ${runId} --jsonl --after-sequence ${after}`
+    return Effect.gen(function* () {
+      yield* watch.RunWatch({ afterSequence, runId }).pipe(
+        Stream.runForEach((frame) =>
+          writeJsonLine(frame).pipe(
+            Effect.tap(() =>
+              Effect.sync(() => {
+                if (frame._tag === "Event") {
+                  after = frame.event.sequence;
+                }
+              })
             )
-      )
+          )
+        ),
+        consumeObservation
+      );
+      const run = yield* client.RunGet({ runId });
+      exitCode = run.status === "Succeeded" ? 0 : 1;
+    }).pipe(
+      // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Effect callback, not a Promise.
+      Effect.tapError((error) => observationHint(runId, false, after)(error))
     );
-    const run = yield* client.RunGet({ runId });
-    exitCode = run.status === "Succeeded" ? 0 : 1;
   });
 }
 
@@ -274,15 +401,46 @@ function definitions(kind: "task" | "workflow") {
     "run",
     {
       ...inputFlags,
+      ...selectionFlags,
       background: Flag.Boolean("background").pipe(Flag.withDefault(false)),
+      failOn: Flag.Literals("fail-on", ["low", "medium", "high"]).pipe(
+        Flag.optional
+      ),
       id: idFlag,
+      junit: Flag.Boolean("junit").pipe(Flag.withDefault(false)),
+      output: Flag.String("output").pipe(Flag.optional),
       requestKey: requestKeyFlag,
       revision: revisionFlag,
+      tags: tagFlag,
     },
     (config) =>
       withClient((client) =>
         Effect.gen(function* () {
+          const globalConfig = yield* root;
+          yield* checkLaunch(config, globalConfig.json);
           const input = yield* parseInput(config.input, config.inputFile);
+          const observation = config.background
+            ? undefined
+            : yield* watchPreflight(client, true);
+          if (config.junit || Option.isSome(config.failOn)) {
+            yield* checksPreflight(
+              observation === undefined
+                ? client
+                : { SystemStatus: () => Effect.succeed(observation.status) }
+            );
+          }
+          const selectionPayload = yield* selectionFor(
+            observation === undefined
+              ? client
+              : { SystemStatus: () => Effect.succeed(observation.status) },
+            config
+          );
+          const tagPayload = yield* tagsFor(
+            observation === undefined
+              ? client
+              : { SystemStatus: () => Effect.succeed(observation.status) },
+            config.tags
+          );
           const requestKey = Option.getOrElse(config.requestKey, () =>
             crypto.randomUUID()
           );
@@ -292,6 +450,11 @@ function definitions(kind: "task" | "workflow") {
             id: config.id,
             input,
             requestKey,
+            ...tagPayload,
+            ...(Option.isSome(config.failOn)
+              ? { checks: { failOn: config.failOn.value } }
+              : {}),
+            ...selectionPayload,
             ...revision(config.revision),
           }).pipe(
             Effect.tapError((failure) =>
@@ -306,7 +469,40 @@ function definitions(kind: "task" | "workflow") {
             yield* print(result);
             return;
           }
-          yield* observe(client, result.runId, true);
+          if (observation) {
+            const global = yield* root;
+            if (
+              !global.json &&
+              observation.status.capabilities.includes("reports.v1")
+            ) {
+              yield* client[
+                kind === "task" ? "TaskDescribe" : "WorkflowDescribe"
+              ]({ id: result.targetId, revision: result.revision }).pipe(
+                Effect.flatMap((description) =>
+                  typeof description === "object" &&
+                  description !== null &&
+                  "reports" in description &&
+                  Array.isArray(description.reports) &&
+                  description.reports.length > 0
+                    ? Console.error(
+                        `Reports: effectory report list ${result.runId}${result.reportSelection?.required.length ? " (required reports remain selected)" : ""}`
+                      )
+                    : Effect.void
+                ),
+                Effect.catchCause(() => Effect.void)
+              );
+            }
+            yield* observe(
+              client,
+              observation.watch,
+              result.runId,
+              true,
+              0,
+              config.junit
+                ? { ...optionalText("output", config.output) }
+                : undefined
+            );
+          }
         })
       )
   );
@@ -336,8 +532,328 @@ function definitions(kind: "task" | "workflow") {
   );
 }
 
+const reportCommands = Command.make("report").pipe(
+  Command.withSubcommands([
+    Command.make(
+      "search",
+      {
+        ...pageFlags,
+        attachmentId: Flag.String("attachment").pipe(Flag.optional),
+        createdAfter: Flag.String("created-after").pipe(Flag.optional),
+        createdBefore: Flag.String("created-before").pipe(Flag.optional),
+        history: Flag.Boolean("history").pipe(Flag.withDefault(false)),
+        query: Argument.String("query").pipe(Argument.optional),
+        reporterId: Flag.String("reporter").pipe(Flag.optional),
+        runId: Flag.String("run").pipe(Flag.optional),
+        scope: Flag.String("scope").pipe(Flag.optional),
+        sourceWorkflowId: Flag.String("source-workflow").pipe(Flag.optional),
+        statuses: Flag.String("status").pipe(Flag.atMost(8)),
+        tags: tagFlag,
+        taskId: Flag.String("task").pipe(Flag.optional),
+        workflowId: Flag.String("workflow").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            const global = yield* root;
+            const request = yield* searchRequest(
+              {
+                ...page(config),
+                history: config.history,
+                ...optionalText("attachmentId", config.attachmentId),
+                ...optionalText("createdAfter", config.createdAfter),
+                ...optionalText("createdBefore", config.createdBefore),
+                ...optionalText("query", config.query),
+                ...optionalText("reporterId", config.reporterId),
+                ...optionalText("runId", config.runId),
+                ...optionalText("scope", config.scope),
+                ...optionalText("taskId", config.taskId),
+                ...optionalText("workflowId", config.workflowId),
+                ...optionalText("sourceWorkflowId", config.sourceWorkflowId),
+                ...(config.statuses.length
+                  ? { statuses: [...new Set(config.statuses)] }
+                  : {}),
+              },
+              config.tags
+            );
+            yield* searchPreflight(
+              client,
+              request.sourceWorkflowId !== undefined
+            );
+            const result = yield* client.ReportSearch(request);
+            yield* print(result);
+            if (!global.json) {
+              let note: string | null = null;
+              if (result.cursor === null) {
+                if (result.items.length === 0) {
+                  note =
+                    "No further matches. ID filters are exact and case-sensitive.";
+                }
+              } else {
+                note = `Continue report search:\n${searchContinuation(request, result.cursor, global.repository)}`;
+              }
+              if (note !== null) {
+                yield* Effect.sync(() => console.error(note)).pipe(
+                  Effect.catchCause(() => Effect.void)
+                );
+              }
+            }
+          })
+        )
+    ),
+    Command.make(
+      "list",
+      {
+        ...pageFlags,
+        history: Flag.Boolean("history").pipe(Flag.withDefault(false)),
+        id: idFlag,
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            yield* reportsPreflight(client);
+            yield* client
+              .RunReports({
+                history: config.history,
+                runId: config.id,
+                ...page(config),
+              })
+              .pipe(Effect.flatMap(print));
+          })
+        )
+    ),
+    Command.make(
+      "get",
+      {
+        data: Flag.Boolean("data").pipe(Flag.withDefault(false)),
+        id: idFlag,
+        output: Flag.String("output").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            const global = yield* root;
+            if (global.json && (config.data || Option.isSome(config.output))) {
+              return yield* new OperationError({
+                code: "InvalidInput",
+                message: "--json cannot be combined with --data or --output",
+              });
+            }
+            yield* reportsPreflight(client);
+            const reply = yield* client.ReportGet({ reportId: config.id });
+            exitCode = reportExit(reply.record.status);
+            if (global.json || reply.content === null) {
+              yield* print(reply);
+              return;
+            }
+            const text = config.data
+              ? JSON.stringify(reply.content.data, null, 2)
+              : reply.content.markdown;
+            yield* reportText(text, Option.getOrUndefined(config.output));
+          })
+        )
+    ),
+    Command.make(
+      "wait",
+      {
+        id: idFlag.pipe(Argument.optional),
+        report: Flag.String("report").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            if (Option.isSome(config.id) === Option.isSome(config.report)) {
+              return yield* new OperationError({
+                code: "InvalidInput",
+                message: "Choose a source run ID or --report REPORT_ID",
+              });
+            }
+            yield* reportsPreflight(client);
+            if (Option.isSome(config.report)) {
+              const reply = yield* waitReport(client, config.report.value);
+              exitCode = reportExit(reply.record.status);
+              yield* print(reply);
+            } else if (Option.isSome(config.id)) {
+              const result = yield* waitReports(client, config.id.value);
+              exitCode = result.code;
+              yield* print(result.aggregate);
+            }
+          })
+        )
+    ),
+    Command.make(
+      "retry",
+      { id: idFlag, requestKey: requestKeyFlag },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            yield* reportsPreflight(client);
+            const key = Option.getOrElse(config.requestKey, () =>
+              crypto.randomUUID()
+            );
+            yield* client
+              .ReportRetry({ reportId: config.id, requestKey: key })
+              .pipe(
+                Effect.tapError((error) =>
+                  error instanceof OperationError
+                    ? Effect.void
+                    : Console.error(
+                        `Delivery uncertain. Retry effectory report retry ${config.id} --request-key ${key}`
+                      ).pipe(Effect.catchCause(() => Effect.void))
+                ),
+                Effect.flatMap(print)
+              );
+          })
+        )
+    ),
+    Command.make(
+      "cancel",
+      {
+        id: idFlag.pipe(Argument.optional),
+        reason: Flag.String("reason").pipe(Flag.optional),
+        requestKey: requestKeyFlag,
+        run: Flag.String("run").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            if (Option.isSome(config.id) === Option.isSome(config.run)) {
+              return yield* new OperationError({
+                code: "InvalidInput",
+                message: "Choose a report ID or --run SOURCE_RUN_ID",
+              });
+            }
+            yield* reportsPreflight(client);
+            const key = Option.getOrElse(config.requestKey, () =>
+              crypto.randomUUID()
+            );
+            const reason = Option.isSome(config.reason)
+              ? { reason: config.reason.value }
+              : {};
+            const request = Option.isSome(config.run)
+              ? { requestKey: key, sourceRunId: config.run.value, ...reason }
+              : {
+                  reportId: Option.getOrElse(config.id, () => ""),
+                  requestKey: key,
+                  ...reason,
+                };
+            yield* client.ReportCancel(request).pipe(
+              Effect.tapError((error) =>
+                error instanceof OperationError
+                  ? Effect.void
+                  : Console.error(
+                      `Delivery uncertain. Retry report cancel with the same selection, reason and --request-key ${key}`
+                    ).pipe(Effect.catchCause(() => Effect.void))
+              ),
+              Effect.flatMap(print)
+            );
+          })
+        )
+    ),
+  ])
+);
+
 const runCommands = Command.make("run").pipe(
   Command.withSubcommands([
+    Command.make("reclaim").pipe(
+      Command.withSubcommands([
+        Command.make(
+          "plan",
+          {
+            completedBefore: Flag.String("completed-before").pipe(
+              Flag.optional
+            ),
+            run: Flag.String("run").pipe(Flag.optional),
+            target: Flag.String("target").pipe(Flag.optional),
+          },
+          (config) =>
+            Effect.gen(function* () {
+              const shared = yield* root;
+              yield* reclaimRuns(shared.repository, {
+                kind: "plan",
+                selector: {
+                  ...(Option.isSome(config.run)
+                    ? { runId: config.run.value }
+                    : {}),
+                  ...(Option.isSome(config.completedBefore)
+                    ? { completedBefore: config.completedBefore.value }
+                    : {}),
+                  ...(Option.isSome(config.target)
+                    ? { target: config.target.value }
+                    : {}),
+                },
+              }).pipe(Effect.flatMap(print));
+            })
+        ),
+        Command.make("apply", { id: Argument.String("plan-id") }, (config) =>
+          Effect.gen(function* () {
+            const shared = yield* root;
+            yield* reclaimRuns(shared.repository, {
+              kind: "apply",
+              planId: config.id,
+            }).pipe(Effect.flatMap(print));
+          })
+        ),
+        Command.make("inspect", { id: Argument.String("run-id") }, (config) =>
+          Effect.gen(function* () {
+            const shared = yield* root;
+            yield* reclaimRuns(shared.repository, {
+              kind: "inspect",
+              runId: config.id,
+            }).pipe(Effect.flatMap(print));
+          })
+        ),
+        Command.make("compact", {}, () =>
+          Effect.gen(function* () {
+            const shared = yield* root;
+            yield* reclaimRuns(shared.repository, { kind: "compact" }).pipe(
+              Effect.flatMap(print)
+            );
+          })
+        ),
+      ])
+    ),
+    Command.make(
+      "checks",
+      {
+        id: Argument.String("id"),
+        ...pageFlags,
+        attempts: Flag.Literals("attempts", ["latest", "all"]).pipe(
+          Flag.withDefault("latest")
+        ),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            yield* checksPreflight(client);
+            yield* client
+              .RunChecks({
+                attempts: config.attempts,
+                runId: config.id,
+                ...page(config),
+              })
+              .pipe(Effect.flatMap(print));
+          })
+        )
+    ),
+    Command.make(
+      "junit",
+      {
+        id: Argument.String("id"),
+        output: Flag.String("output").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            yield* checksPreflight(client);
+            const output = Option.getOrUndefined(config.output);
+            yield* checkDestination(output);
+            const run = yield* client.RunGet({ runId: config.id });
+            yield* exportJUnit(client, run, output);
+            exitCode = run.status === "Succeeded" ? 0 : 1;
+          })
+        )
+    ),
     Command.make(
       "list",
       {
@@ -345,7 +861,14 @@ const runCommands = Command.make("run").pipe(
         createdAfter: Flag.String("created-after").pipe(Flag.optional),
         createdBefore: Flag.String("created-before").pipe(Flag.optional),
         kind: Flag.String("kind").pipe(Flag.optional),
+        origin: Flag.Literals("origin", [
+          "manual",
+          "schedule",
+          "report",
+          "all",
+        ]).pipe(Flag.optional),
         status: Flag.String("status").pipe(Flag.optional),
+        tags: tagFlag,
         targetId: Flag.String("target").pipe(Flag.optional),
       },
       (config) =>
@@ -356,6 +879,10 @@ const runCommands = Command.make("run").pipe(
                   Schema.Literals(["task", "workflow"])
                 )(config.kind.value)
               : null;
+            if (Option.isSome(config.origin)) {
+              yield* reportsPreflight(client);
+            }
+            const tagPayload = yield* tagsFor(client, config.tags);
             const status = Option.isSome(config.status)
               ? yield* Schema.decodeUnknownEffect(RunStatus)(
                   config.status.value
@@ -363,14 +890,76 @@ const runCommands = Command.make("run").pipe(
               : null;
             yield* client
               .RunList({
+                ...tagPayload,
                 ...page(config),
+                ...(Option.isSome(config.origin)
+                  ? { origin: config.origin.value }
+                  : {}),
                 ...optionalText("targetId", config.targetId),
                 ...optionalText("createdAfter", config.createdAfter),
                 ...optionalText("createdBefore", config.createdBefore),
                 ...(kind === null ? {} : { kind }),
                 ...(status === null ? {} : { status }),
               })
-              .pipe(Effect.flatMap(print));
+              .pipe(
+                Effect.map((result) => ({
+                  ...result,
+                  items: result.items.map((item) => ({
+                    ...item,
+                    origin: runOrigin(item),
+                  })),
+                })),
+                Effect.flatMap(print)
+              );
+          })
+        )
+    ),
+
+    Command.make(
+      "recover",
+      {
+        acknowledge: Flag.Boolean("acknowledge-reexecution").pipe(
+          Flag.withDefault(false)
+        ),
+        authorize: Flag.String("authorize").pipe(Flag.optional),
+        cursor: Flag.String("cursor").pipe(Flag.optional),
+        id: idFlag,
+        limit: Flag.Int("limit").pipe(Flag.optional),
+        reason: Flag.String("reason").pipe(Flag.optional),
+        requestKey: requestKeyFlag,
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            const action = yield* recoveryRequest(config);
+            const status = yield* client.SystemStatus({});
+            if (!status.capabilities.includes("run.recovery.v1")) {
+              return yield* new OperationError({
+                code: "Unavailable",
+                message:
+                  "Daemon does not support recovery. Use the compatible recovery-capable host build; an arbitrary upgrade cannot load older pinned revisions.",
+              });
+            }
+            if (action._tag === "Assess") {
+              const assessment = yield* client.RunRecoveryGet(action.request);
+              if (!(yield* root).json) {
+                yield* Console.error(recoveryGuidance(assessment));
+              }
+              yield* print(assessment);
+            } else {
+              const receipt = yield* client
+                .RunRecover(action.request)
+                .pipe(
+                  Effect.tapError((error) =>
+                    error instanceof OperationError
+                      ? Effect.void
+                      : Console.error(recoveryRetry(action.request)).pipe(
+                          Effect.catchCause(() => Effect.void)
+                        )
+                  )
+                );
+              yield* print(receipt);
+            }
           })
         )
     ),
@@ -410,6 +999,16 @@ const runCommands = Command.make("run").pipe(
         )
     ),
 
+    Command.make("summary", { id: idFlag }, ({ id }) =>
+      withClient((client) =>
+        Effect.gen(function* () {
+          const config = yield* root;
+          yield* reportsPreflight(client);
+          const summary = yield* client.RunSummarize({ runId: id });
+          yield* config.json ? print(summary) : reportText(summary.markdown);
+        })
+      )
+    ),
     Command.make("get", { id: idFlag }, ({ id }) =>
       withClient((client) =>
         client.RunGet({ runId: id }).pipe(Effect.flatMap(print))
@@ -483,9 +1082,12 @@ const runCommands = Command.make("run").pipe(
       },
       ({ id, jsonl, afterSequence }) =>
         withClient((client) =>
-          jsonl
-            ? observeJsonLines(client, id, afterSequence)
-            : observe(client, id, false)
+          Effect.gen(function* () {
+            const { watch } = yield* watchPreflight(client, false, id);
+            return yield* jsonl
+              ? observeJsonLines(client, watch, id, afterSequence)
+              : observe(client, watch, id, false, afterSequence);
+          })
         )
     ),
     Command.make(
@@ -593,14 +1195,174 @@ const runCommands = Command.make("run").pipe(
     ),
   ])
 );
+const automaticReclamation = Command.make("automatic").pipe(
+  Command.withDescription(
+    "Opt in to background deletion under existing policies; newest versions and run/reader/report holds remain protected"
+  ),
+  Command.withSubcommands([
+    Command.make("status", {}, () =>
+      withClient((client) =>
+        Effect.gen(function* () {
+          yield* automaticRetentionFor(client);
+          yield* client
+            .LakeReclamationAutomaticGet({})
+            .pipe(Effect.flatMap(print));
+        })
+      )
+    ),
+    ...(["enable", "disable"] as const).map((action) =>
+      Command.make(action, {}, () =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            yield* automaticRetentionFor(client);
+            const status = yield* client
+              .LakeReclamationAutomaticSet({ enabled: action === "enable" })
+              .pipe(
+                Effect.tapError((error) =>
+                  error instanceof OperationError
+                    ? Effect.void
+                    : Console.error(
+                        "Delivery uncertain. Inspect lake reclaim automatic status or repeat the desired setting."
+                      )
+                )
+              );
+            if (!(yield* root).json) {
+              yield* Console.error(
+                action === "enable"
+                  ? "Automatic retention enabled: existing and future policy-eligible content may be deleted without individual previews."
+                  : "Automatic retention disabled: no new automatic deletions will be committed; already-committed blob cleanup may finish."
+              );
+            }
+            yield* print(status);
+          })
+        )
+      )
+    ),
+  ])
+);
+const reclaim = Command.make("reclaim").pipe(
+  Command.withDescription(
+    "Preview and apply content reclamation. If hasMore is true, repeat plan then apply; plans expire after 15 minutes."
+  ),
+  Command.withSubcommands([
+    automaticReclamation,
+    Command.make(
+      "plan",
+      {
+        artifact: Flag.String("artifact").pipe(Flag.optional),
+        keepLatest: Flag.Int("keep-latest").pipe(Flag.optional),
+        olderThan: Flag.String("older-than").pipe(Flag.optional),
+        policy: Flag.Boolean("policy").pipe(Flag.withDefault(false)),
+        schema: Flag.String("schema").pipe(Flag.optional),
+        schemaVersion: Flag.Int("schema-version").pipe(Flag.optional),
+        version: Flag.Int("version").pipe(Flag.optional),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            const request = yield* Effect.try({
+              catch: (error) => error as OperationError,
+              try: () =>
+                parseReclamation({
+                  policy: config.policy,
+                  ...(Option.isSome(config.schema)
+                    ? { schema: config.schema.value }
+                    : {}),
+                  ...(Option.isSome(config.schemaVersion)
+                    ? { schemaVersion: config.schemaVersion.value }
+                    : {}),
+                  ...(Option.isSome(config.artifact)
+                    ? { artifact: config.artifact.value }
+                    : {}),
+                  ...(Option.isSome(config.version)
+                    ? { version: config.version.value }
+                    : {}),
+                  ...(Option.isSome(config.olderThan)
+                    ? { olderThan: config.olderThan.value }
+                    : {}),
+                  ...(Option.isSome(config.keepLatest)
+                    ? { keepLatest: config.keepLatest.value }
+                    : {}),
+                }),
+            });
+            yield* retentionFor(client);
+            yield* client.LakeReclamationPlan(request).pipe(
+              Effect.tap((plan) =>
+                plan.protectedVersions > 0
+                  ? Console.error(
+                      `${plan.protectedVersions} eligible versions are protected by unfinished producers, consumers, or pending reports. Use lake versions to inspect holds, run get / run cancel for runs, and report list / report cancel for reports. Wait for terminal settlement, then preview again.`
+                    )
+                  : Effect.void
+              ),
+              Effect.flatMap(print)
+            );
+          })
+        )
+    ),
+    Command.make("apply", { planId: Argument.String("planId") }, ({ planId }) =>
+      withClient((client) =>
+        Effect.gen(function* () {
+          yield* retentionFor(client);
+          yield* client.LakeReclamationApply({ planId }).pipe(
+            Effect.tapError((error) =>
+              error instanceof OperationError
+                ? Effect.void
+                : Console.error(
+                    `Delivery uncertain. Retry lake reclaim apply ${planId}; the plan id preserves the receipt even after expiry.`
+                  )
+            ),
+            Effect.flatMap(print)
+          );
+        })
+      )
+    ),
+  ])
+);
 const lake = Command.make("lake").pipe(
   Command.withSubcommands([
-    Command.make("versions", { ...pageFlags, id: idFlag }, (config) =>
-      withClient((client) =>
-        client
-          .LakeVersions({ ...page(config), artifactId: config.id })
-          .pipe(Effect.flatMap(print))
-      )
+    reclaim,
+    Command.make(
+      "download",
+      {
+        id: idFlag,
+        output: Flag.String("output"),
+        version: Flag.Int("version"),
+      },
+      ({ id, version, output }) =>
+        Effect.gen(function* () {
+          const config = yield* root;
+          yield* download(
+            path.resolve(config.repository),
+            id,
+            version,
+            output
+          ).pipe(Effect.flatMap(print));
+        })
+    ),
+    Command.make(
+      "versions",
+      {
+        ...pageFlags,
+        id: idFlag,
+        includeReclaimed: Flag.Boolean("include-reclaimed").pipe(
+          Flag.withDefault(false)
+        ),
+      },
+      (config) =>
+        withClient((client) =>
+          Effect.gen(function* () {
+            if (config.includeReclaimed) {
+              yield* retentionFor(client);
+            }
+            yield* client
+              .LakeVersions({
+                ...page(config),
+                artifactId: config.id,
+                ...(config.includeReclaimed ? { includeReclaimed: true } : {}),
+              })
+              .pipe(Effect.flatMap(print));
+          })
+        )
     ),
     Command.make(
       "get",
@@ -774,7 +1536,7 @@ const daemon = Command.make("daemon").pipe(
             closeSync(log);
           }
         });
-        for (let attempt = 0; attempt < 150; attempt += 1) {
+        for (let attempt = 0; attempt < 1200; attempt += 1) {
           const result = yield* Effect.exit(
             withClient((client) => client.SystemStatus({}))
           );
@@ -790,7 +1552,8 @@ const daemon = Command.make("daemon").pipe(
         }
         return yield* new OperationError({
           code: "Unavailable",
-          message: "Daemon did not become ready; inspect .effectory/daemon.log",
+          message:
+            "Daemon did not become ready within two minutes; report search migration may still be running. Inspect .effectory/daemon.log and check daemon status before starting it again.",
         });
       })
     ),
@@ -1125,6 +1888,41 @@ const upgrade = Command.make("upgrade", {}, () =>
       Effect.flatMap(print)
     )
   )
+).pipe(
+  Command.withDescription(
+    "Bare upgrade updates dependency pins only. Offline plan, apply and inspect manage runtime transitions."
+  ),
+  Command.withSubcommands([
+    Command.make("plan", {}, () =>
+      Effect.flatMap(root, (config) =>
+        runtimeUpgrade(path.resolve(config.repository), { kind: "Plan" }).pipe(
+          Effect.flatMap(print)
+        )
+      )
+    ),
+    Command.make(
+      "inspect",
+      { planId: Argument.String("plan-id") },
+      ({ planId }) =>
+        Effect.flatMap(root, (config) =>
+          runtimeUpgrade(path.resolve(config.repository), {
+            kind: "Inspect",
+            planId,
+          }).pipe(Effect.flatMap(print))
+        )
+    ),
+    Command.make(
+      "apply",
+      { planId: Argument.String("plan-id") },
+      ({ planId }) =>
+        Effect.flatMap(root, (config) =>
+          runtimeUpgrade(path.resolve(config.repository), {
+            kind: "Apply",
+            planId,
+          }).pipe(Effect.flatMap(print))
+        )
+    ),
+  ])
 );
 /** Like `swamp repo init [path]`; the path defaults to `--repository`. */
 const init = Command.make(
@@ -1159,9 +1957,259 @@ const doctor = Command.make("doctor", {}, () =>
   ])
 );
 
+const vaultFlags = { revision: revisionFlag, vault: Argument.String("vault") };
+const vaultRequest = (config: {
+  vault: string;
+  revision: Option.Option<string>;
+}) => ({ vault: config.vault, ...revision(config.revision) });
+const vaultClient = <A, E, R>(
+  body: (client: Client, revision: string) => Effect.Effect<A, E, R>
+) =>
+  withClient((client) =>
+    Effect.gen(function* () {
+      const status = yield* client.SystemStatus({});
+      if (!status.capabilities.includes("vault.v1")) {
+        return yield* new OperationError({
+          code: "Unavailable",
+          message:
+            "Restart the daemon to enable vaults: effectory daemon stop && effectory daemon start",
+        });
+      }
+      return yield* body(client, status.revision);
+    })
+  );
+const vault = Command.make("vault").pipe(
+  Command.withSubcommands([
+    Command.make("list", { revision: revisionFlag }, (config) =>
+      vaultClient((client) =>
+        client.VaultList(revision(config.revision)).pipe(Effect.flatMap(print))
+      )
+    ),
+    Command.make("describe", vaultFlags, (config) =>
+      vaultClient((client) =>
+        client.VaultDescribe(vaultRequest(config)).pipe(Effect.flatMap(print))
+      )
+    ),
+    Command.make("init", vaultFlags, (config) =>
+      vaultClient((client) =>
+        client.VaultInit(vaultRequest(config)).pipe(Effect.flatMap(print))
+      )
+    ),
+    Command.make(
+      "put",
+      {
+        ...vaultFlags,
+        expectedVersion: Flag.String("if-version"),
+        file: Flag.String("file"),
+        key: Argument.String("key"),
+        requestKey: requestKeyFlag,
+      },
+      (config) =>
+        vaultClient((client, activeRevision) =>
+          Effect.gen(function* () {
+            const value = yield* readSecret(config.file);
+            if (/[\r\n]$/u.test(value)) {
+              yield* Console.error(
+                "Value ends with a line break; stored exactly"
+              );
+            }
+            if (new TextEncoder().encode(value).byteLength < 8) {
+              yield* Console.error(
+                "Value is shorter than eight bytes; value-based output protection does not cover it"
+              );
+            }
+            const requestKey = Option.getOrElse(config.requestKey, () =>
+              crypto.randomUUID()
+            );
+            const selectedRevision = Option.getOrElse(
+              config.revision,
+              () => activeRevision
+            );
+            const result = yield* client
+              .VaultPut({
+                ...vaultRequest(config),
+                expectedVersion: config.expectedVersion,
+                key: config.key,
+                requestKey,
+                revision: selectedRevision,
+                value,
+              })
+              .pipe(
+                Effect.tapError((error) =>
+                  error instanceof RpcClientError.RpcClientError
+                    ? Console.error(
+                        `Vault mutation delivery is uncertain. Retry the same input and version with --request-key ${requestKey} --revision ${selectedRevision}`
+                      ).pipe(Effect.ignoreCause)
+                    : Effect.void
+                )
+              );
+            yield* print(result);
+          })
+        )
+    ),
+    Command.make(
+      "delete",
+      {
+        ...vaultFlags,
+        expectedVersion: Flag.String("if-version"),
+        key: Argument.String("key"),
+        requestKey: requestKeyFlag,
+      },
+      (config) =>
+        vaultClient((client, activeRevision) =>
+          Effect.gen(function* () {
+            const requestKey = Option.getOrElse(config.requestKey, () =>
+              crypto.randomUUID()
+            );
+            const selectedRevision = Option.getOrElse(
+              config.revision,
+              () => activeRevision
+            );
+            const result = yield* client
+              .VaultDelete({
+                ...vaultRequest(config),
+                expectedVersion: config.expectedVersion,
+                key: config.key,
+                requestKey,
+                revision: selectedRevision,
+              })
+              .pipe(
+                Effect.tapError((error) =>
+                  error instanceof RpcClientError.RpcClientError
+                    ? Console.error(
+                        `Vault mutation delivery is uncertain. Retry with --request-key ${requestKey} --revision ${selectedRevision}`
+                      ).pipe(Effect.ignoreCause)
+                    : Effect.void
+                )
+              );
+            yield* print(result);
+          })
+        )
+    ),
+    Command.make(
+      "reveal",
+      {
+        ...vaultFlags,
+        key: Argument.String("key"),
+        output: Flag.String("output").pipe(Flag.optional),
+      },
+      (config) =>
+        Effect.gen(function* () {
+          const shared = yield* root;
+          if (shared.json) {
+            return yield* new OperationError({
+              code: "InvalidInput",
+              message:
+                "vault reveal returns raw bytes and does not accept --json",
+            });
+          }
+          yield* vaultClient((client) =>
+            client
+              .VaultReveal({ ...vaultRequest(config), key: config.key })
+              .pipe(
+                Effect.flatMap((result) =>
+                  writeSecret(
+                    shared.repository,
+                    result.value,
+                    Option.getOrUndefined(config.output)
+                  )
+                )
+              )
+          );
+        })
+    ),
+    Command.make(
+      "reset",
+      { discard: Flag.Boolean("discard"), vault: Argument.String("vault") },
+      (config) =>
+        Effect.gen(function* () {
+          if (!config.discard) {
+            return yield* new OperationError({
+              code: "InvalidInput",
+              message:
+                "Offline vault reset destroys all local values; pass --discard",
+            });
+          }
+          const shared = yield* root;
+          yield* offlineVault(shared.repository, (store) =>
+            store.reset(config.vault)
+          ).pipe(Effect.flatMap(print));
+        })
+    ),
+    Command.make("key").pipe(
+      Command.withSubcommands([
+        Command.make(
+          "export",
+          { output: Flag.String("output"), vault: Argument.String("vault") },
+          (config) =>
+            Effect.gen(function* () {
+              const shared = yield* root;
+              yield* offlineVault(shared.repository, (store) =>
+                store.exportKey(config.vault, config.output)
+              ).pipe(Effect.flatMap(print));
+            })
+        ),
+        Command.make(
+          "import",
+          { file: Flag.String("file"), vault: Argument.String("vault") },
+          (config) =>
+            Effect.gen(function* () {
+              const shared = yield* root;
+              yield* offlineVault(shared.repository, (store) =>
+                store.importKey(config.vault, config.file)
+              ).pipe(Effect.flatMap(print));
+            })
+        ),
+      ])
+    ),
+  ])
+);
+
+const agent = Command.make("agent", {}, () =>
+  print({ commands: ["setup", "status", "remove"] })
+).pipe(
+  Command.withSubcommands([
+    ...(["setup", "remove"] as const).map((mode) =>
+      Command.make(
+        mode,
+        {
+          dryRun: Flag.Boolean("dry-run").pipe(Flag.withDefault(false)),
+          harness: Flag.Literals("harness", ["codex", "claude-code"]).pipe(
+            Flag.atMost(2)
+          ),
+        },
+        (args) =>
+          Effect.gen(function* () {
+            const config = yield* root;
+            yield* agentMutation(
+              config.repository,
+              cliPackage.version,
+              mode,
+              args.harness,
+              args.dryRun
+            ).pipe(Effect.flatMap(print));
+          })
+      )
+    ),
+    Command.make("status", {}, () =>
+      Effect.gen(function* () {
+        const config = yield* root;
+        const status = yield* agentStatus(
+          config.repository,
+          cliPackage.version
+        );
+        if (!status.healthy) {
+          exitCode = 1;
+        }
+        yield* print(status);
+      })
+    ),
+  ])
+);
 const command = root.pipe(
   Command.withSubcommands([
     init,
+    agent,
     upgrade,
     versionCommand,
     daemon,
@@ -1191,9 +2239,11 @@ const command = root.pipe(
     extension,
     operation,
     schedule,
+    vault,
     definitions("task"),
     definitions("workflow"),
     runCommands,
+    reportCommands,
     lake,
   ])
 );

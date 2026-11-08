@@ -4,7 +4,7 @@
 
 Status: API design for review, not an implemented package. Present the `Effect.gen` model first. It is **not selected** over the earlier graph proposal. The question is whether a workflow is primarily an executable program or an inspectable specification. Both can use Effect to execute tasks.
 
-This document scopes the author-facing surface: declare tasks, implement them, compose workflows, publish data and wait for external input. Daemon startup, RPC transport, extension installation and storage configuration are host APIs. The entry point and runner lifecycle are introduced in [Customer applications and the edge runner](edge-runtime.md). That proposal adds `.implement(handler)` as a convenience pairing the spec and handler Layer; `.toLayer(handler)` below remains the lower-level API. Names below are proposed `@effectory/core` exports. Code examples are illustrative, not typechecked implementations.
+This document scopes the author-facing surface: declare tasks, implement them, compose workflows, publish data and wait for external input. Daemon startup, RPC transport, extension installation and storage configuration are host APIs. The entry point and runner lifecycle are introduced in [Customer applications and the edge runner](edge-runtime.md). That proposal adds `.implement(handler)` as a convenience pairing the spec and handler Layer; `.toLayer(handler)` below remains the lower-level API. Names below are proposed `@offtree/effectory-sdk` exports. Code examples are illustrative, not typechecked implementations.
 
 Follow-up: [Five authoring APIs](authoring-api-options.md) adds an Alchemy-inspired generator that constructs a graph. The direct-execution generator below is one particular interpretation of Effect.gen, not its only possible use.
 
@@ -13,7 +13,7 @@ Follow-up: [Five authoring APIs](authoring-api-options.md) adds an Alchemy-inspi
 A task declares its boundary. Its implementation is a Layer. A workflow declares another boundary and supplies an Effect program that calls tasks.
 
 ```ts
-import { Task, Workflow } from "@effectory/core";
+import { Task, Workflow } from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 const FetchRelease = Task.make("releases/fetch", {

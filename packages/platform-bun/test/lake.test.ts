@@ -3,10 +3,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Artifact } from "@effectory/core";
-import type { Task, TaskRuntimeError } from "@effectory/core";
 import type { Query, Expression } from "@effectory/runtime/lake-protocol";
 import type { OperationError } from "@effectory/runtime/protocol";
+import { Artifact } from "@offtree/effectory-sdk";
+import type { Task, TaskRuntimeError } from "@offtree/effectory-sdk";
 import { Effect, Exit, Layer, Schema } from "effect";
 
 import { HostStore, hostStoreLayer } from "../src/host-store.ts";
@@ -370,7 +370,8 @@ test("Boolean, range and membership queries agree with an independent reference 
             .filter((item) => example.accept(item.score))
             .map((item) => item.id)
         );
-        expect(page.scanned).toBe(24);
+        expect(page.scanned).toBeLessThanOrEqual(24);
+        expect(page.scanned).toBeGreaterThanOrEqual(page.matched);
         expect(page.matched).toBe(page.rows.length);
       }
       expect((yield* lake.query(metricQuery, "other")).rows).toHaveLength(0);

@@ -11,11 +11,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import type { Task } from "@effectory/core";
 import type {
   ExtensionLock,
   LockedPackage,
 } from "@effectory/runtime/extension-protocol";
+import type { Task } from "@offtree/effectory-sdk";
 import { Effect, Layer } from "effect";
 
 import { Catalog } from "../src/catalog.ts";
@@ -167,7 +167,7 @@ test("a generated facade preserves emitted types, exposes canonical services and
         const retained = yield* catalog.get(application.revision);
         expect(retained.registry.workflows.has("local/flow")).toBe(true);
         writeBindings(repository, lock);
-      }).pipe(Effect.provide(catalogLayer))
+      }).pipe(Effect.scoped, Effect.provide(catalogLayer))
     );
     expect(Reflect.get(globalThis, marker)).toBe(true);
     verifyBindings(repository, lock);

@@ -1,8 +1,8 @@
 import type { RunWatchFrame } from "@effectory/runtime/history-protocol";
 import { OperationError, terminal } from "@effectory/runtime/protocol";
-import { Effect, Option, Stream } from "effect";
+import { Context, Effect, Layer, Option, Stream } from "effect";
 
-import type { HostStore } from "./host-store.ts";
+import { HostStore } from "./host-store.ts";
 
 export function createRunWatcher(store: typeof HostStore.Service) {
   let observers = 0;
@@ -82,3 +82,12 @@ export function createRunWatcher(store: typeof HostStore.Service) {
     watch,
   };
 }
+
+export class RunWatcher extends Context.Service<
+  RunWatcher,
+  ReturnType<typeof createRunWatcher>
+>()("effectory/RunWatcher") {}
+export const runWatcherLayer = Layer.effect(
+  RunWatcher,
+  Effect.map(HostStore, createRunWatcher)
+);

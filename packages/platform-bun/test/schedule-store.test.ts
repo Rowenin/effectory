@@ -1,10 +1,14 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 
-import { Application, Workflow, WorkflowSchedule } from "@effectory/core";
 import type { OperationError } from "@effectory/runtime/protocol";
 import { ScheduleProvenance } from "@effectory/runtime/protocol";
 import { ScheduleHistoryEntry } from "@effectory/runtime/schedule-protocol";
+import {
+  Application,
+  Workflow,
+  WorkflowSchedule,
+} from "@offtree/effectory-sdk";
 import { Clock, Effect, Exit, Schema } from "effect";
 import { TestClock } from "effect/testing";
 
@@ -494,6 +498,7 @@ test("scheduler uses Effect Clock, observes activation, and closes with its scop
               get active() {
                 return active;
               },
+              assertExecutable: () => {},
               get: () => Effect.succeed({ registry, revision: active }),
               prepare: () => Effect.die("unused"),
             })
@@ -659,5 +664,73 @@ test("tombstones evict the oldest eligible removal, preserve protected identitie
       );
       yield* store.scheduleReconcile(definitions(), "v7", initial + 7 * minute);
       expect((yield* store.schedulerStatus(initial)).revision).toBe("v7");
+    })
+  ));
+
+test("tag-only schedule edits preserve pending catch-up and keep admitted metadata immutable", () =>
+  withStore((store, database) =>
+    Effect.gen(function* () {
+      yield* store.scheduleReconcile(
+        definitions(make({ tags: { team: "old" } })),
+        "v1",
+        initial
+      );
+      database.exec(
+        "CREATE TRIGGER fail_tag_admission BEFORE INSERT ON host_runs BEGIN SELECT RAISE(ABORT, 'temporary unavailable'); END"
+      );
+      yield* Effect.exit(store.scheduleTick("daily", initial + minute, false));
+      const before = database
+        .query(
+          "SELECT generation,watermark,pendingSlot FROM host_schedules WHERE scheduleId='daily'"
+        )
+        .get();
+      yield* store.scheduleReconcile(
+        definitions(make({ tags: { team: "new" } })),
+        "v2",
+        initial + minute + 1000
+      );
+      expect(
+        database
+          .query(
+            "SELECT generation,watermark,pendingSlot FROM host_schedules WHERE scheduleId='daily'"
+          )
+          .get()
+      ).toEqual(before);
+      database.exec("DROP TRIGGER fail_tag_admission");
+      yield* store.scheduleTick("daily", initial + minute + 2000, true);
+      const run = required((yield* store.listRuns())[0]);
+      expect(run.tags).toEqual({ team: "new" });
+      expect(run.schedule?.generation).toBe(1);
+      yield* store.scheduleReconcile(
+        definitions(make({ tags: { team: "later" } })),
+        "v3",
+        initial + minute + 3000
+      );
+      expect((yield* store.getRun(run.runId)).tags).toEqual({ team: "new" });
+    })
+  ));
+
+test("check thresholds preserve default identity and nondefault changes create a generation inherited at admission", () =>
+  withStore((store) =>
+    Effect.gen(function* () {
+      yield* store.scheduleReconcile(definitions(make()), "checks-v1", initial);
+      const before = yield* store.scheduleGet("daily", "owner", initial);
+      const low = make({ checks: { failOn: "low" } });
+      expect(Object.isFrozen(low.checks)).toBe(true);
+      yield* store.scheduleReconcile(definitions(low), "checks-v2", initial);
+      const unchanged = yield* store.scheduleGet("daily", "owner", initial);
+      expect(unchanged.generation).toBe(before.generation);
+      yield* store.scheduleReconcile(
+        definitions(make({ checks: { failOn: "high" } })),
+        "checks-v3",
+        initial
+      );
+      const high = yield* store.scheduleGet("daily", "owner", initial);
+      expect(high.generation).toBeGreaterThan(before.generation);
+      expect(high.checks).toEqual({ failOn: "high" });
+      yield* store.scheduleTick("daily", initial + minute, false);
+      expect(required((yield* store.listRuns())[0]).checks).toEqual({
+        failOn: "high",
+      });
     })
   ));

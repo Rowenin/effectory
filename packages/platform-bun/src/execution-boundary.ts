@@ -1,9 +1,9 @@
-import { TaskRuntimeError } from "@effectory/core";
+import { TaskRuntimeError } from "@offtree/effectory-sdk";
 import {
   checkJsonBudget,
   encode as encodeBoundary,
-} from "@effectory/core/internal/boundary";
-import type { Boundary } from "@effectory/core/internal/boundary";
+} from "@offtree/effectory-sdk/internal/boundary";
+import type { Boundary } from "@offtree/effectory-sdk/internal/boundary";
 import { Effect, Schema } from "effect";
 
 /* oxlint-disable unicorn/throw-new-error */

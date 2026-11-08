@@ -1,4 +1,4 @@
-import { Task } from "@effectory/core";
+import { Task } from "@offtree/effectory-sdk";
 import { Context, Schema } from "effect";
 
 export class ReleaseClient extends Context.Service<

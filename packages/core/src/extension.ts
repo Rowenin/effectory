@@ -10,7 +10,7 @@ import type * as Workflow from "./workflow.ts";
 
 export type TaskRecord = Readonly<Record<string, RegisteredTask>>;
 export type WorkflowRecord = Readonly<Record<string, Workflow.Definition>>;
-export type ArtifactRecord = Readonly<Record<string, Artifact.Artifact>>;
+export type ArtifactRecord = Readonly<Record<string, Artifact.Any>>;
 export type Implementation = RegisteredTask & { readonly providerId: string };
 type Empty = Readonly<Record<never, never>>;
 

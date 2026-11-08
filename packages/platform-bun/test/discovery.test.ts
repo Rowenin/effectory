@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Application, Task } from "@effectory/core";
+import { Application, Task } from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 import { catalogLayer } from "../src/catalog.ts";

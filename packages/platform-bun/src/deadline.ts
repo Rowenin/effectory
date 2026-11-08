@@ -1,4 +1,4 @@
-import { durationMillis } from "@effectory/core/internal/policy";
+import { durationMillis } from "@offtree/effectory-sdk/internal/policy";
 import { Cause, Context, Effect, Option, Schedule, Schema } from "effect";
 import { Activity, DurableClock, DurableDeferred } from "effect/workflow";
 
@@ -39,7 +39,8 @@ export function withDeadline<R, R2>(
   name: string,
   duration: string,
   body: Effect.Effect<Schema.Json, ExecutionFailure, R>,
-  expired: (deadline: number) => Effect.Effect<never, ExecutionFailure, R2>
+  expired: (deadline: number) => Effect.Effect<never, ExecutionFailure, R2>,
+  path?: string
 ) {
   return Effect.gen(function* () {
     const parent = yield* ExecutionDeadline;
@@ -52,10 +53,16 @@ export function withDeadline<R, R2>(
       success: Schema.Finite,
     });
     yield* (yield* HostStore)
-      .appendEvent(runId, `deadline/${name}`, "DeadlineStarted", {
-        deadline,
-        name,
-      })
+      .appendEvent(
+        runId,
+        `deadline/${name}`,
+        "DeadlineStarted",
+        {
+          deadline,
+          name,
+        },
+        path
+      )
       .pipe(Effect.mapError(() => hostFailure("Deadline projection failed")));
     const result = yield* DurableDeferred.raceAll({
       effects: [

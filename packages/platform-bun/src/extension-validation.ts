@@ -1,5 +1,5 @@
-import { Extension } from "@effectory/core";
 import type { ExtensionManifest } from "@effectory/runtime/extension-protocol";
+import { Extension } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 function record(value: unknown): Record<string, unknown> {

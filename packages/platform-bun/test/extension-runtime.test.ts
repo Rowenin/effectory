@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { terminal } from "@effectory/runtime/protocol";
 import {
   Application,
   Extension,
@@ -10,8 +11,7 @@ import {
   Task,
   Workflow,
   WorkflowPatch,
-} from "@effectory/core";
-import { terminal } from "@effectory/runtime/protocol";
+} from "@offtree/effectory-sdk";
 import { Effect, Layer, Schema } from "effect";
 
 import { catalogLayer } from "../src/catalog.ts";

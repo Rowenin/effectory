@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { Task } from "@effectory/core";
+import { Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import { hostModuleLoaders } from "../src/host-modules.generated.ts";
@@ -31,8 +31,8 @@ test("the generated host module table matches the installed effect and SDK", () 
     "effect/Schema",
     "effect/cli",
     "effect/cli/Command",
-    "@effectory/core",
-    "@effectory/core/Task",
+    "@offtree/effectory-sdk",
+    "@offtree/effectory-sdk/Task",
   ]) {
     expect(Object.hasOwn(hostModuleLoaders, specifier)).toBe(true);
   }
@@ -52,7 +52,7 @@ test("modules loaded from outside any node_modules share the host's instances", 
       [
         'import { Effect, Schema } from "effect";',
         'import * as Direct from "effect/Effect";',
-        'import { Task } from "@effectory/core";',
+        'import { Task } from "@offtree/effectory-sdk";',
         "export { Direct, Effect, Schema, Task };",
       ].join("\n")
     );

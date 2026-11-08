@@ -1,4 +1,5 @@
-import { Schema } from "effect";
+import { RunTags } from "@offtree/effectory-sdk/RunTags";
+import { Effect, Schema } from "effect";
 
 import {
   Event,
@@ -6,6 +7,7 @@ import {
   WaitKind,
   WaitStatus,
   ScheduleProvenance,
+  ReportProvenance,
 } from "./protocol.ts";
 
 export const Id = Schema.NonEmptyString.check(Schema.isMaxLength(200));
@@ -19,17 +21,23 @@ export const RunListRequest = Schema.Struct({
   cursor: Schema.optionalKey(Cursor),
   kind: Schema.optionalKey(Schema.Literals(["task", "workflow"])),
   limit: Schema.optionalKey(PageLimit),
+  origin: Schema.optionalKey(
+    Schema.Literals(["manual", "schedule", "report", "all"])
+  ),
   status: Schema.optionalKey(RunStatus),
+  tags: Schema.optionalKey(RunTags),
   targetId: Schema.optionalKey(Id),
 });
 export const RunSummary = Schema.Struct({
   acceptedAt: Schema.String,
   kind: Schema.Literals(["task", "workflow"]),
   lastSequence: Schema.Int,
+  report: Schema.optionalKey(ReportProvenance),
   revision: Id,
   runId: Id,
   schedule: Schema.optionalKey(ScheduleProvenance),
   status: RunStatus,
+  tags: RunTags.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
   targetId: Id,
 });
 export const RunPage = Schema.Struct({

@@ -11,7 +11,7 @@ effectory extension add github:acme/effectory-release-tools@v1.0.0 --as ReleaseT
 ```
 
 ```ts
-import { Task, Workflow } from "@effectory/core";
+import { Task, Workflow } from "@offtree/effectory-sdk";
 // workflows/release-report.ts
 import { Effect, Schema } from "effect";
 
@@ -56,7 +56,7 @@ Select the extension once alongside the local tasks and workflows:
 
 ```ts
 // effectory.ts
-import { Application, Extension } from "@effectory/core";
+import { Application, Extension } from "@offtree/effectory-sdk";
 
 import { ReleaseTools } from "./effectory.extensions";
 import { ReleaseServicesLive } from "./services";

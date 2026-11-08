@@ -85,7 +85,7 @@ export function resolve(
   selections: readonly Extension.Use[],
   localTasks: readonly RegisteredTask[],
   localWorkflows: readonly Workflow.Definition[],
-  localArtifacts: readonly Artifact.Artifact[]
+  localArtifacts: readonly Artifact.Any[]
 ) {
   return Effect.gen(function* () {
     if (selections.length > 128) {
@@ -95,7 +95,7 @@ export function resolve(
     }
     const tasks = new Map<string, RegisteredTask>();
     const workflows = [...localWorkflows];
-    const artifacts = new Map<string, Artifact.Artifact>();
+    const artifacts = new Map<string, Artifact.Any>();
     const extensions: Provenance[] = [];
     const patches: SelectedPatch[] = [];
     const replacements: Extension.Implementation[] = [];

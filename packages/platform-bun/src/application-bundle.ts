@@ -52,8 +52,8 @@ export function buildApplication(
           external: [
             "effect",
             "effect/*",
-            "@effectory/core",
-            "@effectory/core/*",
+            "@offtree/effectory-sdk",
+            "@offtree/effectory-sdk/*",
           ],
           format: "esm",
           minify: false,
@@ -79,9 +79,14 @@ export function buildApplication(
                   );
                 }
                 builder.onLoad({ filter: /.*/u, namespace: "file" }, (args) => {
-                  if (
-                    !["js", "jsx", "ts", "tsx", "json"].includes(args.loader)
-                  ) {
+                  // Bun marks imported package.json files as jsonc. Parse their
+                  // captured bytes as ordinary JSON without allowing JSONC modules.
+                  const loader =
+                    args.loader === "jsonc" &&
+                    path.basename(args.path) === "package.json"
+                      ? "json"
+                      : args.loader;
+                  if (!["js", "jsx", "ts", "tsx", "json"].includes(loader)) {
                     throw new Error(
                       "Only JavaScript, TypeScript and JSON application modules are supported"
                     );
@@ -110,7 +115,7 @@ export function buildApplication(
                       "Application source snapshot exceeds its limit"
                     );
                   }
-                  return { contents, loader: args.loader };
+                  return { contents, loader };
                 });
               },
             },

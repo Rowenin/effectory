@@ -91,7 +91,7 @@ test("offline snapshot restores a waiting run, blobs, pinned bundles and trusted
       path.join(repository, "effectory.ts"),
       sourceText
         .replace(
-          "import { Application,",
+          /import \{\s*Application,/u,
           'import { Tools } from "./effectory.extensions.ts";\nimport { Extension, Application,'
         )
         .replace(

@@ -1,24 +1,46 @@
+import type { Run } from "@effectory/runtime/protocol";
 /* oxlint-disable no-use-before-define */
 // Graph and node interpreters are mutually recursive over bounded graph scopes.
 import {
   Ref,
   TaskRuntimeError,
   Workflow as WorkflowAuthoring,
-} from "@effectory/core";
+} from "@offtree/effectory-sdk";
 import type {
   Application,
   Task,
   Workflow as GraphWorkflow,
-} from "@effectory/core";
+} from "@offtree/effectory-sdk";
+import { bindReader } from "@offtree/effectory-sdk/internal/artifact-reader-state";
 import {
   canonical,
   decode,
   identifier,
-} from "@effectory/core/internal/boundary";
-import type { Boundary } from "@effectory/core/internal/boundary";
-import { durationMillis } from "@effectory/core/internal/policy";
-import type { Run } from "@effectory/runtime/protocol";
-import { Cause, Effect, Layer, Logger, Result, Schedule, Schema } from "effect";
+  mapFailureCause,
+} from "@offtree/effectory-sdk/internal/boundary";
+import type { Boundary } from "@offtree/effectory-sdk/internal/boundary";
+import { bindChecks } from "@offtree/effectory-sdk/internal/check-state";
+import { durationMillis } from "@offtree/effectory-sdk/internal/policy";
+import { bindHistory } from "@offtree/effectory-sdk/internal/report-state";
+import * as VaultTracker from "@offtree/effectory-sdk/internal/vault-tracker";
+import {
+  Cause,
+  Effect,
+  Layer,
+  Logger,
+  Option,
+  Result,
+  Schedule,
+  Schema,
+  Scope,
+} from "effect";
+import {
+  EntityAddress,
+  EntityId,
+  EntityType,
+  MessageStorage,
+  ShardId,
+} from "effect/cluster";
 import {
   Activity,
   DurableClock,
@@ -30,6 +52,7 @@ import {
   WorkflowInstance,
 } from "effect/workflow/WorkflowEngine";
 
+import { bindAttemptEntry } from "./attempt-entry.ts";
 import { Catalog } from "./catalog.ts";
 import { ExecutionDeadline, withDeadline } from "./deadline.ts";
 import {
@@ -50,7 +73,9 @@ import {
 } from "./graph-execution.ts";
 import type { GraphEnvironment, ScopeValues } from "./graph-execution.ts";
 import { HostStore } from "./host-store.ts";
+import type { NativeInvocation } from "./invocation-outcome.ts";
 import { Lake } from "./lake.ts";
+import { reportHistory } from "./report-history.ts";
 import { taskLogger } from "./task-logger.ts";
 
 export const execution = Workflow.make("EffectoryExecution/v1", {
@@ -62,13 +87,26 @@ export const execution = Workflow.make("EffectoryExecution/v1", {
 export const notification = (nodeId: string) =>
   DurableDeferred.make(`wait/${nodeId}`, { success: Schema.String });
 
+function checkError(error: { code: string; message: string }) {
+  let code = "Unavailable";
+  if (error.code === "LimitExceeded") {
+    code = "LimitExceeded";
+  }
+  if (error.code === "InvalidInput" || error.code === "Conflict") {
+    code = "InvalidBoundary";
+  }
+  return new TaskRuntimeError({ code, message: error.message });
+}
+
 function taskContext(
   run: Run,
   task: Application.RuntimeTask,
   nodeId: string,
   attempt: number,
   store: typeof HostStore.Service,
-  lake: typeof Lake.Service
+  lake: typeof Lake.Service,
+  active: { value: boolean },
+  entry: number
 ): Task.RuntimeContext {
   const identity: Task.Identity = {
     attempt,
@@ -79,19 +117,25 @@ function taskContext(
     taskId: task.id,
     taskVersion: task.spec.version,
   };
+  bindAttemptEntry(identity, entry);
   let progressIndex = 0;
-  return {
+  const binding = lake.reader(identity, () => active.value);
+  const runtime: Task.RuntimeContext = {
     ...identity,
+    tags: run.tags,
     ...(run.schedule === undefined
       ? {}
       : { occurrence: Object.freeze({ ...run.schedule }) }),
     key: (name) => canonical([run.runId, nodeId, identifier(name)]),
     progress: (update) =>
       Effect.sync(() => {
+        if (!active.value) {
+          return;
+        }
         progressIndex += 1;
         store.telemetry(
           run.runId,
-          `progress/${nodeId}/${attempt}/${progressIndex}`,
+          `progress/${nodeId}/${attempt}/${entry}/${progressIndex}`,
           "Progress",
           {
             attempt,
@@ -101,8 +145,61 @@ function taskContext(
         );
       }),
     publish: (name, artifact, value, options) =>
-      lake.publish(identity, name, artifact, value, options),
+      Effect.suspend(() =>
+        active.value
+          ? lake.publish(identity, name, artifact, value, options)
+          : Effect.fail(
+              new TaskRuntimeError({
+                code: "InvalidBoundary",
+                message: "Invocation closed",
+              })
+            )
+      ),
+    publishBytes: (name, artifact, source, options) =>
+      Effect.suspend(() =>
+        active.value
+          ? binding.owner.publish(
+              lake.publishBytes(
+                identity,
+                name,
+                artifact,
+                source,
+                options,
+                () => active.value
+              )
+            )
+          : Effect.fail(
+              new TaskRuntimeError({
+                code: "InvalidBoundary",
+                message: "Invocation closed",
+              })
+            )
+      ),
   };
+  const checkIdentity = {
+    attempt,
+    entry,
+    nodeId,
+    runId: run.runId,
+    taskId: task.id,
+  };
+  bindChecks(runtime, {
+    failOn: run.checks?.failOn ?? "low",
+    finish: (sequence, result) =>
+      store.checkFinish(checkIdentity, sequence, result).pipe(
+        Effect.mapError(
+          () =>
+            new TaskRuntimeError({
+              code: "Unavailable",
+              message: "Check result could not be persisted",
+            })
+        )
+      ),
+    start: (input) =>
+      store.checkStart(checkIdentity, input).pipe(Effect.mapError(checkError)),
+  });
+  bindReader(runtime, binding);
+  return runtime;
 }
 
 type RuntimeEffect = Effect.Effect<
@@ -168,100 +265,228 @@ const leafLayer = leafExecution.toLayer(
         return yield* hostFailure("Task is unavailable");
       }
       for (let attempt = 1; ; attempt += 1) {
-        let body = Effect.gen(function* () {
-          const admission = yield* store
-            .admitAttempt(runId, nodeId, attempt, task.spec.replay, {
-              ...(deadline === null ? {} : { deadline }),
-              ...(attemptTimeout === null
-                ? {}
-                : { attemptTimeout: durationMillis(attemptTimeout) }),
-            })
-            .pipe(
-              Effect.mapError(() => hostFailure("Attempt admission failed"))
-            );
-          if (admission === "NeedsAttention") {
-            return yield* Workflow.suspend(yield* WorkflowInstance);
-          }
-          if (admission === "Cancelled" || admission === "TimedOut") {
-            return yield* new ExecutionFailure({
-              category: "Control",
-              detail: null,
-              outcome: admission,
-            });
-          }
-          const startedAt = yield* store
-            .attemptStartedAt(runId, nodeId, attempt)
-            .pipe(
-              Effect.mapError(() =>
-                hostFailure("Attempt timestamp lookup failed")
-              )
-            );
-          const attemptDeadline = Math.min(
-            deadline ?? Number.POSITIVE_INFINITY,
-            attemptTimeout === null
-              ? Number.POSITIVE_INFINITY
-              : startedAt + durationMillis(attemptTimeout)
-          );
-          let handler = task
-            .execute(
-              input,
-              taskContext(run, task, nodeId, attempt, store, lake)
-            )
-            .pipe(
-              // oxlint-disable-next-line promise/prefer-await-to-callbacks, promise/prefer-await-to-then -- This composes an Effect, not a Promise.
-              Effect.catch((error) => {
-                if (error instanceof TaskRuntimeError) {
-                  return Effect.fail(hostFailure(error.message, error.code));
-                }
-                return boundary(() => encode(task.errorSchema, error)).pipe(
-                  Effect.flatMap((detail) =>
-                    Effect.fail(
-                      new ExecutionFailure({
-                        category: "Domain",
-                        detail,
-                        outcome: "Failed",
-                      })
+        const guardedEntry = VaultTracker.protect((tracker) =>
+          Effect.gen(function* () {
+            const { registry: entryRegistry } = yield* catalog
+              .get(run.revision)
+              .pipe(
+                Effect.mapError(() =>
+                  hostFailure("Pinned revision unavailable")
+                )
+              );
+            const entryTask = entryRegistry.tasks.get(taskId);
+            if (!entryTask) {
+              return yield* hostFailure("Task is unavailable");
+            }
+            let body = Effect.gen(function* () {
+              const admission = yield* Effect.acquireRelease(
+                store
+                  .reserveAttempt(
+                    runId,
+                    nodeId,
+                    attempt,
+                    entryTask.spec.replay,
+                    {
+                      taskVersion: entryTask.spec.version,
+                      ...(deadline === null ? {} : { deadline }),
+                      ...(attemptTimeout === null
+                        ? {}
+                        : { attemptTimeout: durationMillis(attemptTimeout) }),
+                    }
+                  )
+                  .pipe(
+                    Effect.mapError(() =>
+                      hostFailure("Attempt admission failed")
                     )
+                  ),
+                (acquired) =>
+                  Effect.sync(() =>
+                    store.releaseAttempt(runId, nodeId, attempt, acquired)
+                  )
+              );
+              if (admission.status === "NeedsAttention") {
+                return yield* Workflow.suspend(yield* WorkflowInstance);
+              }
+              if (
+                admission.status === "Cancelled" ||
+                admission.status === "TimedOut"
+              ) {
+                return yield* new ExecutionFailure({
+                  category: "Control",
+                  detail: null,
+                  outcome: admission.status,
+                });
+              }
+              const startedAt = admission.windowStartedAt;
+              const attemptDeadline = Math.min(
+                deadline ?? Number.POSITIVE_INFINITY,
+                attemptTimeout === null
+                  ? Number.POSITIVE_INFINITY
+                  : startedAt + durationMillis(attemptTimeout)
+              );
+              const active = { value: true };
+              const context = taskContext(
+                run,
+                entryTask,
+                nodeId,
+                attempt,
+                store,
+                lake,
+                active,
+                admission.entry
+              );
+              if (run.report !== undefined) {
+                const engine = yield* WorkflowEngine;
+                const messages = yield* MessageStorage.MessageStorage;
+                const history = yield* reportHistory(
+                  run,
+                  entryRegistry,
+                  store,
+                  (id) =>
+                    leafExecution
+                      .poll(id)
+                      .pipe(Effect.provideService(WorkflowEngine, engine)),
+                  active,
+                  (sourceRun, path) =>
+                    pollWorkflowInvocation(sourceRun, path).pipe(
+                      Effect.provideService(
+                        MessageStorage.MessageStorage,
+                        messages
+                      ),
+                      Effect.provideService(WorkflowEngine, engine)
+                    )
+                ).pipe(
+                  Effect.mapError((error) =>
+                    hostFailure(error.message, error.code)
                   )
                 );
-              })
+                bindHistory(context, history);
+              }
+              let handler = entryTask.execute(input, context).pipe(
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    active.value = false;
+                  })
+                ),
+                // oxlint-disable-next-line promise/prefer-await-to-callbacks, promise/prefer-await-to-then -- This composes an Effect, not a Promise.
+                Effect.catchCause((cause) =>
+                  // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Maps an Effect Cause, not a Promise callback.
+                  mapFailureCause(cause, (error) => {
+                    if (error instanceof TaskRuntimeError) {
+                      return Effect.fail(
+                        hostFailure(
+                          VaultTracker.scrub(tracker, error.message),
+                          error.code
+                        )
+                      );
+                    }
+                    return boundary(() =>
+                      JSON.stringify(encode(entryTask.errorSchema, error))
+                    ).pipe(
+                      Effect.flatMap((detail) =>
+                        VaultTracker.checkSerialized(detail, tracker).pipe(
+                          Effect.mapError((violation) =>
+                            hostFailure(violation.message, violation.code)
+                          ),
+                          Effect.andThen(
+                            Effect.fail(
+                              new ExecutionFailure({
+                                category: "Domain",
+                                detail: JSON.parse(detail) as Schema.Json,
+                                outcome: "Failed",
+                              })
+                            )
+                          )
+                        )
+                      )
+                    );
+                  }).pipe(Effect.flatMap(Effect.failCause))
+                )
+              );
+              if (Number.isFinite(attemptDeadline)) {
+                handler = handler.pipe(
+                  Effect.timeoutOrElse({
+                    duration: Math.max(0, attemptDeadline - Date.now()),
+                    orElse: () =>
+                      Effect.fail(
+                        new ExecutionFailure({
+                          category: "Control",
+                          detail: { deadline: attemptDeadline, nodeId },
+                          outcome: "TimedOut",
+                        })
+                      ),
+                  })
+                );
+              }
+              const result = yield* handler.pipe(
+                Effect.provideService(
+                  Logger.CurrentLoggers,
+                  new Set([taskLogger(store, runId, nodeId, attempt, tracker)])
+                )
+              );
+              const serialized = yield* boundary(() =>
+                JSON.stringify(encode(entryTask.successSchema, result))
+              );
+              yield* VaultTracker.checkSerialized(serialized, tracker).pipe(
+                Effect.mapError((error) =>
+                  hostFailure(error.message, error.code)
+                )
+              );
+              return JSON.parse(serialized) as Schema.Json;
+            }).pipe(Effect.scoped);
+            body = resources.global.withPermits(1)(
+              resources.track(runId, body)
             );
-          if (Number.isFinite(attemptDeadline)) {
-            handler = handler.pipe(
-              Effect.timeoutOrElse({
-                duration: Math.max(0, attemptDeadline - Date.now()),
-                orElse: () =>
-                  Effect.fail(
-                    new ExecutionFailure({
-                      category: "Control",
-                      detail: { deadline: attemptDeadline, nodeId },
-                      outcome: "TimedOut",
-                    })
-                  ),
-              })
-            );
-          }
-          const result = yield* handler.pipe(
-            Effect.provideService(
-              Logger.CurrentLoggers,
-              new Set([taskLogger(store, runId, nodeId, attempt)])
+            for (const permit of permits.toReversed()) {
+              body = resources
+                .permits(runId, permit.path, permit.concurrency)
+                .withPermits(1)(body);
+            }
+            if (run.report !== undefined) {
+              body = resources.reports.withPermits(1)(body);
+            }
+            return yield* body;
+          }).pipe(Effect.scoped)
+        );
+        const entry = guardedEntry.pipe(
+          // Activity.executeEncoded matches typed errors first. Preserve cleanup
+          // defects from the entire entry, after its Scope and secret sanitation.
+          Effect.catchCause((cause) =>
+            Effect.failCause(
+              Cause.hasDies(cause)
+                ? Cause.fromReasons<ExecutionFailure>(
+                    cause.reasons.map((reason) =>
+                      Cause.isFailReason(reason)
+                        ? Cause.makeDieReason(reason.error)
+                        : reason
+                    )
+                  )
+                : cause
             )
-          );
-          return yield* boundary(() => encode(task.successSchema, result));
-        });
-        body = resources.global.withPermits(1)(resources.track(runId, body));
-        for (const permit of permits.toReversed()) {
-          body = resources
-            .permits(runId, permit.path, permit.concurrency)
-            .withPermits(1)(body);
-        }
+          )
+        );
         const outcome = yield* Activity.make({
           error: ExecutionFailure,
-          execute: body,
+          // Track actual activity entries outside every permit queue. Cached
+          // Activity results and durable retry sleeps never enter this owner.
+          // The Activity runs in a different native fiber from its awaiting
+          // leaf. It must retain the application through its own cleanup.
+          execute: resources.trackWork(runId, entry),
           interruptRetryPolicy: Schedule.recurs(0),
           name: `handler/${attempt}`,
           success: Schema.Json,
-        }).pipe(Effect.result);
+        }).pipe(
+          Effect.map(Result.succeed),
+          Effect.catchCause((cause) => {
+            // Typed retry must never discard a cleanup defect or interruption.
+            const failure = Cause.findErrorOption(cause);
+            return !Cause.hasDies(cause) &&
+              !Cause.hasInterrupts(cause) &&
+              Option.isSome(failure)
+              ? Effect.succeed(Result.fail(failure.value))
+              : Effect.failCause(cause);
+          })
+        );
         if (Result.isSuccess(outcome)) {
           return outcome.success;
         }
@@ -306,10 +531,10 @@ const leafLayer = leafExecution.toLayer(
           name: `retry/${attempt}`,
         });
       }
-    })
+    }).pipe(Effect.scoped)
 );
 
-function invokeTask(
+function invokeTaskEncoded(
   run: Run,
   nodeId: string,
   task: Application.RuntimeTask,
@@ -337,9 +562,24 @@ function invokeTask(
       .pipe(
         Effect.mapError(() => hostFailure("Task dispatch registration failed"))
       );
-    const result = yield* leafExecution.execute(payload);
-    return yield* boundary(() => decode(task.successSchema, result));
+    return yield* leafExecution.execute(payload);
   });
+}
+
+/** Graph consumers need decoded values; root task runs retain the guarded wire value. */
+function invokeTask(
+  run: Run,
+  nodeId: string,
+  task: Application.RuntimeTask,
+  input: unknown,
+  environment: GraphEnvironment,
+  options: GraphWorkflow.NodeOptions = {}
+) {
+  return invokeTaskEncoded(run, nodeId, task, input, environment, options).pipe(
+    Effect.flatMap((result) =>
+      boundary(() => decode(task.successSchema, result))
+    )
+  );
 }
 
 function registerWait(
@@ -467,7 +707,8 @@ export function stopInvocations(runId: string) {
 function stopWithFailure(
   runId: string,
   cause: Cause.Cause<ExecutionFailure>,
-  errors: readonly Boundary[] = []
+  errors: readonly Boundary[] = [],
+  preserveLocal = false
 ) {
   if (Cause.hasInterruptsOnly(cause)) {
     return Effect.failCause(cause);
@@ -476,7 +717,7 @@ function stopWithFailure(
     const store = yield* HostStore;
     const failure = Cause.findErrorOption(cause);
     let reason =
-      failure._tag === "Some"
+      failure._tag === "Some" && !Cause.hasDies(cause)
         ? failure.value
         : hostFailure("Graph failed unexpectedly");
     if (reason.category === "Domain") {
@@ -493,9 +734,12 @@ function stopWithFailure(
       .pipe(Effect.orDie);
     const recorded = yield* store.fenceReason(runId).pipe(Effect.orDie);
     yield* stopInvocations(runId);
-    return yield* boundary(() => decode(ExecutionFailure, recorded)).pipe(
-      Effect.flatMap(Effect.fail)
-    );
+    return yield* boundary(() =>
+      decode(
+        ExecutionFailure,
+        preserveLocal ? encode(ExecutionFailure, reason) : recorded
+      )
+    ).pipe(Effect.flatMap(Effect.fail));
   });
 }
 
@@ -532,6 +776,12 @@ function executeGraph(
       (node) =>
         Effect.gen(function* () {
           const nodeId = invocationPath(environment, node.id);
+          if (node.kind === "Workflow") {
+            const store = yield* HostStore;
+            yield* store
+              .registerWorkflowInvocation(run.runId, nodeId, node.workflow.id)
+              .pipe(Effect.orDie);
+          }
           const value = yield* DurableDeferred.raceAll({
             effects: [
               Effect.gen(function* () {
@@ -550,7 +800,7 @@ function executeGraph(
                 );
               }).pipe(
                 Effect.catchCause((cause) =>
-                  stopWithFailure(run.runId, cause, environment.errors)
+                  stopWithFailure(run.runId, cause, environment.errors, true)
                 )
               ),
             ],
@@ -665,7 +915,8 @@ function applyDeadline(
   name: string,
   duration: string | undefined,
   codec: Boundary,
-  body: RuntimeEffect
+  body: RuntimeEffect,
+  path?: string
 ): RuntimeEffect {
   if (duration === undefined) {
     return body;
@@ -684,8 +935,11 @@ function applyDeadline(
             detail: { deadline, name },
             outcome: "TimedOut",
           })
-        )
-      )
+        ),
+        [],
+        true
+      ),
+    path
   ).pipe(Effect.flatMap((value) => boundary(() => decode(codec, value))));
 }
 
@@ -711,6 +965,14 @@ function executeChild(
       return yield* hostFailure("Child workflow is unavailable");
     }
     const childPath = [...environment.path, node.id];
+    const store = yield* HostStore;
+    if (
+      !(yield* store
+        .enterWorkflowInvocation(run.runId, JSON.stringify(childPath))
+        .pipe(Effect.orDie))
+    ) {
+      return yield* Effect.interrupt;
+    }
     const input = yield* boundary(() =>
       decode(
         child.definition.inputSchema,
@@ -738,7 +1000,8 @@ function executeChild(
           scopes: new Map(),
         },
         new Map([["$input", input]])
-      )
+      ),
+      JSON.stringify(childPath)
     );
     return yield* boundary(() =>
       decode(
@@ -862,7 +1125,8 @@ function executeNode(
           `task/${nodeId}`,
           node.options.timeout,
           task.successSchema,
-          invokeTask(run, nodeId, task, input, environment, node.options)
+          invokeTask(run, nodeId, task, input, environment, node.options),
+          nodeId
         );
       });
     }
@@ -983,12 +1247,34 @@ const graphLayer = execution.toLayer(({ runId }) =>
         return yield* hostFailure("Task is unavailable");
       }
       const input = yield* boundary(() => decode(task.inputSchema, run.input));
-      const result = yield* invokeTask(run, "task", task, input, environment);
-      return yield* boundary(() => encode(task.successSchema, result));
+      // The leaf encoded and scanned this JSON while its vault tracker was alive.
+      // Re-running an author codec here could introduce a secret after that guard.
+      const result = yield* applyDeadline(
+        run,
+        "report",
+        run.report?.execution.timeout,
+        Schema.Json,
+        invokeTaskEncoded(
+          run,
+          "task",
+          task,
+          input,
+          environment,
+          run.report?.execution
+        )
+      );
+      return yield* boundary(() => decode(Schema.Json, result));
     }
     const workflow = registry.workflows.get(run.targetId);
     if (!workflow) {
       return yield* hostFailure("Workflow is unavailable");
+    }
+    if (
+      !(yield* store
+        .enterWorkflowInvocation(run.runId, "[]")
+        .pipe(Effect.orDie))
+    ) {
+      return yield* Effect.interrupt;
     }
     const input = yield* boundary(() =>
       decode(workflow.definition.inputSchema, run.input)
@@ -1004,7 +1290,8 @@ const graphLayer = execution.toLayer(({ runId }) =>
         registry,
         { ...environment, errors: [workflow.definition.errorSchema] },
         new Map([["$input", input]])
-      )
+      ),
+      "[]"
     ).pipe(
       Effect.catch((error) => {
         if (error.category !== "Domain") {
@@ -1018,7 +1305,64 @@ const graphLayer = execution.toLayer(({ runId }) =>
     return yield* boundary(() =>
       encode(workflow.definition.successSchema, result)
     );
-  }).pipe(Effect.catchCause((cause) => stopWithFailure(runId, cause)))
+  }).pipe(
+    Effect.scoped,
+    Effect.catchCause((cause) => stopWithFailure(runId, cause))
+  )
 );
+
+/** Read the engine-owned controller result without resuming or running author code. */
+export function pollWorkflowInvocation(
+  run: Run,
+  path: string
+): Effect.Effect<
+  NativeInvocation,
+  never,
+  WorkflowEngine | MessageStorage.MessageStorage
+> {
+  return Effect.scoped(
+    Effect.gen(function* () {
+      // Dispatch may crash after native execution starts but before setEngineId.
+      // The execution ID is deterministic and does not require running the graph.
+      const engineId =
+        run.engineId ?? (yield* execution.executionId({ runId: run.runId }));
+      if (path === "[]") {
+        return yield* execution.poll(engineId);
+      }
+      const engine = yield* WorkflowEngine;
+      const scope = yield* Effect.acquireRelease(Scope.make(), (owned, exit) =>
+        Scope.close(owned, exit)
+      );
+      const instance = WorkflowInstance.initial(execution, engineId, { scope });
+      const result = yield* engine
+        .deferredResult(nodeResult(path))
+        .pipe(Effect.provideService(WorkflowInstance, instance));
+      // deferredDone persists its request before the enclosing run completes,
+      // but its reply can still be queued. Absence of the reply alone must not
+      // turn a child failure into cancellation under a terminal parent fence.
+      if (Option.isNone(result)) {
+        const messages = yield* MessageStorage.MessageStorage;
+        const request = yield* messages
+          .requestIdForPrimaryKey({
+            address: EntityAddress.make({
+              entityId: EntityId.make(engineId),
+              entityType: EntityType.make(`Workflow/${execution._tag}`),
+              shardId: ShardId.make("default", 1),
+            }),
+            id: nodeResult(path).name,
+            tag: "deferred",
+          })
+          .pipe(Effect.orDie);
+        if (Option.isSome(request)) {
+          return Option.some({ _tag: "PendingCompletion" as const });
+        }
+      }
+      return Option.map(result, (exit) => ({
+        _tag: "Complete" as const,
+        exit,
+      }));
+    })
+  );
+}
 
 export const interpreterLayer = Layer.merge(graphLayer, leafLayer);

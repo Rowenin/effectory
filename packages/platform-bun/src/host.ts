@@ -1,5 +1,6 @@
-import { Layer } from "effect";
+import { Effect, Layer } from "effect";
 
+import { automaticRetentionLayer } from "./automatic-retention.ts";
 import type { Catalog } from "./catalog.ts";
 import { engineLayer } from "./engine.ts";
 import { executionResourcesLayer } from "./execution-resources.ts";
@@ -7,6 +8,7 @@ import { hostStoreLayer } from "./host-store.ts";
 import { interpreterLayer } from "./interpreter.ts";
 import { lakeLayer } from "./lake.ts";
 import { ownershipLayer } from "./ownership.ts";
+import { recoverRunReclamation } from "./run-reclamation.ts";
 import { runnerLayer } from "./runner.ts";
 import { schedulerLayer } from "./scheduler.ts";
 
@@ -24,8 +26,16 @@ export function ownedHostLayer<E, R>(options: {
     Layer.provideMerge(options.catalog),
     Layer.provideMerge(executionResourcesLayer)
   );
-  return Layer.merge(runnerLayer, schedulerLayer).pipe(
-    Layer.provideMerge(engine)
+  return Layer.unwrap(
+    recoverRunReclamation(options.database).pipe(
+      Effect.as(
+        Layer.mergeAll(
+          runnerLayer,
+          schedulerLayer,
+          automaticRetentionLayer
+        ).pipe(Layer.provideMerge(engine))
+      )
+    )
   );
 }
 

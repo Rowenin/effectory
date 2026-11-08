@@ -24,6 +24,7 @@ import { ExtensionSource } from "./extension-source.ts";
 import { HostStore } from "./host-store.ts";
 import { RepositoryLease } from "./ownership.ts";
 import { Runner } from "./runner.ts";
+import { assertRuntimeWriter } from "./runtime-writer-guard.ts";
 
 const failure = (cause: unknown) =>
   cause instanceof OperationError
@@ -37,6 +38,10 @@ const perform = <A>(body: () => A) => Effect.try({ catch: failure, try: body });
 function openJournal(repository: string) {
   return Effect.gen(function* () {
     const lease = yield* RepositoryLease;
+    yield* perform(() => {
+      lease.assertActive();
+      assertRuntimeWriter(repository);
+    });
     const database = yield* Effect.acquireRelease(
       perform(
         () => new Database(path.join(repository, ".effectory/state.sqlite"))
@@ -158,7 +163,7 @@ export const extensionManagerLayer = (
             journal.publish();
           });
           yield* perform(journal.finish);
-        });
+        }).pipe(Effect.scoped);
       const processNext = Effect.gen(function* () {
         const operation = yield* perform(journal.next);
         if (operation === null) {
