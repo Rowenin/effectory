@@ -45,10 +45,10 @@ const ScheduleRow = Schema.Struct({
 export function inspectReclaimDependencies(
   database: Database,
   retained: readonly string[],
-  active: string | null
+  active: string | null,
+  budget = inspectionBudget("Revision dependency inspection")
 ) {
   return Effect.gen(function* () {
-    const budget = inspectionBudget("Revision dependency inspection");
     const scanner = upgradeScanner(database, budget);
     const protections = new Map<
       string,

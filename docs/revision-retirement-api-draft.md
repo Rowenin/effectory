@@ -61,7 +61,7 @@ An accepted runtime upgrade, run-family deletion or another revision deletion bl
 
 ## Proposed output shapes
 
-These are the approved shapes for new CLI JSON output. Internal Effect schemas now exist, but the CLI command integration is still in progress. String literals and canonical UTC timestamps use the existing Effect Schema primitives.
+These are the approved shapes for new CLI JSON output. The Effect schemas and CLI integration now exist; final recovery and executable transition verification remain in progress. String literals and canonical UTC timestamps use the existing Effect Schema primitives.
 
 ```ts
 type RevisionProtection = {

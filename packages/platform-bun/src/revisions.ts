@@ -41,6 +41,7 @@ import { validateExtensions } from "./extension-validator.ts";
 import { hostAbi, installHostModules } from "./host-runtime.ts";
 import { RepositoryLease } from "./ownership.ts";
 import { RevisionManifest as Manifest } from "./revision-manifest.ts";
+import { reclaimedRevisionError } from "./revision-reclaim-history.ts";
 import {
   assertRevisionExecutable,
   executionCompatibility,
@@ -243,6 +244,15 @@ export const revisionCatalogLayer = (repository: string) =>
       const loaded = yield* RcMap.make({
         lookup: (revision: string) =>
           Effect.gen(function* () {
+            if (!revisions.has(revision) && !archived.has(revision)) {
+              const reclaimed = yield* reclaimedRevisionError(
+                repository,
+                revision
+              );
+              if (reclaimed !== null) {
+                return yield* reclaimed;
+              }
+            }
             yield* Effect.try({
               catch: revisionUnavailable,
               try: () => assertExecutable(revision),

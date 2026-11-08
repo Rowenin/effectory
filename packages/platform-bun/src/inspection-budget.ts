@@ -11,7 +11,7 @@ export function inspectionBudget(purpose: string) {
     get snapshot() {
       return { bytes, digest: hash.copy().digest("hex"), rows };
     },
-    visit(category: string, row: unknown) {
+    visit(category: string, row: unknown, fingerprint = true) {
       const encoded = JSON.stringify(row);
       rows += 1;
       bytes += Buffer.byteLength(encoded);
@@ -22,7 +22,9 @@ export function inspectionBudget(purpose: string) {
         });
       }
       // Length-delimited tuples prevent category/row boundary ambiguity.
-      hash.update(JSON.stringify([category, encoded]));
+      if (fingerprint) {
+        hash.update(JSON.stringify([category, encoded]));
+      }
     },
   };
 }
