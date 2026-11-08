@@ -32,7 +32,7 @@ const io = <A>(body: () => A) =>
   });
 
 /** Bounded descriptor read; hard links are allowed but symlinks never are. */
-function file(filename: string, maximum: number) {
+export function readReclaimFile(filename: string, maximum: number) {
   const initial = lstatSync(filename);
   if (!initial.isFile() || initial.size > maximum) {
     throw unavailable();
@@ -118,7 +118,10 @@ export function inventoryReclaimRevisions(repository: string) {
         }
         let manifestBytes: Buffer;
         try {
-          manifestBytes = file(path.join(location, "manifest.json"), 65_536);
+          manifestBytes = readReclaimFile(
+            path.join(location, "manifest.json"),
+            65_536
+          );
         } catch (error) {
           // Incomplete preparations are owned by normal catalog recovery.
           if (missingUpgradeFile(error)) {
@@ -138,7 +141,10 @@ export function inventoryReclaimRevisions(repository: string) {
           JSON.parse(manifestBytes.toString("utf-8")),
           { onExcessProperty: "error" }
         );
-        const bundle = file(path.join(location, "application.mjs"), 16_777_216);
+        const bundle = readReclaimFile(
+          path.join(location, "application.mjs"),
+          16_777_216
+        );
         if (
           digestOf(bundle) !== manifest.digest ||
           digestOf(`${manifest.hostAbi}/${manifest.digest}`) !== revision

@@ -4,6 +4,7 @@ import type { Database } from "bun:sqlite";
 import { OperationError } from "@effectory/runtime/protocol";
 import { Effect, Schema } from "effect";
 
+import type { InspectionBudget } from "./inspection-budget.ts";
 import { upgradePage } from "./upgrade-page.ts";
 
 const Position = Schema.Struct({ position: Schema.Int });
@@ -15,7 +16,7 @@ export const unsupportedUpgradeWork = (category: string) =>
   });
 
 /** One shared budget; queries must keyset-page by an indexed integer position. */
-export function upgradeScanner(database: Database) {
+export function upgradeScanner(database: Database, budget?: InspectionBudget) {
   let rows = 0;
   let bytes = 0;
   return {
@@ -65,6 +66,7 @@ export function upgradeScanner(database: Database) {
                         "Upgrade journal inspection exceeds one million rows or 256 MiB; complete recovery with the compatible host before upgrading",
                     });
                   }
+                  budget?.visit(category, row);
                   visit(row);
                   position = current;
                 }

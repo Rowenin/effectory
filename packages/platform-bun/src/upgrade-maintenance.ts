@@ -9,6 +9,7 @@ import {
 import { Effect, Schema } from "effect";
 
 import { lockRevision, validateLock } from "./extension-cache.ts";
+import type { InspectionBudget } from "./inspection-budget.ts";
 import { binaryLimit } from "./lake-binary.ts";
 import { RetirementSummarySchema } from "./run-retirement-store.ts";
 import { RetirementInstant, RetirementReceipt } from "./run-retirement.ts";
@@ -60,7 +61,10 @@ const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
 ) => Schema.decodeUnknownSync(schema)(value, { onExcessProperty: "error" });
 
 /** Validate maintenance formats without calling any mutation-capable recovery. */
-export function inspectUpgradeMaintenance(database: Database) {
+export function inspectUpgradeMaintenance(
+  database: Database,
+  budget?: InspectionBudget
+) {
   return Effect.gen(function* () {
     const present = yield* Effect.try({
       catch: () => unsupportedUpgradeWork("maintenance journal inventory"),
@@ -84,7 +88,7 @@ export function inspectUpgradeMaintenance(database: Database) {
         );
       },
     });
-    const scanner = upgradeScanner(database);
+    const scanner = upgradeScanner(database, budget);
     const counts = { activation: 0, extensions: 0, installs: 0, retirement: 0 };
     const extensionCount = [
       "extension_registry",

@@ -19,6 +19,7 @@ import {
   selfCommand,
 } from "@effectory/platform-bun/host";
 import { runInternalCommand } from "@effectory/platform-bun/internal";
+import { reclaimRevisions } from "@effectory/platform-bun/revision-reclamation";
 import { reclaimRuns } from "@effectory/platform-bun/run-reclamation";
 import {
   initProject,
@@ -2206,12 +2207,60 @@ const agent = Command.make("agent", {}, () =>
     ),
   ])
 );
+const revisionCommands = Command.make("revision").pipe(
+  Command.withSubcommands([
+    Command.make("reclaim").pipe(
+      Command.withSubcommands([
+        Command.make(
+          "plan",
+          {
+            revision: revisionFlag,
+            unreferenced: Flag.Boolean("unreferenced").pipe(
+              Flag.withDefault(false)
+            ),
+          },
+          (args) =>
+            Effect.gen(function* () {
+              const config = yield* root;
+              if (args.unreferenced === Option.isSome(args.revision)) {
+                return yield* new OperationError({
+                  code: "InvalidInput",
+                  message: "Select exactly one of --unreferenced or --revision",
+                });
+              }
+              yield* reclaimRevisions(config.repository, {
+                kind: "Plan",
+                selector: Option.isSome(args.revision)
+                  ? { _tag: "Revision", revision: args.revision.value }
+                  : { _tag: "Unreferenced" },
+              }).pipe(Effect.flatMap(print));
+            })
+        ),
+        ...(["apply", "inspect"] as const).map((name) =>
+          Command.make(
+            name,
+            { planId: Argument.String("plan-id") },
+            ({ planId }) =>
+              Effect.gen(function* () {
+                const config = yield* root;
+                yield* reclaimRevisions(config.repository, {
+                  kind: name === "apply" ? "Apply" : "Inspect",
+                  planId,
+                }).pipe(Effect.flatMap(print));
+              })
+          )
+        ),
+      ])
+    ),
+  ])
+);
 const command = root.pipe(
   Command.withSubcommands([
     init,
     agent,
     upgrade,
     versionCommand,
+    revisionCommands,
     daemon,
     Command.make(
       "backup",

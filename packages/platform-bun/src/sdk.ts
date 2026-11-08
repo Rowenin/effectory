@@ -5,6 +5,7 @@ import { OperationError } from "@effectory/runtime/protocol";
 import { Effect } from "effect";
 
 import { hostVersions } from "./host-runtime.ts";
+import { assertUpgradeIdle } from "./upgrade-transition-gate.ts";
 
 /**
  * A project authors against the npm SDK for types, while the host runs it with
@@ -180,6 +181,7 @@ export function upgradeProject(repository: string, effectoryVersion: string) {
         ? cause
         : invalid("package.json could not be read or written"),
     try: () => {
+      assertUpgradeIdle(path.resolve(repository));
       const filename = path.join(path.resolve(repository), "package.json");
       const created = !existsSync(filename);
       const manifest: PackageJson = created
@@ -299,8 +301,12 @@ export function initProject(repository: string, effectoryVersion: string) {
   return Effect.gen(function* () {
     const root = path.resolve(repository);
     const files = yield* Effect.try({
-      catch: () => invalid("Project files could not be written"),
+      catch: (cause) =>
+        cause instanceof OperationError
+          ? cause
+          : invalid("Project files could not be written"),
       try: () => {
+        assertUpgradeIdle(root);
         mkdirSync(root, { recursive: true });
         const written: string[] = [];
         const kept: string[] = [];

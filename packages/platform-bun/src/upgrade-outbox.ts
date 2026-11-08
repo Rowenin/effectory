@@ -7,6 +7,7 @@ import {
 } from "@effectory/runtime/protocol";
 import { Effect, Schema } from "effect";
 
+import type { InspectionBudget } from "./inspection-budget.ts";
 import { storageError } from "./storage-error.ts";
 import { upgradePage } from "./upgrade-page.ts";
 
@@ -28,7 +29,10 @@ const unavailable = (id: number) =>
   });
 
 /** Inspect the entire pending index, not the runner's first joined page. */
-export function inspectUpgradeOutbox(database: Database) {
+export function inspectUpgradeOutbox(
+  database: Database,
+  budget?: InspectionBudget
+) {
   return Effect.gen(function* () {
     const table = yield* Effect.try({
       catch: (cause) =>
@@ -90,6 +94,11 @@ export function inspectUpgradeOutbox(database: Database) {
             "SELECT 1 FROM host_outbox INDEXED BY host_outbox_pending WHERE delivered > 1 LIMIT 1"
           )
           .get();
+        for (const flag of [first, afterZero, afterOne]) {
+          if (flag !== null) {
+            budget?.visit("outbox delivery domain", flag);
+          }
+        }
         if (
           (first !== null && first.delivered !== 0 && first.delivered !== 1) ||
           (afterZero !== null && afterZero.delivered !== 1) ||
@@ -160,6 +169,7 @@ export function inspectUpgradeOutbox(database: Database) {
               ) {
                 throw unavailable(row.id);
               }
+              budget?.visit("pending execution intent", row);
               rows += 1;
               bytes += Buffer.byteLength(JSON.stringify(row));
               if (rows > maximumRows || bytes > maximumBytes) {

@@ -12,6 +12,7 @@
     "./host": "./src/host-runtime.ts",
     "./internal": "./src/internal-commands.ts",
     "./sdk": "./src/sdk.ts",
+    "./revision-reclamation": "./src/revision-reclaim-commands.ts",
     "./run-reclamation": "./src/run-reclamation.ts",
     "./upgrade": "./src/upgrade-commands.ts"
   },
