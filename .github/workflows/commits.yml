@@ -1,0 +1,39 @@
+# Every commit and pull request title must be a Conventional Commit, because
+# release-please builds versions and CHANGELOG.md from them. The commit-msg
+# hook (installed by `bun install`) catches this locally; this check covers
+# pull requests and anything pushed straight to main.
+name: Commits
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  conventional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Pull request title and commits
+        if: github.event_name == 'pull_request'
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: bun scripts/commit-message.ts --title "$TITLE" --range "$BASE..$HEAD"
+      - name: Pushed commits
+        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: bun scripts/commit-message.ts --range "$BEFORE..$AFTER"

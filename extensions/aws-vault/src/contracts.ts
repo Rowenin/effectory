@@ -37,6 +37,8 @@ export const contracts = Object.freeze({
   id: "offtree/aws-vault",
   make,
   tasks: {},
+  // x-release-please-start-version
   version: "0.1.0",
+  // x-release-please-end
   workflows: {},
 });

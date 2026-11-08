@@ -1,0 +1,8 @@
+#!/bin/sh
+# Rejects commit messages that are not Conventional Commits; see AGENTS.md.
+# Installed by `bun install` (the prepare script sets core.hooksPath).
+if ! command -v bun >/dev/null 2>&1; then
+  echo "commit-msg: bun is required to check the commit message" >&2
+  exit 1
+fi
+exec bun "$(git rev-parse --show-toplevel)/scripts/commit-message.ts" --file "$1"

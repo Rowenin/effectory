@@ -88,18 +88,20 @@ Bun, npm and pnpm install tarball URLs directly, so the repository must be publi
 
 `install.sh` picks the asset for the OS and architecture (musl on Alpine, arm64 under Rosetta), verifies it against `SHA256SUMS` and installs it to `~/.effectory/bin` (`EFFECTORY_HOME`). `EFFECTORY_VERSION` selects a release, and `EFFECTORY_DOWNLOAD_BASE` points it at a mirror or a local directory (`file:///path/to/dist/release`), which is how it is tested before a release exists.
 
-### Cutting a release
+### Versions and changelogs
 
-```sh
-# 1. Set the same version in package.json, packages/*/package.json and
-#    extensions/*/package.json; check, commit and push.
-bun run verify
-# 2. Build every asset and publish the release (creates the tag on main).
-bun run release:assets
-gh release create v0.1.0 dist/release/* --target main --title "Effectory v0.1.0" --generate-notes
-```
+Releases come from [Conventional Commits](https://www.conventionalcommits.org) on `main`, enforced by a `commit-msg` hook (installed by `bun install`) and the `Commits` workflow; see `AGENTS.md` for the format. `.github/workflows/release.yml` runs on every push to `main`:
 
-Darwin binaries cross-compiled on Linux are ad-hoc signed by Bun. The `Release` workflow (`.github/workflows/release.yml`) does the same on GitHub Actions when started by hand for an existing tag, building on macOS after the full check suite.
+1. **release-pr**: [release-please](https://github.com/googleapis/release-please) keeps a `chore(main): release X.Y.Z` pull request up to date. It bumps the version in every `package.json`, the AWS vault extension's SDK peer dependency and contract version, refreshes `bun.lock`, and adds the release's section to `CHANGELOG.md`. `feat` commits bump the minor version and `fix` or `perf` the patch; breaking changes bump the minor version until 1.0. Other types never trigger a release.
+2. **check**: if `main`'s version has no GitHub Release yet (that is, a release pull request was just merged), the next jobs run.
+3. **verify**: every package must carry the version; typecheck, lint and the full test suite must pass.
+4. **publish**: on macOS, `scripts/release-assets.ts`, a smoke run of the native binary, then `gh release create vX.Y.Z` with every asset and the version's `CHANGELOG.md` section as notes. The release is published only after its assets upload. Finally the merged pull request is labelled `autorelease: tagged`, which release-please needs before it opens the next one.
+
+Darwin binaries cross-compiled on Linux are ad-hoc signed by Bun, so any machine can build the full set.
+
+To release, merge the release pull request. If publishing fails, fix the cause and run the `Release` workflow by hand; it publishes the version on `main` if it still has no release. Versions and `CHANGELOG.md` are never edited by hand.
+
+v0.1.0 predates this process and was published from Rowenin with `bun run release:assets` and `gh release create`, which still works for an emergency release.
 
 ## Not yet implemented
 

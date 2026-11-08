@@ -1,67 +1,125 @@
-# Builds and publishes a GitHub Release. Releases are normally cut from a
-# maintainer machine with the same script:
+# Versions and changelogs come from Conventional Commits on main.
 #
-#   bun scripts/release-assets.ts
-#   gh release create v0.1.0 dist/release/* --title "Effectory v0.1.0" --generate-notes
+# 1. release-pr: release-please keeps a "chore(main): release X.Y.Z" pull
+#    request up to date. It bumps every package version and writes
+#    CHANGELOG.md from feat, fix and perf commits (plus breaking changes).
+# 2. When that pull request is merged, main's version has no release yet, so
+#    check → verify → publish runs the full suite, builds every asset with
+#    scripts/release-assets.ts, and creates the vX.Y.Z GitHub Release with the
+#    changelog section as its notes. Assets upload before it is published.
 #
-# This workflow does the same in CI when started by hand (Actions → Release →
-# Run workflow) for a tag that already exists. The release carries every
-# binary, the SDK tarball that projects install by URL, the AWS vault
-# extension, install.sh and SHA256SUMS. Nothing is published to npm.
+# Re-run by hand (Actions → Release → Run workflow) to publish a version
+# whose earlier attempt failed. Nothing is published to npm.
 name: Release
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing version tag, for example v0.1.0
-        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ inputs.tag }}
+  group: release
   cancel-in-progress: false
 
 jobs:
+  release-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - id: please
+        uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # The publish job creates the release once its assets are built.
+          skip-github-release: true
+      # release-please cannot edit bun.lock, which records workspace versions.
+      - if: steps.please.outputs.pr
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ fromJSON(steps.please.outputs.pr).headBranchName }}
+      - if: steps.please.outputs.pr
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Refresh bun.lock in the release pull request
+        if: steps.please.outputs.pr
+        run: |
+          bun install --ignore-scripts
+          if ! git diff --quiet -- bun.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: refresh bun.lock for the release" -- bun.lock
+            git push
+          fi
+
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(jq -r .version package.json)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released."
+          else
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "v$version will be released."
+          fi
+
   verify:
+    needs: check
+    if: needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
+      # Report search tests quote continuations for zsh.
+      - run: sudo apt-get install --yes zsh
       - run: bun install --frozen-lockfile
-      - name: Tag matches package versions
+      - name: Every package carries the release version
         env:
-          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           for manifest in package.json packages/*/package.json extensions/*/package.json; do
-            version="$(jq -r .version "$manifest")"
-            if [ "v$version" != "$TAG" ]; then
-              echo "::error file=$manifest::version $version does not match tag $TAG"
+            if [ "$(jq -r .version "$manifest")" != "$VERSION" ]; then
+              echo "::error file=$manifest::version is not $VERSION"
               exit 1
             fi
           done
       - run: bun run typecheck
       - run: bun run check
-      - run: bun test --timeout 60000
+      - run: bun test --timeout 120000
 
-  release:
-    needs: verify
+  publish:
+    needs: [check, verify]
     # Darwin binaries are built natively; Bun cross-compiles the Linux targets.
     runs-on: macos-latest
     timeout-minutes: 30
     permissions:
       contents: write
+      issues: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ inputs.tag }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
@@ -69,16 +127,35 @@ jobs:
       - run: bun scripts/release-assets.ts --outdir dist/release
       - name: Smoke test the native binary
         run: dist/release/effectory-darwin-arm64 version --json
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          awk -v version="$VERSION" '
+            /^## / { if (found) exit; if (index($0, "[" version "]") || $2 == version) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > dist/notes.md
+          install="curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | sh"
+          printf '\nInstall: \140%s\140\n' "$install" >> dist/notes.md
+          cat dist/notes.md
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.check.outputs.version }}
         run: |
           prerelease=""
-          case "$TAG" in *-*) prerelease="--prerelease" ;; esac
-          gh release create "$TAG" \
-            --verify-tag \
-            --title "Effectory $TAG" \
-            --generate-notes \
-            $prerelease \
-            dist/release/*
+          case "$VERSION" in *-*) prerelease="--prerelease" ;; esac
+          gh release create "v$VERSION" dist/release/* \
+            --target "$GITHUB_SHA" \
+            --title "Effectory v$VERSION" \
+            --notes-file dist/notes.md \
+            $prerelease
+      # release-please waits for its merged pull request to be marked released
+      # before it opens the next one.
+      - name: Mark the release pull request as released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for number in $(gh pr list --repo "$GITHUB_REPOSITORY" --state merged --label "autorelease: pending" --json number --jq '.[].number'); do
+            gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --remove-label "autorelease: pending" --add-label "autorelease: tagged"
+          done

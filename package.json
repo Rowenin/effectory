@@ -18,7 +18,7 @@
     "fix": "ultracite fix .",
     "test": "bun test",
     "verify": "bun run typecheck && bun run check && bun run test",
-    "prepare": "effect-tsgo patch",
+    "prepare": "effect-tsgo patch && git config core.hooksPath .githooks",
     "effectory": "bun packages/cli/src/main.ts",
     "build:binary": "bun scripts/build-binary.ts",
     "build:sdk": "bun scripts/build-sdk.ts",
