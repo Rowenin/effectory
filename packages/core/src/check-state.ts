@@ -18,7 +18,7 @@ import { checkSerialized, scrub } from "./vault-tracker.ts";
 export interface CheckStart {
   readonly id: string;
   readonly message: string;
-  readonly severity: typeof Severity.Type;
+  readonly severity: Severity;
 }
 export interface CheckFinish {
   readonly status: Exclude<CheckRecord["status"], "Running">;
@@ -26,7 +26,7 @@ export interface CheckFinish {
   readonly durationMillis: number | null;
 }
 export interface CheckBinding {
-  readonly failOn: typeof Severity.Type;
+  readonly failOn: Severity;
   readonly start: (
     input: CheckStart
   ) => Effect.Effect<number, TaskRuntimeError>;
@@ -48,6 +48,10 @@ const Input = Schema.Struct({
   severity: Schema.optionalKey(Severity),
 });
 
+const invalidAssertionOptions = (error: unknown) =>
+  error instanceof TaskRuntimeError
+    ? error
+    : failure("InvalidBoundary", "Invalid assertion options");
 export function checksFor(
   runtime: object,
   owner: ReturnType<typeof publicationLifetime>,
@@ -65,16 +69,13 @@ export function checksFor(
                 "Checks require an invocation binding"
               );
             }
+            const value = yield* Schema.decodeEffect(Input)(
+              { ...options, id },
+              { onExcessProperty: "error" }
+            ).pipe(Effect.mapError(invalidAssertionOptions));
             const input = yield* Effect.try({
-              catch: (error) =>
-                error instanceof TaskRuntimeError
-                  ? error
-                  : failure("InvalidBoundary", "Invalid assertion options"),
+              catch: invalidAssertionOptions,
               try: () => {
-                const value = Schema.decodeUnknownSync(Input)(
-                  { ...options, id },
-                  { onExcessProperty: "error" }
-                );
                 identifier(value.id);
                 if (new TextEncoder().encode(value.message).byteLength > 2000) {
                   throw failure(

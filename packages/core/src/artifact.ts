@@ -72,7 +72,8 @@ function retentionFor(spec: CommonSpec<string>): Artifact["retention"] {
   if ("retention" in spec) {
     const input = spec.retention;
     if (
-      !input ||
+      typeof input !== "object" ||
+      input === null ||
       Object.keys(input).some(
         (key) => key !== "maxVersions" && key !== "maxAge"
       ) ||
@@ -94,7 +95,11 @@ function retentionFor(spec: CommonSpec<string>): Artifact["retention"] {
       normalized.maxVersions = input.maxVersions;
     }
     if ("maxAge" in input) {
-      const duration = Duration.fromInput(input.maxAge as Duration.Input);
+      // Consumers may compile without exactOptionalPropertyTypes.
+      const duration =
+        input.maxAge === undefined
+          ? Option.none()
+          : Duration.fromInput(input.maxAge);
       const millis = Option.isSome(duration)
         ? Math.floor(Duration.toMillis(duration.value))
         : Number.NaN;

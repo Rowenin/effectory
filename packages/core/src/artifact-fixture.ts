@@ -75,6 +75,10 @@ export function fixture<A extends Artifact.Any>(
   options: FixtureOptions = {}
 ): Effect.Effect<Fixture<A>, TaskRuntimeError> {
   return Effect.gen(function* () {
+    // Every invalid option reports the same error, so tags decode first.
+    const tags = yield* Schema.decodeEffect(
+      Schema.Record(Schema.String, Schema.String)
+    )(options.tags ?? {}).pipe(Effect.mapError(() => invalidFixture()));
     const prepared = yield* Effect.try({
       catch: () => invalidFixture(),
       try: () => {
@@ -106,9 +110,6 @@ export function fixture<A extends Artifact.Any>(
         ) {
           throw invalidFixture();
         }
-        const tags = Schema.decodeUnknownSync(
-          Schema.Record(Schema.String, Schema.String)
-        )(options.tags ?? {});
         if (new TextEncoder().encode(canonical(tags)).length > 8192) {
           throw invalidFixture();
         }
@@ -144,6 +145,7 @@ export function fixture<A extends Artifact.Any>(
         ])
       )
     );
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
     return captureFixture({
       artifact,
       ...prepared,

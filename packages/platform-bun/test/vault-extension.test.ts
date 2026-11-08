@@ -12,6 +12,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { digest } from "../src/extension-archive.ts";
 import { cli, operation, start } from "./fixtures/cli.ts";
 import {
@@ -19,6 +21,9 @@ import {
   fixtureManifest,
 } from "./fixtures/extension-archive.ts";
 import { typescript, workspace } from "./fixtures/published-extension.ts";
+
+const OperationAccepted = Schema.Struct({ operationId: Schema.String });
+const TaskRun = Schema.Struct({ result: Schema.Unknown, runId: Schema.String });
 
 test("installed lazy vault provider preserves canonical definitions and reloads after real daemon death", async () => {
   const base = await mkdtemp(
@@ -140,14 +145,16 @@ export const make = (spec:Vault.ImplementationSpec,filename:string) => Effect.ge
     );
     const initial = await start(repository, environment);
     children.push(initial);
-    const add = (await cli(repository, [
-      "extension",
-      "add",
-      "github:fixture/vault@v1",
-      "--as",
-      "Secrets",
-      "--trust",
-    ])) as { operationId: string };
+    const add = Schema.decodeUnknownSync(OperationAccepted)(
+      await cli(repository, [
+        "extension",
+        "add",
+        "github:fixture/vault@v1",
+        "--as",
+        "Secrets",
+        "--trust",
+      ])
+    );
     expect((await operation(repository, add.operationId)).status).toBe(
       "Succeeded"
     );
@@ -172,13 +179,9 @@ export default Application.make({tasks:[Read],vaults:[Secrets.exports.Credential
     await initial.exited;
     const first = await start(repository, environment);
     children.push(first);
-    const firstRun = (await cli(repository, [
-      "task",
-      "run",
-      "read",
-      "--input",
-      "null",
-    ])) as { result: unknown; runId: string };
+    const firstRun = Schema.decodeUnknownSync(TaskRun)(
+      await cli(repository, ["task", "run", "read", "--input", "null"])
+    );
     expect(firstRun.result).toBe("extension-read");
     expect(
       JSON.stringify(await cli(repository, ["run", "logs", firstRun.runId]))
@@ -189,10 +192,8 @@ export default Application.make({tasks:[Read],vaults:[Secrets.exports.Credential
     const restarted = await start(repository, environment);
     children.push(restarted);
     expect(
-      (
-        (await cli(repository, ["task", "run", "read", "--input", "null"])) as {
-          result: unknown;
-        }
+      Schema.decodeUnknownSync(TaskRun)(
+        await cli(repository, ["task", "run", "read", "--input", "null"])
       ).result
     ).toBe("extension-read");
     await cli(repository, ["daemon", "stop"]);

@@ -43,6 +43,7 @@ test("occurrence fixtures are lazy, strictly decoded and omitted by default", as
     [{ ...fixture, scheduledFor: "2026-11-05T10:00:00Z" }, "scheduledFor"],
   ] as const) {
     // Exercise callers at an untyped JS boundary, including an explicitly present undefined.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the test calls Task.test as untyped JavaScript would
     const program = Task.test(task, { input: null, occurrence } as Parameters<
       typeof Task.test<typeof spec, never>
     >[1]);
@@ -177,11 +178,11 @@ test("occurrence fixtures preserve service requirements and provision", async ()
   ).toEqual(fixture);
 });
 export function occurrenceTypeFixtures(
-  context: Task.TaskContext<Record<never, never>>
+  context: Task.TaskContext<Record<string, never>>
 ) {
   // @ts-expect-error Occurrence is readonly.
   context.occurrence = fixture;
-  if (context.occurrence) {
+  if (context.occurrence !== undefined) {
     // @ts-expect-error Individual fields are readonly.
     context.occurrence.generation = 3;
   }
@@ -194,7 +195,7 @@ export function occurrenceTypeFixtures(
   });
   // @ts-expect-error Task input inference stays intact.
   Task.test(needsService, { input: "bad", occurrence: fixture });
-  Effect.runPromise(
+  void Effect.runPromise(
     // @ts-expect-error Missing service remains visible.
     Task.test(needsService, { input: null, occurrence: fixture })
   );

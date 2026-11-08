@@ -270,7 +270,7 @@ test("SIGKILL at each retirement boundary resumes exact native cleanup and backu
     for (let index = 0; index < stages.length; index += 1) {
       const stage = stages[index];
       const runId = runs[index];
-      if (!stage || !runId) {
+      if (stage === undefined || runId === undefined) {
         throw new Error("Missing crash case");
       }
       const plan = Schema.decodeUnknownSync(Plan)(

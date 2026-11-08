@@ -47,7 +47,7 @@ function fixture() {
   });
   const filename = path.join(state, "state.sqlite");
   const db = new Database(filename);
-  db.exec(
+  db.run(
     "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE evidence(value TEXT); INSERT INTO evidence VALUES('committed-in-wal')"
   );
   const destination = path.join(directory, "recovery");

@@ -27,8 +27,8 @@ import { vaultFence } from "../src/upgrade-vault-fence.ts";
 import { executorTestPolicy } from "./fixtures/upgrade-executor-policy.ts";
 import { fenceFixture } from "./fixtures/upgrade-fence-fixture.ts";
 
-function accept(f: ReturnType<typeof fenceFixture>) {
-  return f.run(
+async function accept(f: ReturnType<typeof fenceFixture>) {
+  return await f.run(
     Effect.gen(function* () {
       const before = yield* fingerprintUpgradeRepository(f.repository);
       const journal = yield* makeUpgradeJournal(f.repository);
@@ -58,8 +58,8 @@ function accept(f: ReturnType<typeof fenceFixture>) {
     })
   );
 }
-const resume = (f: ReturnType<typeof fenceFixture>) =>
-  f.run(
+const resume = async (f: ReturnType<typeof fenceFixture>) =>
+  await f.run(
     Effect.gen(function* () {
       const j = yield* makeUpgradeJournal(f.repository);
       const saved = yield* j.inspect(f.plan.planId);

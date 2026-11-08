@@ -129,7 +129,7 @@ test("durable continuation handles late suspension and re-gating without waiting
             { runId: run.runId },
             "owner"
           );
-          if (!assessment.token) {
+          if (assessment.token === null) {
             return yield* Effect.die("Missing recovery token");
           }
           yield* store.recover(
@@ -161,7 +161,7 @@ test("durable continuation handles late suspension and re-gating without waiting
           expect(next.total).toBe(1);
           const parked = yield* leafExecution.poll(backoff);
           expect(Option.isSome(parked) && parked.value._tag).toBe("Suspended");
-          if (!next.token) {
+          if (next.token === null) {
             return yield* Effect.die("Missing next recovery token");
           }
           yield* store.recover(

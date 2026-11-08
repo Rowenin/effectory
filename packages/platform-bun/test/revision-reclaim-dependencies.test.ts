@@ -18,15 +18,20 @@ import { createRetirementStore } from "../src/run-retirement-store.ts";
 import { inspectUpgradeOutbox } from "../src/upgrade-outbox.ts";
 import { upgradeScanner } from "../src/upgrade-scan.ts";
 
-const revisions = ["a", "b", "c", "d", "e", "f"].map((c) => c.repeat(64));
-const [
+const active = "a".repeat(64);
+const runRevision = "b".repeat(64);
+const scheduleRevision = "c".repeat(64);
+const pendingRevision = "d".repeat(64);
+const candidateRevision = "e".repeat(64);
+const unusedRevision = "f".repeat(64);
+const revisions = [
   active,
   runRevision,
   scheduleRevision,
   pendingRevision,
   candidateRevision,
   unusedRevision,
-] = revisions as [string, string, string, string, string, string];
+];
 const lease = { assertActive: () => {}, token: "owner" };
 const entry: EncodedReportPlan[number] = {
   attachmentId: "summary",
@@ -221,7 +226,7 @@ test("task and child-workflow report obligations validate through their actual i
       result.protected.find((p) => p.revision === runRevision)?.reasons[0]
         ?.count
     ).toBe(1);
-    db.exec("PRAGMA foreign_keys=OFF; DELETE FROM host_workflow_invocations");
+    db.run("PRAGMA foreign_keys=OFF; DELETE FROM host_workflow_invocations");
     const failure = await Effect.runPromise(
       inspectReclaimDependencies(db, revisions, active).pipe(Effect.flip)
     );
@@ -261,7 +266,7 @@ test("held and authorized manual entries remain dependencies without consuming a
     const assessment = Effect.runSync(
       store.recoveryGet({ runId: run.runId }, "owner")
     );
-    if (!assessment.token) {
+    if (assessment.token === null) {
       throw new Error("Expected recoverable hold");
     }
     Effect.runSync(
@@ -324,7 +329,7 @@ test("paused and idle schedules protect code; removed definitions protect only p
         Date.now()
       )
     );
-    db.exec(
+    db.run(
       "UPDATE host_schedules SET pauseJson='{}' WHERE scheduleId='paused'; UPDATE host_schedules SET removed=1 WHERE scheduleId IN ('removed','pending'); UPDATE host_schedules SET pendingSlot=1000 WHERE scheduleId='pending'"
     );
     db.query(
@@ -349,7 +354,7 @@ test("paused and idle schedules protect code; removed definitions protect only p
         ?.count
     ).toBe(2);
     expect(db.serialize()).toEqual(before);
-    db.exec(
+    db.run(
       "UPDATE host_schedules SET activeRunId='absent' WHERE scheduleId='removed'"
     );
     const refused = await Effect.runPromise(
@@ -387,8 +392,8 @@ test.each([
 ])("inconsistent dependency refuses without mutation: %s", async (fault) => {
   const f = fixture();
   try {
-    f.db.exec("PRAGMA foreign_keys=OFF");
-    f.db.exec(fault);
+    f.db.run("PRAGMA foreign_keys=OFF");
+    f.db.run(fault);
     const before = f.db.serialize();
     const failure = await Effect.runPromise(f.inspect().pipe(Effect.flip));
     expect(failure.code).toBe("RevisionUnavailable");
@@ -472,7 +477,7 @@ test("an accepted run-family deletion blocks reclamation while a completed run p
       )
     );
     Effect.runSync(store.project(run.runId, "Succeeded", null));
-    db.exec("UPDATE host_outbox SET delivered=1");
+    db.run("UPDATE host_outbox SET delivered=1");
     const retirement = createRetirementStore(db, "repository", "owner");
     await Effect.runPromise(retirement.plan({ runId: run.runId }));
     db.query(
@@ -491,7 +496,7 @@ test("an accepted run-family deletion blocks reclamation while a completed run p
 
 test("pending outbox and ordinary pages spend the same million-header budget", async () => {
   const db = new Database(":memory:");
-  db.exec(`CREATE TABLE headers(id INTEGER PRIMARY KEY); WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<500001) INSERT INTO headers SELECT x FROM n;
+  db.run(`CREATE TABLE headers(id INTEGER PRIMARY KEY); WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<500001) INSERT INTO headers SELECT x FROM n;
     CREATE TABLE host_runs(runId TEXT PRIMARY KEY); INSERT INTO host_runs VALUES('run');
     CREATE TABLE host_waits(waitId TEXT PRIMARY KEY,runId TEXT,status TEXT);
     CREATE TABLE host_outbox(id INTEGER PRIMARY KEY,kind TEXT,runId TEXT,waitId TEXT,delivered INTEGER);

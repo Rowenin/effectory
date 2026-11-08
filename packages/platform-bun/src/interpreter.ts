@@ -78,6 +78,10 @@ import { Lake } from "./lake.ts";
 import { reportHistory } from "./report-history.ts";
 import { taskLogger } from "./task-logger.ts";
 
+/** Re-reads JSON this host serialized itself, typed as Json. */
+const parseJson = (text: string): Schema.Json =>
+  Schema.decodeUnknownSync(Schema.Json)(JSON.parse(text));
+
 export const execution = Workflow.make("EffectoryExecution/v1", {
   error: ExecutionFailure,
   idempotencyKey: ({ runId }) => runId,
@@ -362,6 +366,7 @@ const leafLayer = leafExecution.toLayer(
                 );
                 bindHistory(context, history);
               }
+              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
               let handler = entryTask.execute(input, context).pipe(
                 Effect.ensuring(
                   Effect.sync(() => {
@@ -392,7 +397,7 @@ const leafLayer = leafExecution.toLayer(
                             Effect.fail(
                               new ExecutionFailure({
                                 category: "Domain",
-                                detail: JSON.parse(detail) as Schema.Json,
+                                detail: parseJson(detail),
                                 outcome: "Failed",
                               })
                             )
@@ -432,7 +437,7 @@ const leafLayer = leafExecution.toLayer(
                   hostFailure(error.message, error.code)
                 )
               );
-              return JSON.parse(serialized) as Schema.Json;
+              return parseJson(serialized);
             }).pipe(Effect.scoped);
             body = resources.global.withPermits(1)(
               resources.track(runId, body)
@@ -721,11 +726,16 @@ function stopWithFailure(
         ? failure.value
         : hostFailure("Graph failed unexpectedly");
     if (reason.category === "Domain") {
-      try {
+      const { detail } = reason;
+      const valid = yield* Effect.try(() => {
         for (const codec of errors) {
-          decode(codec, reason.detail);
+          decode(codec, detail);
         }
-      } catch {
+      }).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false)
+      );
+      if (!valid) {
         reason = hostFailure("Workflow error boundary validation failed");
       }
     }
@@ -1029,7 +1039,7 @@ function executeNode(
         const store = yield* HostStore;
         for (const ref of node.refs) {
           const scope = environment.scopes.get(ref.scope);
-          if (!scope?.registrations.has(ref.nodeId)) {
+          if (scope === undefined || !scope.registrations.has(ref.nodeId)) {
             continue;
           }
           const address = yield* boundary(() =>
@@ -1293,14 +1303,13 @@ const graphLayer = execution.toLayer(({ runId }) =>
       ),
       "[]"
     ).pipe(
-      Effect.catch((error) => {
-        if (error.category !== "Domain") {
-          return Effect.fail(error);
-        }
-        return boundary(() =>
-          decode(workflow.definition.errorSchema, error.detail)
-        ).pipe(Effect.andThen(Effect.fail(error)));
-      })
+      Effect.catchIf(
+        (error) => error.category === "Domain",
+        (error) =>
+          boundary(() =>
+            decode(workflow.definition.errorSchema, error.detail)
+          ).pipe(Effect.andThen(Effect.fail(error)))
+      )
     );
     return yield* boundary(() =>
       encode(workflow.definition.successSchema, result)

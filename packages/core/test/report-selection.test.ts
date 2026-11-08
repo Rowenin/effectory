@@ -72,8 +72,8 @@ const Flow = Workflow.make(
     );
   })
 );
-const registry = () =>
-  Effect.runPromise(
+const registry = async () =>
+  await Effect.runPromise(
     Application.Registry.pipe(
       Effect.provide(
         Application.make({
@@ -114,25 +114,29 @@ test("metadata and schedule selectors are captured and validated synchronously",
   raw.category = "changed";
   expect(report.tags).toEqual({ category: "cost" });
   expect(Object.isFrozen(report.tags)).toBe(true);
-  expect(() => makeReport("bare", [Category] as never)).toThrow(
-    DefinitionError
-  );
+  expect(() => {
+    Reflect.apply(makeReport, undefined, ["bare", [Category]]);
+  }).toThrow(DefinitionError);
   expect(() =>
     makeReport("duplicate", [Category("cost"), Category("audit")])
   ).toThrow(DefinitionError);
-  expect(() => makeReport("foreign", [{}] as never)).toThrow(DefinitionError);
+  expect(() => {
+    Reflect.apply(makeReport, undefined, ["foreign", [{}]]);
+  }).toThrow(DefinitionError);
   expect(() => makeReport("too-big", { label: "x".repeat(257) })).toThrow(
     DefinitionError
   );
-  expect(() =>
-    Report.make({
-      id: "bad",
-      required: undefined,
-      scope: "run",
-      target: Source,
-      task: Reporter,
-    } as never)
-  ).toThrow(DefinitionError);
+  expect(() => {
+    Reflect.apply(Report.make, undefined, [
+      {
+        id: "bad",
+        required: undefined,
+        scope: "run",
+        target: Source,
+        task: Reporter,
+      },
+    ]);
+  }).toThrow(DefinitionError);
   const only = ["cost"];
   const schedule = WorkflowSchedule.make({
     cron: "0 0 * * *",
@@ -147,15 +151,17 @@ test("metadata and schedule selectors are captured and validated synchronously",
     skipTags: { category: "audit" },
   });
   expect(Object.isFrozen(schedule.reportSelection.only)).toBe(true);
-  expect(() =>
-    WorkflowSchedule.make({
-      cron: "0 0 * * *",
-      id: "invalid",
-      input: "x",
-      reportSelection: undefined,
-      workflow: Flow,
-    } as never)
-  ).toThrow(DefinitionError);
+  expect(() => {
+    Reflect.apply(WorkflowSchedule.make, undefined, [
+      {
+        cron: "0 0 * * *",
+        id: "invalid",
+        input: "x",
+        reportSelection: undefined,
+        workflow: Flow,
+      },
+    ]);
+  }).toThrow(DefinitionError);
   const invalid = WorkflowSchedule.make({
     cron: "0 0 * * *",
     id: "unknown",

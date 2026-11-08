@@ -28,7 +28,7 @@ test("GitHub resolution pins release, asset and commit identities; download uses
         seen.push([...args]);
         // oxlint-disable-next-line prefer-destructuring -- gh api endpoint follows the hostname option.
         const endpoint = args[3];
-        if (endpoint?.includes("releases/tags/")) {
+        if (endpoint?.includes("releases/tags/") === true) {
           return bytes({
             assets: [
               {
@@ -43,7 +43,7 @@ test("GitHub resolution pins release, asset and commit identities; download uses
             tag_name: "release/v1",
           });
         }
-        if (endpoint?.includes("commits/")) {
+        if (endpoint?.includes("commits/") === true) {
           return bytes({ sha: "a".repeat(40) });
         }
         if (endpoint === "repos/acme/private-tools/releases/assets/20") {

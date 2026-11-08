@@ -6,7 +6,7 @@ import { ownershipLayer } from "../../src/ownership.ts";
 import { writeReady } from "./ready.ts";
 
 const [filename, mode, readyFile] = process.argv.slice(2);
-if (!(filename && mode && readyFile)) {
+if (filename === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Expected database, mode and ready-file arguments");
 }
 const workflow = Workflow.make("EffectoryTimerProof", {
@@ -31,11 +31,12 @@ await Effect.runPromise(
       const result = yield* workflow.poll(id);
       if (Option.isSome(result)) {
         if (mode === "start" && result.value._tag === "Suspended") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({ duplicate: id, id, status: "Suspended" })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({ duplicate: id, id, status: "Suspended" })
+              )
           );
           return yield* Effect.never;
         }
@@ -43,8 +44,12 @@ await Effect.runPromise(
           const status = Exit.isSuccess(result.value.exit)
             ? "Succeeded"
             : "Cancelled";
-          yield* Effect.promise(() =>
-            writeReady(readyFile, JSON.stringify({ duplicate: id, id, status }))
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({ duplicate: id, id, status })
+              )
           );
           return;
         }

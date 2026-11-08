@@ -4,8 +4,19 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, readdirSync, renameSync } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { harness, old, target } from "./process.mjs";
 
+const LifecycleResults = Schema.Struct({
+  root: Schema.String,
+  targetBuild: Schema.optionalKey(Schema.Unknown),
+});
+const TaskResult = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+});
+
+/** @type {unknown} */
 const lifecycle = JSON.parse(
   readFileSync(
     path.join(
@@ -15,11 +26,14 @@ const lifecycle = JSON.parse(
     "utf-8"
   )
 );
+Schema.asserts(LifecycleResults, lifecycle);
 const { root } = lifecycle;
 const repo = path.join(root, "source");
 const h = harness(root);
 const snapshot = () => {
+  /** @type {Record<string, string>} */
   const r = {};
+  /** @type {(p: string) => void} */
   const walk = (p) => {
     for (const e of readdirSync(p, { withFileTypes: true })) {
       if (e.name.startsWith("state.sqlite.owner") || e.name.endsWith("-shm")) {
@@ -77,11 +91,15 @@ try {
   await daemon.exited;
   renameSync(path.join(root, "keys-hidden"), path.join(root, "keys"));
   const resumed = await h.start(target, repo);
-  assert.equal(
-    (await h.cli(target, repo, ["task", "run", "secret", "--input", "null"]))
-      .result,
-    true
-  );
+  const secret = await h.cli(target, repo, [
+    "task",
+    "run",
+    "secret",
+    "--input",
+    "null",
+  ]);
+  Schema.asserts(TaskResult, secret);
+  assert.equal(secret.result, true);
   await h.cli(target, repo, ["daemon", "stop"]);
   await resumed.exited;
   const result = {

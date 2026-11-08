@@ -46,7 +46,7 @@ export const emptyUpgradeWork = () => ({
 });
 export type UpgradeWorkCounts = ReturnType<typeof emptyUpgradeWork>;
 
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   raw: unknown
 ) => Schema.decodeUnknownSync(schema)(raw, { onExcessProperty: "error" });

@@ -4,7 +4,7 @@ import { Artifact } from "@offtree/effectory-sdk";
 import { Schema } from "effect";
 
 test("queryable fields use encoded types through references, optional values and array paths", () => {
-  const Child = Schema.Struct({ value: Schema.NumberFromString }).annotate({
+  const Child = Schema.Struct({ value: Schema.FiniteFromString }).annotate({
     identifier: "Child",
   });
   const artifact = Artifact.make({

@@ -9,6 +9,7 @@ import { Run } from "@effectory/runtime/protocol";
 import { Schema } from "effect";
 
 import { cli, start } from "./fixtures/cli.ts";
+import { anyObject } from "./fixtures/matchers.ts";
 
 test("CLI tag submissions, descriptions and conjunctive filters survive daemon restart", async () => {
   const repository = await mkdtemp(path.join(tmpdir(), "effectory-tag-cli-"));
@@ -28,7 +29,7 @@ test("CLI tag submissions, descriptions and conjunctive filters survive daemon r
       "reporting",
     ]);
     expect(description).toMatchObject({
-      tagSchemas: { build: expect.any(Object) },
+      tagSchemas: { build: anyObject },
       tags: { team: "platform" },
     });
     const request = [

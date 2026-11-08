@@ -8,7 +8,7 @@ import { RepositoryLease, ownershipLayer } from "../../src/ownership.ts";
 
 const repository = process.argv.at(2);
 const phase = process.argv.at(3);
-if (!repository || !phase) {
+if (repository === undefined || phase === undefined) {
   throw new Error("Missing repository/phase");
 }
 await Effect.runPromise(

@@ -30,7 +30,7 @@ export function subtreeScan(
 ) {
   return Effect.gen(function* () {
     const state = yield* perform(() => {
-      const { cursor, afterSequence, ...query } = Schema.decodeUnknownSync(
+      const { cursor, afterSequence, ...query } = Schema.decodeSync(
         EventRequest
       )(input, { onExcessProperty: "error" });
       authorizeRun(database, runId, principal);
@@ -117,7 +117,7 @@ export function subtreeScan(
             )
             .get(runId, kind, row.position, path, path, prefixLength, prefix);
           ({ position } = row);
-          if (matched) {
+          if (matched !== null) {
             positions.push(position);
           }
           if (positions.length > state.limit) {
@@ -241,7 +241,7 @@ export function subtreeInvocations(
   principal: string,
   sourceId: string,
   path: string,
-  request: typeof PageRequest.Type,
+  request: PageRequest,
   perform: Perform
 ) {
   return Effect.gen(function* () {

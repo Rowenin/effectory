@@ -220,14 +220,14 @@ export function vaultFence(
         try {
           chmodSync(staging, 0o600);
           step?.("vault-staging-created");
-          db.exec(
+          db.run(
             "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE; CREATE TABLE effectory_upgrade_empty(planId TEXT NOT NULL,targetBuild TEXT NOT NULL);"
           );
           db.query("INSERT INTO effectory_upgrade_empty VALUES(?,?)").run(
             owner.planId,
             owner.targetBuild
           );
-          db.exec("PRAGMA user_version=2; COMMIT;");
+          db.run("PRAGMA user_version=2; COMMIT;");
           step?.("vault-staging-committed");
         } finally {
           db.close();
@@ -302,12 +302,12 @@ export function vaultFence(
     yield* io(() => {
       const db = new Database(filename, { create: false, readwrite: true });
       try {
-        db.exec("PRAGMA synchronous=FULL;");
+        db.run("PRAGMA synchronous=FULL;");
         db.transaction(() => {
           if (version(db) !== inspected.version) {
             throw invalid();
           }
-          db.exec(`PRAGMA user_version=${action === "Protect" ? 2 : 1}`);
+          db.run(`PRAGMA user_version=${action === "Protect" ? 2 : 1}`);
           step?.("vault-version-written");
         }).immediate();
         step?.("vault-version-committed");
@@ -408,17 +408,17 @@ export function retargetVaultFence(
         const db = new Database(staging, { create: true });
         try {
           chmodSync(staging, 0o600);
-          db.exec(
+          db.run(
             "PRAGMA journal_mode=DELETE; PRAGMA synchronous=FULL; BEGIN IMMEDIATE"
           );
-          db.exec(sentinelSchema);
+          db.run(sentinelSchema);
           db.query("INSERT INTO effectory_upgrade_empty VALUES(?,?)").run(
             destination.planId,
             destination.targetBuild
           );
-          db.exec("PRAGMA user_version=2");
+          db.run("PRAGMA user_version=2");
           step?.("vault-owner-written");
-          db.exec("COMMIT");
+          db.run("COMMIT");
           step?.("vault-owner-committed");
         } finally {
           db.close();

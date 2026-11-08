@@ -259,7 +259,7 @@ test.each(["finish", "cancel"] as const)(
         expect(current.status).toBe("Running");
         expect(resources.active(run.runId)).toBe(0);
         expect(calls).toBe(1);
-        if (!current.engineId) {
+        if (current.engineId === null) {
           return yield* Effect.die("Missing engine id");
         }
         expect(yield* execution.poll(current.engineId)).toMatchObject({
@@ -362,7 +362,7 @@ test("report permit queues are invocation work and report status stays synchroni
       yield* until(
         Effect.gen(function* () {
           const [id] = yield* store.reportIds(root.runId);
-          if (!id) {
+          if (id === undefined) {
             return false;
           }
           reportId = id;

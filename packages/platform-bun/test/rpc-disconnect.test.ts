@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { Deferred, Effect, Layer, Schema, Stream } from "effect";
+import { Deferred, Effect, Exit, Layer, Schema, Scope, Stream } from "effect";
 import { Rpc, RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
 
 import { contentRequest, makeContentHandler } from "../src/content-plane.ts";
@@ -11,7 +11,8 @@ const Control = RpcGroup.make(
   Rpc.make("Pending", { payload: Schema.Struct({}), success: Schema.String })
 );
 
-const unchangedRequest = (request: Request) => Promise.resolve(request);
+const unchangedRequest = async (request: Request) =>
+  await Promise.resolve(request);
 
 test.each(["control", "content", "watch"] as const)(
   "%s disconnect before the first response releases work and permits",
@@ -65,19 +66,23 @@ test.each(["control", "content", "watch"] as const)(
           const server = yield* Effect.acquireRelease(
             Effect.sync(() =>
               Bun.serve({
-                fetch: async (request) => handler(await prepare(request)),
+                fetch: async (request) => await handler(await prepare(request)),
                 hostname: "127.0.0.1",
                 idleTimeout: 0,
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           const iterations = kind === "watch" ? 17 : 5;
           for (let index = 0; index < iterations; index += 1) {
             entered = yield* Deferred.make<boolean>();
             closed = yield* Deferred.make<boolean>();
-            const abort = new AbortController();
+            // The connection scope owns the client signal; closing it disconnects.
+            const connection = yield* Scope.fork(yield* Effect.scope);
+            const signal = yield* Effect.abortSignal.pipe(
+              Scope.provide(connection)
+            );
             const body = JSON.stringify({
               _tag: "Request",
               headers: [],
@@ -88,15 +93,17 @@ test.each(["control", "content", "watch"] as const)(
             const request = fetch(`http://127.0.0.1:${server.port}`, {
               body: `${body}\n`,
               method: "POST",
-              signal: abort.signal,
+              signal,
             }).then(
               () => "response",
               () => "aborted"
             );
             yield* Deferred.await(entered).pipe(Effect.timeout("2 seconds"));
             expect(active).toBe(1);
-            abort.abort();
-            expect(yield* Effect.promise(() => request)).toBe("aborted");
+            yield* Scope.close(connection, Exit.void);
+            expect(yield* Effect.promise(async () => await request)).toBe(
+              "aborted"
+            );
             // Server/RPC scopes remain open. Disconnect alone must close work.
             yield* Deferred.await(closed).pipe(Effect.timeout("2 seconds"));
             expect(active).toBe(0);

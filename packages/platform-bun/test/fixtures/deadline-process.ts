@@ -11,12 +11,12 @@ import { Runner } from "../../src/runner.ts";
 import { writeReady } from "./ready.ts";
 
 const [directory, mode, readyFile] = process.argv.slice(2);
-if (!(directory && mode && readyFile)) {
+if (directory === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Missing fixture arguments");
 }
 const [variant, phase] = mode.split("-");
 const audit = new Database(path.join(directory, "audit.sqlite"));
-audit.exec(
+audit.run(
   "CREATE TABLE IF NOT EXISTS calls (id INTEGER PRIMARY KEY AUTOINCREMENT)"
 );
 const task = Task.make(
@@ -107,16 +107,17 @@ try {
             ? audit.query("SELECT id FROM calls LIMIT 1").get() !== null
             : current.status === "Waiting";
         if (phase === "start" && started && running) {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                result: started.payload,
-                runId: run.runId,
-                status: current.status,
-                waits: waits.map((wait) => wait.waitId),
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  result: started.payload,
+                  runId: run.runId,
+                  status: current.status,
+                  waits: waits.map((wait) => wait.waitId),
+                })
+              )
           );
           return yield* Effect.never;
         }
@@ -135,16 +136,17 @@ try {
           }
         }
         if (current.status === "Succeeded" || current.status === "TimedOut") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                result: started?.payload,
-                runId: run.runId,
-                status: current.status,
-                waits: waits.map((wait) => wait.waitId),
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  result: started?.payload,
+                  runId: run.runId,
+                  status: current.status,
+                  waits: waits.map((wait) => wait.waitId),
+                })
+              )
           );
           return;
         }

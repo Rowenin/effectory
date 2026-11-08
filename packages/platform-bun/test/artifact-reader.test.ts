@@ -72,11 +72,11 @@ async function withStore<A, E>(
 }
 test(
   "first access pins atomically against an existing reclaim plan; waits and new handles preserve protection",
-  () =>
-    withStore((f, directory) =>
+  async () =>
+    await withStore((f, directory) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Json.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Json.refSchema)(
           yield* f.lake.publish(
             producer.identity,
             "value",
@@ -161,11 +161,11 @@ test(
 
 test(
   "reader distinguishes schema upgrades, wrong principals and corrupt content",
-  () =>
-    withStore((f, directory) =>
+  async () =>
+    await withStore((f, directory) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Json.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Json.refSchema)(
           yield* f.lake.publish(
             producer.identity,
             "value",
@@ -212,8 +212,12 @@ test(
           (yield* consumer.binding.reader.query(Json, { versions: "latest" }))
             .rows
         ).toHaveLength(0);
-        yield* Effect.promise(() =>
-          writeFile(path.join(directory, "blobs", ref.digest), '{"n":9}')
+        yield* Effect.promise(
+          async () =>
+            await writeFile(
+              path.join(directory, "blobs", ref.digest),
+              '{"n":9}'
+            )
         );
         expect(
           yield* consumer.binding.reader.get(Json, ref).pipe(Effect.flip)
@@ -225,12 +229,12 @@ test(
 
 test(
   "binary reader verifies EOF and real storage completes saturated copy fan-out",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
         const source = Stream.succeed(new Uint8Array(150_000).fill(42));
-        const ref = Schema.decodeUnknownSync(Bytes.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
           yield* producer.binding.owner.publish(
             f.lake.publishBytes(producer.identity, "bytes", Bytes, source, {
               key: "original",
@@ -246,7 +250,7 @@ test(
           consumers,
           (consumer) =>
             Effect.gen(function* () {
-              const copied = Schema.decodeUnknownSync(Bytes.refSchema)(
+              const copied = yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
                 yield* consumer.binding.owner.publish(
                   f.lake.publishBytes(
                     consumer.identity,
@@ -271,8 +275,8 @@ test(
 
 test(
   "report obligations protect before materialization, track every status, and exempt source reads",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const run = yield* f.store.submit(
           {
@@ -311,7 +315,7 @@ test(
           taskId: "source",
           taskVersion: 1,
         };
-        const ref = Schema.decodeUnknownSync(Json.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Json.refSchema)(
           yield* f.lake.publish(
             identity,
             "value",
@@ -386,14 +390,14 @@ test(
 
 test(
   "1024 distinct external pins are idempotent and same-run reads are exempt",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
         const refs = [];
         for (let i = 0; i < 1025; i += 1) {
           refs.push(
-            Schema.decodeUnknownSync(Json.refSchema)(
+            yield* Schema.decodeUnknownEffect(Json.refSchema)(
               yield* f.lake.publish(
                 producer.identity,
                 "value",
@@ -442,11 +446,11 @@ test(
 
 test(
   "pin contention retries outside the transaction and reports Busy after its bounded wait",
-  () =>
-    withStore((f, directory) =>
+  async () =>
+    await withStore((f, directory) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Json.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Json.refSchema)(
           yield* f.lake.publish(
             producer.identity,
             "value",
@@ -459,29 +463,29 @@ test(
         const consumer = yield* f.admit("consumer");
         const competitor = new Database(path.join(directory, "state.sqlite"));
         yield* Effect.acquireUseRelease(
-          Effect.sync(() => competitor),
+          Effect.succeed(competitor),
           (db) =>
             Effect.gen(function* () {
-              db.exec("BEGIN IMMEDIATE");
+              db.run("BEGIN IMMEDIATE");
               const release = yield* Effect.forkChild(
                 Effect.sleep("60 millis").pipe(
-                  Effect.andThen(Effect.sync(() => db.exec("COMMIT")))
+                  Effect.andThen(Effect.sync(() => db.run("COMMIT")))
                 )
               );
               expect((yield* consumer.binding.reader.get(Json, ref)).n).toBe(1);
               yield* Fiber.join(release);
-              db.exec("BEGIN IMMEDIATE");
+              db.run("BEGIN IMMEDIATE");
               expect(
                 yield* consumer.binding.reader
                   .metadata(Json, ref)
                   .pipe(Effect.flip)
               ).toMatchObject({ _tag: "ArtifactUnavailable", reason: "Busy" });
-              db.exec("ROLLBACK");
+              db.run("ROLLBACK");
             }),
           (db) =>
             Effect.sync(() => {
               if (db.inTransaction) {
-                db.exec("ROLLBACK");
+                db.run("ROLLBACK");
               }
               db.close();
             })
@@ -493,11 +497,11 @@ test(
 
 test(
   "read-then-publish retains the shared group while a stream is open",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Bytes.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
           yield* producer.binding.owner.publish(
             f.lake.publishBytes(
               producer.identity,
@@ -554,11 +558,11 @@ test(
 
 test(
   "partial bytes consumption does not claim integrity, but full reads reject a changed blob",
-  () =>
-    withStore((f, directory) =>
+  async () =>
+    await withStore((f, directory) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Bytes.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
           yield* producer.binding.owner.publish(
             f.lake.publishBytes(
               producer.identity,
@@ -570,11 +574,12 @@ test(
           )
         );
         yield* f.store.project(producer.identity.runId, "Succeeded");
-        yield* Effect.promise(() =>
-          writeFile(
-            path.join(directory, "blobs", ref.digest),
-            new Uint8Array(150_000).fill(43)
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeFile(
+              path.join(directory, "blobs", ref.digest),
+              new Uint8Array(150_000).fill(43)
+            )
         );
         const consumer = yield* f.admit("consumer");
         const partial = yield* Stream.runCollect(
@@ -591,14 +596,14 @@ test(
 
 test(
   "query errors distinguish invalid expressions, invalid cursors and reclamation expiry",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
         const refs = [];
         for (let i = 0; i < 3; i += 1) {
           refs.push(
-            Schema.decodeUnknownSync(Json.refSchema)(
+            yield* Schema.decodeUnknownEffect(Json.refSchema)(
               yield* f.lake.publish(
                 producer.identity,
                 "value",
@@ -615,7 +620,7 @@ test(
           limit: 1,
           versions: "all",
         });
-        if (!first.cursor) {
+        if (first.cursor === null) {
           return yield* Effect.die("Missing fixture cursor");
         }
         expect(

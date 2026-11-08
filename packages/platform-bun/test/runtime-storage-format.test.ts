@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import {
   readLock,
@@ -21,8 +21,11 @@ import { publishRuntimeStorage } from "../src/upgrade-publication.ts";
 import { vaultFence } from "../src/upgrade-vault-fence.ts";
 import { fenceFixture } from "./fixtures/upgrade-fence-fixture.ts";
 
-const complete = (f: ReturnType<typeof fenceFixture>, original: boolean) =>
-  f.run(
+const complete = async (
+  f: ReturnType<typeof fenceFixture>,
+  original: boolean
+) =>
+  await f.run(
     Effect.gen(function* () {
       const journal = yield* makeUpgradeJournal(f.repository);
       yield* fileFence(f.repository, "Credentials", f.owner, "Protect");
@@ -176,7 +179,9 @@ test("foreign and unfinished receipt metadata never enables normal storage", asy
     await f.accept();
     await complete(f, false);
     const filename = path.join(f.state, "runtime-storage.json");
-    const value = JSON.parse(readFileSync(filename, "utf-8"));
+    const value = Schema.decodeSync(
+      Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+    )(readFileSync(filename, "utf-8"));
     writeFileSync(
       filename,
       JSON.stringify({ ...value, targetBuild: "c".repeat(64) })

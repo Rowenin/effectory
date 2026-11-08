@@ -7,7 +7,13 @@ import { ownershipLayer } from "../../src/ownership.ts";
 import { makeUpgradeJournal } from "../../src/upgrade-journal.ts";
 
 const [root, planId, digest, stage, marker] = process.argv.slice(2);
-if (!root || !planId || !digest || !stage || !marker) {
+if (
+  root === undefined ||
+  planId === undefined ||
+  digest === undefined ||
+  stage === undefined ||
+  marker === undefined
+) {
   throw new Error("Missing journal fixture arguments");
 }
 const build = "b".repeat(64);

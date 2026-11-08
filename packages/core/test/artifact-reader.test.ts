@@ -89,9 +89,9 @@ test("fixtures, own publications, latest and query pages share a store across te
           const reader = yield* ArtifactReader;
           return (yield* reader.get(
             Json,
-            Schema.decodeUnknownSync(Json.refSchema)(
+            yield* Schema.decodeUnknownEffect(Json.refSchema)(
               produced.publications[0]?.reference
-            )
+            ).pipe(Effect.orDie)
           )).count;
         })
       );
@@ -156,9 +156,9 @@ test("binary copies at concurrency eight use the same four-writer ordering as th
           const reader = yield* ArtifactReader;
           return (yield* reader.bytes(
             Bytes,
-            Schema.decodeUnknownSync(Bytes.refSchema)(
+            yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
               result.publications[0]?.reference
-            )
+            ).pipe(Effect.orDie)
           ))[0]!;
         })
       );

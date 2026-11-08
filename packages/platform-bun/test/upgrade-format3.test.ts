@@ -53,8 +53,8 @@ test.each(
           );
         })
       );
-      const resume = () =>
-        f.run(
+      const resume = async () =>
+        await f.run(
           Effect.gen(function* () {
             const journal = yield* makeUpgradeJournal(f.repository);
             const record = yield* journal.inspect(saved.plan.planId);

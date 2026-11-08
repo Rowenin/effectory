@@ -32,7 +32,13 @@ export function createPagination(secret: string, epoch?: () => number) {
     }
     const parts = cursor.split(".");
     const [body, signature] = parts;
-    if (!body || !signature || parts.length !== 2) {
+    if (
+      body === undefined ||
+      body === "" ||
+      signature === undefined ||
+      signature === "" ||
+      parts.length !== 2
+    ) {
       throw invalid();
     }
     const expected = createHmac("sha256", secret).update(body).digest();

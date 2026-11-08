@@ -31,7 +31,7 @@ import type { Lease } from "./ownership.ts";
 import { readRuntimeStorage } from "./runtime-storage-format.ts";
 import { isEmptyUpgradeVault } from "./upgrade-vault-fence.ts";
 
-const failure = (code: (typeof OperationError.Type)["code"], message: string) =>
+const failure = (code: OperationError["code"], message: string) =>
   new OperationError({ code, message });
 function required<A>(value: A | null | undefined): A {
   if (value === null || value === undefined) {
@@ -159,14 +159,14 @@ function keyFile(filename: string, keyId: string): Buffer {
   }
   const data: unknown = JSON.parse(readFileSync(filename, "utf-8"));
   if (
-    !data ||
+    data === null ||
     typeof data !== "object" ||
     Reflect.get(data, "keyId") !== keyId ||
     Reflect.get(data, "format") !== 1
   ) {
     throw failure("Unavailable", "Vault KeyMismatch: wrong key identity");
   }
-  const encoded = Reflect.get(data, "key");
+  const encoded: unknown = Reflect.get(data, "key");
   if (typeof encoded !== "string" || !/^[a-f0-9]{64}$/u.test(encoded)) {
     throw failure("Unavailable", "Vault KeyMismatch: invalid key material");
   }
@@ -282,15 +282,15 @@ export class VaultStore {
           sentinel.finalize();
         }
       }
-      db.exec(
+      db.run(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA secure_delete=OFF; PRAGMA journal_size_limit=1048576; PRAGMA busy_timeout=0;"
       );
       const pageSize = required(
         db.query<{ page_size: number }, []>("PRAGMA page_size").get()
       ).page_size;
-      db.exec(`PRAGMA max_page_count=${Math.floor(67_108_864 / pageSize)}`);
+      db.run(`PRAGMA max_page_count=${Math.floor(67_108_864 / pageSize)}`);
       db.transaction(() => {
-        db.exec(`CREATE TABLE IF NOT EXISTS vault_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), counter INTEGER NOT NULL, absence INTEGER NOT NULL);
+        db.run(`CREATE TABLE IF NOT EXISTS vault_meta (singleton INTEGER PRIMARY KEY CHECK(singleton=1), counter INTEGER NOT NULL, absence INTEGER NOT NULL);
         INSERT OR IGNORE INTO vault_meta VALUES(1,0,0);
         CREATE TABLE IF NOT EXISTS vault_identities (id TEXT PRIMARY KEY, key_id TEXT NOT NULL, state TEXT NOT NULL, check_mac TEXT);
         CREATE TABLE IF NOT EXISTS vault_values (vault TEXT NOT NULL, key TEXT NOT NULL, version INTEGER NOT NULL, value BLOB, PRIMARY KEY(vault,key));
@@ -298,7 +298,7 @@ export class VaultStore {
         CREATE INDEX IF NOT EXISTS vault_tombstones ON vault_values(vault,version) WHERE value IS NULL;
         PRAGMA user_version=${storage === null ? 1 : 2};`);
         if (emptyFence) {
-          db.exec("DROP TABLE effectory_upgrade_empty");
+          db.run("DROP TABLE effectory_upgrade_empty");
         }
       }).immediate();
       this.database = db;
@@ -336,7 +336,8 @@ export class VaultStore {
       identity.key_id
     );
     if (
-      !identity.check_mac ||
+      identity.check_mac === null ||
+      identity.check_mac === "" ||
       !equal(
         identity.check_mac,
         mac(root, `identity/${identity.key_id}/${vault}`)
@@ -731,7 +732,12 @@ export class VaultStore {
   }
   importKey(vault: string, input: string) {
     const identity = this.identity(vault);
-    if (!identity || identity.state !== "Ready" || !identity.check_mac) {
+    if (
+      !identity ||
+      identity.state !== "Ready" ||
+      identity.check_mac === null ||
+      identity.check_mac === ""
+    ) {
       throw failure(
         "NotFound",
         `Vault ${vault} has no initialized key identity`
@@ -821,7 +827,7 @@ export class VaultStore {
       }),
   };
   checkpoint() {
-    this.database?.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    this.database?.run("PRAGMA wal_checkpoint(TRUNCATE)");
   }
   close() {
     try {

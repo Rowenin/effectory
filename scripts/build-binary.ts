@@ -14,6 +14,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { Schema } from "effect";
+
 import { sourceAbi } from "../packages/platform-bun/src/host-runtime.ts";
 
 const releaseTargets = [
@@ -50,9 +52,9 @@ for (const script of [
   }
 }
 
-const { version } = JSON.parse(
-  readFileSync(path.join(root, "packages/cli/package.json"), "utf-8")
-) as { version: string };
+const { version } = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Struct({ version: Schema.String }))
+)(readFileSync(path.join(root, "packages/cli/package.json"), "utf-8"));
 const abi = sourceAbi();
 mkdirSync(outdir, { recursive: true });
 

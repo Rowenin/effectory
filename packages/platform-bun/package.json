@@ -17,10 +17,10 @@
     "./upgrade": "./src/upgrade-commands.ts"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.5",
-    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/sql-sqlite-bun": "4.1.2",
     "@effectory/runtime": "workspace:*",
     "@offtree/effectory-sdk": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.1.2"
   }
 }

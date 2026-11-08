@@ -13,9 +13,11 @@ export const main = path.resolve(import.meta.dir, "../../../cli/src/main.ts");
  * The CLI under test. Set EFFECTORY_BINARY to a compiled executable to run the
  * process-level suites against it instead of the source entry point.
  */
-export const effectory: readonly string[] = process.env.EFFECTORY_BINARY
-  ? [path.resolve(process.env.EFFECTORY_BINARY)]
-  : [process.execPath, main];
+const binary = process.env.EFFECTORY_BINARY;
+export const effectory: readonly string[] =
+  binary !== undefined && binary !== ""
+    ? [path.resolve(binary)]
+    : [process.execPath, main];
 export async function cli(repository: string, args: readonly string[]) {
   const process = Bun.spawn(
     [...effectory, ...args, "--repository", repository, "--json"],

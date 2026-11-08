@@ -7,27 +7,39 @@ import { Effect, Schema } from "effect";
 import { Endpoint } from "./daemon.ts";
 import { readStoredCredentials } from "./runtime-storage-format.ts";
 
-export const connectionConfig = (repository: string) =>
-  Effect.try({
-    catch: () =>
-      new OperationError({
-        code: "Unavailable",
-        message: "Daemon connection metadata is unavailable",
-      }),
-    try: () => {
-      const directory = path.join(repository, ".effectory");
-      const credentials = readStoredCredentials(repository);
-      const endpoint = Schema.decodeUnknownSync(Endpoint)(
-        JSON.parse(readFileSync(path.join(directory, "daemon.json"), "utf-8"))
-      );
-      const url = new URL(endpoint.url);
-      if (
-        url.protocol !== "http:" ||
-        url.hostname !== "127.0.0.1" ||
-        url.pathname !== "/rpc"
-      ) {
-        throw new Error("Invalid endpoint");
-      }
-      return { ...credentials, ...endpoint };
-    },
+const unavailable = () =>
+  new OperationError({
+    code: "Unavailable",
+    message: "Daemon connection metadata is unavailable",
   });
+
+export const connectionConfig = (repository: string) =>
+  Effect.gen(function* () {
+    const { credentials, raw } = yield* Effect.try({
+      catch: unavailable,
+      try: () => ({
+        credentials: readStoredCredentials(repository),
+        raw: JSON.parse(
+          readFileSync(
+            path.join(repository, ".effectory", "daemon.json"),
+            "utf-8"
+          )
+        ) as unknown,
+      }),
+    });
+    const endpoint = yield* Schema.decodeUnknownEffect(Endpoint)(raw);
+    return yield* Effect.try({
+      catch: unavailable,
+      try: () => {
+        const url = new URL(endpoint.url);
+        if (
+          url.protocol !== "http:" ||
+          url.hostname !== "127.0.0.1" ||
+          url.pathname !== "/rpc"
+        ) {
+          throw new Error("Invalid endpoint");
+        }
+        return { ...credentials, ...endpoint };
+      },
+    });
+  }).pipe(Effect.mapError(unavailable));

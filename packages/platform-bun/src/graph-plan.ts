@@ -49,7 +49,17 @@ export function graphPlan(
           workflowId: node.workflow.id,
         };
       }
+      case "Approval":
+      case "AwaitSignal":
+      case "Input":
+      case "Map":
+      case "Signal":
+      case "SignalRegistration":
+      case "Sleep": {
+        return common;
+      }
       default: {
+        // Kinds unknown to this host still receive the common plan shape.
         return common;
       }
     }

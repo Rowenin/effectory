@@ -6,7 +6,7 @@ import path from "node:path";
 import { OperationError } from "@effectory/runtime/protocol";
 import { Hello, ServerHello, ServerStatus } from "@effectory/runtime/rpc";
 import type { RunWatchFrame } from "@effectory/runtime/watch-rpc";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { HttpEffect } from "effect/http";
 import { Rpc, RpcGroup, RpcSerialization, RpcServer } from "effect/rpc";
 
@@ -16,6 +16,10 @@ import {
   watchLineLimit,
   guardWatchFrame,
 } from "../../platform-bun/src/watch-plane.ts";
+
+const EventLine = Schema.Struct({
+  event: Schema.Struct({ sequence: Schema.Int }),
+});
 
 const event = (
   sequence: number,
@@ -100,13 +104,13 @@ test("oversized event CLI preserves preceding output and prints explicit skip wi
               Bun.serve({
                 fetch: async (request) =>
                   new URL(request.url).pathname.startsWith("/rpc/watch")
-                    ? watch(await watchRequest(request))
-                    : handler(request),
+                    ? await watch(await watchRequest(request))
+                    : await handler(request),
                 hostname: "127.0.0.1",
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           mkdirSync(path.join(repository, ".effectory"));
           writeFileSync(
@@ -156,7 +160,11 @@ test("oversized event CLI preserves preceding output and prints explicit skip wi
                 result.stdout
                   .trim()
                   .split("\n")
-                  .map((line) => JSON.parse(line).event.sequence)
+                  .map(
+                    (line) =>
+                      Schema.decodeUnknownSync(EventLine)(JSON.parse(line))
+                        .event.sequence
+                  )
               ).toEqual([1, 2]);
             }
           }

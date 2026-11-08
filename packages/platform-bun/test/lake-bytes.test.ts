@@ -90,8 +90,8 @@ function content(frames: readonly DownloadFrame[]) {
   );
 }
 
-test("binary publication preserves empty and non-UTF8 content across chunk boundaries and exact retry", () =>
-  withLake((f) =>
+test("binary publication preserves empty and non-UTF8 content across chunk boundaries and exact retry", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const bytes = new Uint8Array(196_613);
@@ -160,8 +160,8 @@ test("binary publication preserves empty and non-UTF8 content across chunk bound
     })
   ));
 
-test("binary cap accepts exactly 16 MiB and rejects a source exceeding it before metadata commit", () =>
-  withLake((f) =>
+test("binary cap accepts exactly 16 MiB and rejects a source exceeding it before metadata commit", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const bytes = new Uint8Array(16_777_216).fill(149);
@@ -190,8 +190,8 @@ test("binary cap accepts exactly 16 MiB and rejects a source exceeding it before
     })
   ));
 
-test("artifact kind and MIME drift require a schema version change", () =>
-  withLake((f) =>
+test("artifact kind and MIME drift require a schema version change", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const bytes = Stream.succeed(new Uint8Array([49]));
@@ -233,8 +233,8 @@ test("artifact kind and MIME drift require a schema version change", () =>
     })
   ));
 
-test("source failures and interruption finalize the source without publishing partial metadata", () =>
-  withLake((f) =>
+test("source failures and interruption finalize the source without publishing partial metadata", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const sourceError = { _tag: "SourceFailed" } as const;
@@ -285,8 +285,8 @@ test("source failures and interruption finalize the source without publishing pa
     })
   ));
 
-test("an opened download survives reclamation while later downloads see the tombstone", () =>
-  withLake((f) =>
+test("an opened download survives reclamation while later downloads see the tombstone", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const bytes = new Uint8Array(262_147).fill(211);
@@ -335,8 +335,8 @@ test("an opened download survives reclamation while later downloads see the tomb
     })
   ));
 
-test("JSON and bytes share physical digests safely and get/download route errors use metadata", () =>
-  withLake((f) =>
+test("JSON and bytes share physical digests safely and get/download route errors use metadata", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const json = Artifact.make({
@@ -387,8 +387,8 @@ test("JSON and bytes share physical digests safely and get/download route errors
     })
   ));
 
-test("downloads reject corrupted content and byte get refuses before attempting a content read", () =>
-  withLake((f) =>
+test("downloads reject corrupted content and byte get refuses before attempting a content read", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const ref = yield* f.lake.publishBytes(
@@ -410,8 +410,8 @@ test("downloads reject corrupted content and byte get refuses before attempting 
     })
   ));
 
-test("four active writers defer the fifth source until interruption releases a slot", () =>
-  withLake((f) =>
+test("four active writers defer the fifth source until interruption releases a slot", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const firstFour = Array.from({ length: 4 }, () =>
@@ -465,14 +465,16 @@ test("four active writers defer the fifth source until interruption releases a s
     })
   ));
 
-test("a producer-owned buffer changing during asynchronous writes cannot corrupt the content digest", () =>
-  withLake((f) =>
+test("a producer-owned buffer changing during asynchronous writes cannot corrupt the content digest", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const bytes = new Uint8Array(262_144).fill(7);
       const source = Stream.fromEffect(
         Effect.sync(() => {
-          queueMicrotask(() => bytes.fill(99));
+          queueMicrotask(() => {
+            bytes.fill(99);
+          });
           return bytes;
         })
       );
@@ -489,8 +491,8 @@ test("a producer-owned buffer changing during asynchronous writes cannot corrupt
     })
   ));
 
-test("binary retention preserves newest, survives reopening, and never reuses a reclaimed version", () =>
-  withLake((f) =>
+test("binary retention preserves newest, survives reopening, and never reuses a reclaimed version", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const first = yield* f.producer();
       const old = yield* f.lake.publishBytes(
@@ -555,8 +557,8 @@ test("binary retention preserves newest, survives reopening, and never reuses a 
     })
   ));
 
-test("failed metadata commits remove owned installations but preserve shared content", () =>
-  withLake((f) =>
+test("failed metadata commits remove owned installations but preserve shared content", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const identity = yield* f.producer();
       const existing = new Uint8Array([11, 12]);
@@ -568,7 +570,7 @@ test("failed metadata commits remove owned installations but preserve shared con
         { key: "retained" }
       );
       const fresh = new Uint8Array([21, 22]);
-      f.database.exec(
+      f.database.run(
         "CREATE TRIGGER byte_commit_fault BEFORE INSERT ON lake_records BEGIN SELECT RAISE(ABORT,'binary metadata failure'); END"
       );
       const failure = yield* f.lake
@@ -585,7 +587,7 @@ test("failed metadata commits remove owned installations but preserve shared con
         .pipe(Effect.flip);
       expect(existsSync(path.join(f.blobs, retained.digest))).toBe(true);
       expect(f.records()).toBe(1);
-      f.database.exec("DROP TRIGGER byte_commit_fault");
+      f.database.run("DROP TRIGGER byte_commit_fault");
       const retry = yield* f.lake.publishBytes(
         identity,
         "bytes",
@@ -615,33 +617,29 @@ function awaitVerification(
       if (
         f.database
           .query("SELECT stage FROM lake_binary_installs WHERE digest = ?")
-          .get(reference.digest)
+          .get(reference.digest) !== null
       ) {
         for (const entry of readdirSync("/dev/fd")) {
           if (!/^\d+$/u.test(entry)) {
             continue;
           }
           const fd = Number(entry);
-          try {
-            const stat = fstatSync(fd);
-            if (
-              stat.isFile() &&
-              stat.dev === original.dev &&
-              stat.ino === original.ino
-            ) {
-              return { fd, original };
-            }
-          } catch (error) {
-            // The directory includes descriptors that unrelated runtime IO may close.
-            if (
-              !(
-                typeof error === "object" &&
-                error !== null &&
-                Reflect.get(error, "code") === "EBADF"
-              )
-            ) {
-              throw error;
-            }
+          const stat = yield* Effect.try(() => fstatSync(fd)).pipe(
+            Effect.catch(({ cause }) =>
+              // The directory includes descriptors that unrelated runtime IO may close.
+              typeof cause === "object" &&
+              cause !== null &&
+              Reflect.get(cause, "code") === "EBADF"
+                ? Effect.undefined
+                : Effect.die(cause)
+            )
+          );
+          if (
+            stat?.isFile() === true &&
+            stat.dev === original.dev &&
+            stat.ino === original.ino
+          ) {
+            return { fd, original };
           }
         }
       }
@@ -650,8 +648,8 @@ function awaitVerification(
   }).pipe(Effect.timeout("5 seconds"));
 }
 
-test("a verified writer relinks staging after reclamation unlinks its still-open source", () =>
-  withLake((f) =>
+test("a verified writer relinks staging after reclamation unlinks its still-open source", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const bytes = new Uint8Array(16_777_216).fill(71);
       const originalProducer = yield* f.producer();
@@ -702,8 +700,8 @@ test("a verified writer relinks staging after reclamation unlinks its still-open
     })
   ));
 
-test("a writer re-verifies a replaced digest pathname instead of trusting the held old inode", () =>
-  withLake((f) =>
+test("a writer re-verifies a replaced digest pathname instead of trusting the held old inode", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const bytes = new Uint8Array(16_777_216).fill(73);
       const originalProducer = yield* f.producer();

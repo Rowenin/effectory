@@ -20,8 +20,7 @@ import { RunWatcher } from "./run-watch.ts";
 
 export const watchLineLimit = 2_097_152;
 
-const Envelope = Schema.Struct({
-  _tag: Schema.Literal("Request"),
+const Envelope = Schema.TaggedStruct("Request", {
   headers: Schema.Array(Schema.Tuple([Schema.String, Schema.String])),
   id: Schema.Union([Schema.String, Schema.Finite]),
   payload: RunWatchRequest,

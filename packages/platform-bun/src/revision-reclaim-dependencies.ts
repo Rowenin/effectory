@@ -50,15 +50,14 @@ export function inspectReclaimDependencies(
 ) {
   return Effect.gen(function* () {
     const scanner = upgradeScanner(database, budget);
+    type Kind = Parameters<ProtectRevision>[1];
+    interface Reason {
+      count: number;
+      examples: string[];
+    }
     const protections = new Map<
       string,
-      {
-        count: number;
-        reasons: Map<
-          Parameters<ProtectRevision>[1],
-          { count: number; examples: string[] }
-        >;
-      }
+      { count: number; reasons: Map<Kind, Reason> }
     >();
     const inventory = new Set(retained);
     const protect: ProtectRevision = (revision, kind, id) => {
@@ -69,7 +68,7 @@ export function inspectReclaimDependencies(
       }
       const group = protections.get(revision) ?? {
         count: 0,
-        reasons: new Map(),
+        reasons: new Map<Kind, Reason>(),
       };
       const reason = group.reasons.get(kind) ?? { count: 0, examples: [] };
       if (group.count < 20) {
@@ -151,10 +150,10 @@ export function inspectReclaimDependencies(
         protect(row.revision, "Run", row.runId);
       }
     );
-    const scanOwned = <S extends Schema.Codec<unknown, unknown, never, never>>(
+    const scanOwned = (
       table: string,
       sql: string,
-      schema: S
+      schema: Schema.Codec<unknown, unknown>
     ) =>
       tables.has(table)
         ? scanner.scan(

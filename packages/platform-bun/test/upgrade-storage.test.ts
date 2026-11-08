@@ -95,7 +95,7 @@ test("upgrade inspection preserves crash-left committed WAL and source bytes wit
           );
           expect(inspection.files.map((file) => file.suffix)).toContain("-shm");
           expect(() =>
-            inspection.database.exec("UPDATE marker SET value='changed'")
+            inspection.database.run("UPDATE marker SET value='changed'")
           ).toThrow();
           return inspection.database.query("SELECT value FROM marker").get();
         })
@@ -177,7 +177,7 @@ test("checkpointed storage inspection is scope-owned even when the caller fails"
   let captured = "";
   try {
     const db = new Database(filename);
-    db.exec(
+    db.run(
       "CREATE TABLE marker(value TEXT); INSERT INTO marker VALUES('clean')"
     );
     db.close();

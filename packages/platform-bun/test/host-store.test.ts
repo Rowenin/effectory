@@ -38,8 +38,8 @@ const submission = {
 const validateString = (value: Schema.Json) =>
   Schema.decodeUnknownSync(Schema.String)(value);
 
-test("acceptance commits one dispatch intent and retries retain the original revision", () =>
-  withStore((store) =>
+test("acceptance commits one dispatch intent and retries retain the original revision", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const first = yield* store.submit(submission, "revision-one", "owner");
       const second = yield* store.submit(submission, "revision-two", "owner");
@@ -58,8 +58,8 @@ test("acceptance commits one dispatch intent and retries retain the original rev
     })
   ));
 
-test("wait answers validate before commit, have stable receipts and queue continuation once", () =>
-  withStore((store) =>
+test("wait answers validate before commit, have stable receipts and queue continuation once", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const wait = yield* store.openWait({
@@ -111,8 +111,8 @@ test("wait answers validate before commit, have stable receipts and queue contin
     })
   ));
 
-test("delivery enforces expiry and commits timeout even when delivery returns an error", () =>
-  withStore((store) =>
+test("delivery enforces expiry and commits timeout even when delivery returns an error", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const wait = yield* store.openWait({
@@ -142,8 +142,8 @@ test("delivery enforces expiry and commits timeout even when delivery returns an
     })
   ));
 
-test("cancel closes open waits and a late answer cannot revive them", () =>
-  withStore((store) =>
+test("cancel closes open waits and a late answer cannot revive them", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const wait = yield* store.openWait({
@@ -180,8 +180,8 @@ test("cancel closes open waits and a late answer cannot revive them", () =>
     })
   ));
 
-test("attempt admission holds uncertain manual work but permits idempotent recovery", () =>
-  withStore((store) =>
+test("attempt admission holds uncertain manual work but permits idempotent recovery", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       expect(yield* store.admitAttempt(run.runId, "manual", 1, "manual")).toBe(
@@ -208,8 +208,8 @@ test("attempt admission holds uncertain manual work but permits idempotent recov
     })
   ));
 
-test("stale live projections cannot overwrite cancellation or stalled finalization", () =>
-  withStore((store) =>
+test("stale live projections cannot overwrite cancellation or stalled finalization", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       yield* store.project(run.runId, "Running");
@@ -239,8 +239,8 @@ test("stale live projections cannot overwrite cancellation or stalled finalizati
     })
   ));
 
-test("a stop fence protects live projection even before its status is reconciled", () =>
-  withStore((store) =>
+test("a stop fence protects live projection even before its status is reconciled", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       yield* store.project(run.runId, "Waiting");
@@ -261,8 +261,8 @@ test("a stop fence protects live projection even before its status is reconciled
     })
   ));
 
-test("repeated terminal projections do not duplicate events or rewrite success", () =>
-  withStore((store) =>
+test("repeated terminal projections do not duplicate events or rewrite success", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       yield* store.project(run.runId, "Succeeded", "done");
@@ -275,8 +275,8 @@ test("repeated terminal projections do not duplicate events or rewrite success",
     })
   ));
 
-test("cancellation receipts retain the original request, enforce actor scope, and bound duplicate history", () =>
-  withStore((store) =>
+test("cancellation receipts retain the original request, enforce actor scope, and bound duplicate history", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const request = {
@@ -322,8 +322,8 @@ test("cancellation receipts retain the original request, enforce actor scope, an
     })
   ));
 
-test("run history pages exclude new admissions, bind filters/principals and expose current projections", () =>
-  withStore((store) =>
+test("run history pages exclude new admissions, bind filters/principals and expose current projections", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const initial = [];
       for (let index = 0; index < 4; index += 1) {
@@ -382,8 +382,8 @@ test("run history pages exclude new admissions, bind filters/principals and expo
     })
   ));
 
-test("watch hands off a live snapshot to terminal history without gaps and resumes by event sequence", () =>
-  withStore((store) =>
+test("watch hands off a live snapshot to terminal history without gaps and resumes by event sequence", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const watcher = createRunWatcher(store);
@@ -439,8 +439,8 @@ test("watch hands off a live snapshot to terminal history without gaps and resum
     })
   ));
 
-test("watch bounds observer slots, authorizes before admission and releases interrupted observers", () =>
-  withStore((store) =>
+test("watch bounds observer slots, authorizes before admission and releases interrupted observers", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const watcher = createRunWatcher(store);
@@ -480,8 +480,8 @@ test("watch bounds observer slots, authorizes before admission and releases inte
     })
   ));
 
-test("event pages bind their original high-water mark and stop at the byte budget", () =>
-  withStore((store) =>
+test("event pages bind their original high-water mark and stop at the byte budget", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       for (let index = 0; index < 150; index += 1) {
@@ -536,8 +536,8 @@ test("event pages bind their original high-water mark and stop at the byte budge
     })
   ));
 
-test("wait pages support open defaults, current settlements, fixed membership and private detail reads", () =>
-  withStore((store) =>
+test("wait pages support open defaults, current settlements, fixed membership and private detail reads", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const waits = [];
@@ -612,8 +612,8 @@ test("wait pages support open defaults, current settlements, fixed membership an
     })
   ));
 
-test("telemetry stays within a per-run budget while lifecycle events and filtered log pages remain available", () =>
-  withStore((store) =>
+test("telemetry stays within a per-run budget while lifecycle events and filtered log pages remain available", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       for (let index = 0; index < 1005; index += 1) {
@@ -668,8 +668,8 @@ test("telemetry stays within a per-run budget while lifecycle events and filtere
     })
   ));
 
-test("drain commits before admission closes, keeps duplicate receipts and leaves replacement instances accepting", () =>
-  withStore((store) =>
+test("drain commits before admission closes, keeps duplicate receipts and leaves replacement instances accepting", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       yield* store.beginInstance("first");
       const accepted = yield* store.submit(submission, "revision", "owner");
@@ -708,8 +708,8 @@ test("drain commits before admission closes, keeps duplicate receipts and leaves
     })
   ));
 
-test("wait decisions authorize the run owner before looking up a receipt or closing an open wait", () =>
-  withStore((store) =>
+test("wait decisions authorize the run owner before looking up a receipt or closing an open wait", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const wait = yield* store.openWait({
@@ -743,8 +743,8 @@ test("wait decisions authorize the run owner before looking up a receipt or clos
     })
   ));
 
-test("oversized normalized wait answers fail before settlement and retain the original answer key", () =>
-  withStore((store) =>
+test("oversized normalized wait answers fail before settlement and retain the original answer key", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const run = yield* store.submit(submission, "revision", "owner");
       const wait = yield* store.openWait({

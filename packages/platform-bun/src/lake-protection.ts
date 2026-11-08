@@ -14,17 +14,17 @@ export function initializeReadProtection(database: Database) {
   initializeRetiredRuns(database);
   database
     .transaction(() => {
-      database.exec(`
+      database.run(`
       CREATE TABLE IF NOT EXISTS lake_consumer_pins (
         consumerRunId TEXT NOT NULL, sequence INTEGER NOT NULL REFERENCES lake_records(sequence),
         PRIMARY KEY(consumerRunId,sequence)
       );
       CREATE INDEX IF NOT EXISTS lake_consumer_version ON lake_consumer_pins(sequence,consumerRunId);
     `);
-      database.exec(
+      database.run(
         "CREATE TABLE IF NOT EXISTS lake_report_holds (sequence INTEGER PRIMARY KEY, sourceRunId TEXT NOT NULL); CREATE INDEX IF NOT EXISTS lake_report_source ON lake_report_holds(sourceRunId,sequence)"
       );
-      database.exec(
+      database.run(
         "CREATE TABLE IF NOT EXISTS lake_pin_cleanup (runId TEXT PRIMARY KEY)"
       );
       if (
@@ -32,9 +32,9 @@ export function initializeReadProtection(database: Database) {
           .query(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='host_runs'"
           )
-          .get()
+          .get() !== null
       ) {
-        database.exec(`
+        database.run(`
         CREATE TRIGGER IF NOT EXISTS lake_consumer_terminal AFTER UPDATE OF status ON host_runs
         WHEN NEW.status IN (${unfinished}) BEGIN
           INSERT OR IGNORE INTO lake_pin_cleanup SELECT NEW.runId
@@ -48,15 +48,15 @@ export function initializeReadProtection(database: Database) {
       // HostStore creates report tables before the lake. Small standalone lake
       // fixtures predating reports are also supported.
       if (
-        !database
+        database
           .query(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='host_reports'"
           )
-          .get()
+          .get() === null
       ) {
         return;
       }
-      database.exec(`
+      database.run(`
       CREATE TABLE IF NOT EXISTS lake_report_holds (
         sequence INTEGER PRIMARY KEY REFERENCES host_reports(sequence) ON DELETE CASCADE,
         sourceRunId TEXT NOT NULL
@@ -137,7 +137,7 @@ export function cleanupReadPins(database: Database) {
       const raw = database
         .query("SELECT runId FROM lake_pin_cleanup ORDER BY runId LIMIT 1")
         .get();
-      if (!raw) {
+      if (raw === null) {
         return;
       }
       const { runId } = Schema.decodeUnknownSync(

@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 const root = path.resolve(
   import.meta.dir,
   "../packages/cli/assets/effectory-build"
@@ -25,7 +27,9 @@ function visit(directory: string) {
 }
 visit(root);
 if (process.argv.includes("--check")) {
-  const saved = JSON.parse(readFileSync(output, "utf-8"));
+  const saved = Schema.decodeSync(
+    Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+  )(readFileSync(output, "utf-8"));
   const keys = Object.keys(files).toSorted();
   if (
     keys.length !== Object.keys(saved).length ||

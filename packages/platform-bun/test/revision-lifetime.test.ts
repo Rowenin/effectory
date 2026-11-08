@@ -38,12 +38,12 @@ test("revision Layers release after scoped borrowers and restart loads only the 
     await Effect.runPromise(
       Effect.gen(function* () {
         const catalog = yield* Catalog;
-        yield* Effect.promise(() =>
-          writeFile(filename, source("second", marker))
+        yield* Effect.promise(
+          async () => await writeFile(filename, source("second", marker))
         );
         const stale = yield* catalog.prepare();
-        yield* Effect.promise(() =>
-          writeFile(filename, source("third", marker))
+        yield* Effect.promise(
+          async () => await writeFile(filename, source("third", marker))
         );
         expect((yield* Effect.result(catalog.activate(stale)))._tag).toBe(
           "Failure"
@@ -100,10 +100,12 @@ test("manifest publication failure closes the newly loaded application before pr
             'record("acquire")',
             'record("acquire").pipe(Effect.tap(() => Effect.sync(() => mkdirSync(new URL("./manifest.json", import.meta.url)))))'
           );
-        yield* Effect.promise(() => writeFile(filename, broken));
+        yield* Effect.promise(async () => await writeFile(filename, broken));
         expect((yield* Effect.result(catalog.prepare()))._tag).toBe("Failure");
         expect(catalog.active).toBe(active);
-        const text = yield* Effect.promise(() => readFile(marker, "utf-8"));
+        const text = yield* Effect.promise(
+          async () => await readFile(marker, "utf-8")
+        );
         expect(text.trim().split("\n")).toEqual([
           "acquire:first",
           "acquire:broken",

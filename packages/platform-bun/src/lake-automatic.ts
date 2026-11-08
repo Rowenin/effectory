@@ -140,7 +140,7 @@ export function createAutomaticRetention(
             "SELECT id,planId,digest,bytes,started FROM lake_reclamation_unlinks WHERE id=? AND state='Pending'"
           )
           .get(job.id);
-        if (!pending) {
+        if (pending === null) {
           return;
         }
         try {
@@ -186,17 +186,18 @@ export function createAutomaticRetention(
     }),
     automaticSet: (value: typeof AutomaticReclamationSet.Type) =>
       Effect.gen(function* () {
-        const request = yield* Effect.try({
-          catch: () =>
-            new OperationError({
-              code: "InvalidInput",
-              message: "Invalid automatic retention setting",
-            }),
-          try: () =>
-            Schema.decodeUnknownSync(AutomaticReclamationSet)(value, {
-              onExcessProperty: "error",
-            }),
-        });
+        const request = yield* Schema.decodeEffect(AutomaticReclamationSet)(
+          value,
+          { onExcessProperty: "error" }
+        ).pipe(
+          Effect.mapError(
+            () =>
+              new OperationError({
+                code: "InvalidInput",
+                message: "Invalid automatic retention setting",
+              })
+          )
+        );
         const now = yield* Clock.currentTimeMillis;
         return yield* transaction(() => {
           const state = automaticState(database);

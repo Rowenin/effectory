@@ -6,6 +6,10 @@ const escaped = /^\\(?:u\{[\da-f]+\}|u[\da-f]{4}|["\\/bfnrt])/iu;
 const limit = 2048;
 const suffix = "… [truncated]";
 
+/** Counts Unicode code points, matching string iteration. */
+export const codePointLength = (text: string) =>
+  text.match(/./gsu)?.length ?? 0;
+
 /** Escape before limiting, retaining whole code points and whole escape tokens. */
 function bounded(text: string) {
   const tokens: string[] = [];
@@ -30,14 +34,14 @@ function bounded(text: string) {
         consumed = token.length;
       }
     }
-    const size = [...token].length;
+    const size = codePointLength(token);
     if (length + size > limit) {
       while (length + suffix.length > limit) {
         const removed = tokens.pop();
         if (removed === undefined) {
           break;
         }
-        length -= [...removed].length;
+        length -= codePointLength(removed);
       }
       return tokens.join("") + suffix;
     }
@@ -137,7 +141,7 @@ function details(tag: string, payload: Schema.Json) {
       node();
       count("attempt", "nextAttempt=");
       const deadline = deadlineLabel(field("deadline"));
-      if (deadline) {
+      if (deadline !== undefined) {
         parts.push(deadline);
       }
       break;

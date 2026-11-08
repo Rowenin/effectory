@@ -31,7 +31,7 @@ test("execution identity is independent of build provenance but neither a shared
   expect(
     executionCompatibility(revisionExecutionIdentity(legacy), policy)
   ).toBe("Unavailable");
-  const modern = Schema.decodeUnknownSync(RevisionManifest)({
+  const modern = Schema.decodeSync(RevisionManifest)({
     ...legacy,
     executionContract,
     format: 3,
@@ -104,35 +104,31 @@ test("production policy has no unproved predecessor mappings, and metadata decod
   expect(policy.certified).toEqual(runtimeCertifications());
   expect(runtimeCertifications("linux", "arm64")).toEqual([]);
   expect(runtimeCertifications("darwin", "x64")).toEqual([]);
-  const edges = runtimeCertifications("darwin", "arm64");
-  const edge = edges.find(
-    (candidate) =>
-      candidate.source.build ===
-      "9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97"
-  );
-  expect(edge?.sourceStorage).toBe(1);
-  const modern = edges.find(
-    (candidate) =>
-      candidate.source.build ===
-      "677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc"
-  );
-  expect(modern?.sourceStorage).toBe(2);
-  expect(modern?.source.contract).toBe(executionContract);
-  expect(
-    edges
-      .filter(
-        (candidate) =>
-          candidate.source.build ===
-          "fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2"
-      )
-      .map((candidate) => candidate.sourceStorage)
-      .toSorted()
-  ).toEqual([1, 3]);
+  // The v0.1.0 release executables, and only their fresh storage format.
+  for (const [platform, architecture] of [
+    ["darwin", "arm64"],
+    ["linux", "x64"],
+  ] as const) {
+    const edges = runtimeCertifications(platform, architecture);
+    expect(edges.map((edge) => edge.sourceStorage)).toEqual([1]);
+    expect(edges[0]?.source).toEqual({
+      build: "a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9",
+      contract: executionContract,
+      effect: "4.0.5",
+    });
+    expect(runtimeExecutionPolicy().current.effect).toBe(
+      edges[0]?.targetEffect ?? "missing"
+    );
+  }
   expect(() => assertRevisionExecutable("retained", legacy)).toThrow(
     "legacy host build"
   );
   expect(() =>
-    assertRevisionExecutable("current", { ...legacy, hostAbi: hostAbi() })
+    assertRevisionExecutable("current", {
+      ...legacy,
+      effectVersion: runtimeExecutionPolicy().current.effect,
+      hostAbi: hostAbi(),
+    })
   ).not.toThrow();
   for (const manifest of [
     { ...legacy, format: 4 },

@@ -46,10 +46,12 @@ for (const sourceKind of ["scope", "layer"] as const) {
           yield* storage.publish(Json, "inner", { key: "inner" });
           return new Uint8Array([1, 2, 3]);
         });
+        // A real Layer (not provideServiceEffect) so its own scope releases the source.
+        const sourceLayer = Layer.effect(Source, bytes);
         const source =
           sourceKind === "scope"
             ? Effect.scoped(bytes)
-            : Source.pipe(Effect.provide(Layer.effect(Source, bytes)));
+            : Source.pipe(Effect.provide(sourceLayer));
         yield* storage.publish(Bytes, Stream.fromEffect(source), {
           key: "outer",
         });
@@ -144,7 +146,7 @@ for (const stop of ["failure", "timeout"] as const) {
 
 test("capturing an operation Context does not suppress later acquisition-scope closure", async () => {
   const owner = publicationLifetime();
-  const captured = await Effect.runPromise(owner.run(Effect.context<never>()));
+  const captured = await Effect.runPromise(owner.run(Effect.context()));
   await Effect.runPromise(
     Effect.scoped(owner.run(Effect.void).pipe(Effect.provideContext(captured)))
   );

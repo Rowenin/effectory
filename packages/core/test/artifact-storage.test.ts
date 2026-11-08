@@ -45,7 +45,7 @@ function runtime(publish: Task.RuntimeContext["publish"]): Task.RuntimeContext {
 
 const fake = ArtifactStorage.of({
   publish: (artifact, _value, options) =>
-    Schema.decodeUnknownEffect(artifact.refSchema)({
+    Schema.decodeEffect(artifact.refSchema)({
       artifactId: `fake/${options.key}`,
       digest: "fake-digest",
       schemaId: artifact.id,
@@ -337,7 +337,7 @@ export function storageTypeProof() {
     { id: "replacement", target: Task.contract(spec) },
     () => Effect.as(standalone, null)
   );
-  const closed: Task.Definition<typeof spec, never> = implementation;
+  const closed: Task.Definition<typeof spec> = implementation;
   return { closed, needed };
 }
 
@@ -472,10 +472,8 @@ test("concurrent invocations and repeated attempts keep storage and metadata iso
   ]);
   expect(captured[0]).not.toBe(captured[1]);
   const errors = await Effect.runPromise(
-    Effect.all(
-      captured.map((storage) =>
-        storage.publish(Report, { count: 2 }, { key: "late" }).pipe(Effect.flip)
-      )
+    Effect.forEach(captured, (storage) =>
+      storage.publish(Report, { count: 2 }, { key: "late" }).pipe(Effect.flip)
     )
   );
   expect(errors.map((error) => error.message)).toEqual([

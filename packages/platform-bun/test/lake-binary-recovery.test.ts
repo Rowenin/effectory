@@ -60,8 +60,8 @@ for (const phase of [
   "unlink-before-resolve",
   "resolve-before-staging-unlink",
 ] as const) {
-  test(`binary installation recovery is repeatable after ${phase}`, () =>
-    fixture(async ({ db, lake, blobs }) => {
+  test(`binary installation recovery is repeatable after ${phase}`, async () =>
+    await fixture(async ({ db, lake, blobs }) => {
       const stage = `${crypto.randomUUID()}.stage`;
       const staged = path.join(stagingDirectory(blobs), stage);
       writeFileSync(staged, payload);
@@ -83,8 +83,8 @@ for (const phase of [
     }));
 }
 
-test("recovery preserves unproven copied blobs and does not trust a recorded digest alone", () =>
-  fixture(async ({ db, lake, blobs }) => {
+test("recovery preserves unproven copied blobs and does not trust a recorded digest alone", async () =>
+  await fixture(async ({ db, lake, blobs }) => {
     const stage = `${crypto.randomUUID()}.stage`;
     const staged = path.join(stagingDirectory(blobs), stage);
     writeFileSync(staged, payload);
@@ -101,8 +101,8 @@ test("recovery preserves unproven copied blobs and does not trust a recorded dig
     expect(readdirSync(stagingDirectory(blobs))).toEqual([]);
   }));
 
-test("failed intent resolution retains staging evidence and retry finishes after unlink", () =>
-  fixture(async ({ db, lake, blobs }) => {
+test("failed intent resolution retains staging evidence and retry finishes after unlink", async () =>
+  await fixture(async ({ db, lake, blobs }) => {
     const stage = `${crypto.randomUUID()}.stage`;
     const staged = path.join(stagingDirectory(blobs), stage);
     writeFileSync(staged, payload);
@@ -112,7 +112,7 @@ test("failed intent resolution retains staging evidence and retry finishes after
       digest,
       payload.length
     );
-    db.exec(
+    db.run(
       "CREATE TRIGGER stop_resolve BEFORE DELETE ON lake_binary_installs BEGIN SELECT RAISE(ABORT,'stop intent resolve'); END"
     );
     const failure = await Effect.runPromise(
@@ -121,13 +121,13 @@ test("failed intent resolution retains staging evidence and retry finishes after
     expect(failure.code).toBe("Unavailable");
     expect(existsSync(staged)).toBe(true);
     expect(existsSync(path.join(blobs, digest))).toBe(false);
-    db.exec("DROP TRIGGER stop_resolve");
+    db.run("DROP TRIGGER stop_resolve");
     await Effect.runPromise(lake.recoverBinary);
     expect(existsSync(staged)).toBe(false);
   }));
 
-test("recovery retains committed content and failed publication rolls back metadata and resolves intent", () =>
-  fixture(async ({ db, lake, blobs, store }) => {
+test("recovery retains committed content and failed publication rolls back metadata and resolves intent", async () =>
+  await fixture(async ({ db, lake, blobs, store }) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const run = yield* store.submit(
@@ -150,7 +150,7 @@ test("recovery retains committed content and failed publication rolls back metad
           taskId: "producer",
           taskVersion: 1,
         };
-        db.exec(
+        db.run(
           "CREATE TRIGGER stop_metadata BEFORE INSERT ON lake_records BEGIN SELECT RAISE(ABORT,'stop commit'); END"
         );
         const failure = yield* lake
@@ -163,7 +163,7 @@ test("recovery retains committed content and failed publication rolls back metad
           []
         );
         expect(existsSync(path.join(blobs, digest))).toBe(false);
-        db.exec("DROP TRIGGER stop_metadata");
+        db.run("DROP TRIGGER stop_metadata");
         const reference = yield* lake.publishBytes(
           identity,
           "file",
@@ -197,8 +197,8 @@ test("recovery retains committed content and failed publication rolls back metad
     );
   }));
 
-test("binary recovery rejects unexpected files and missing intent evidence", () =>
-  fixture(async ({ db, lake, blobs }) => {
+test("binary recovery rejects unexpected files and missing intent evidence", async () =>
+  await fixture(async ({ db, lake, blobs }) => {
     db.query("INSERT INTO lake_binary_installs VALUES (?, ?, ?)").run(
       `${crypto.randomUUID()}.stage`,
       digest,
@@ -207,7 +207,7 @@ test("binary recovery rejects unexpected files and missing intent evidence", () 
     expect(
       (await Effect.runPromise(lake.recoverBinary.pipe(Effect.flip))).code
     ).toBe("Unavailable");
-    db.exec("DELETE FROM lake_binary_installs");
+    db.run("DELETE FROM lake_binary_installs");
     writeFileSync(path.join(stagingDirectory(blobs), "foreign-file"), "keep");
     expect(
       (await Effect.runPromise(lake.recoverBinary.pipe(Effect.flip))).code

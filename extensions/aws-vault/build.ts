@@ -10,12 +10,19 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import {
   digest,
   verifyArchive,
 } from "../../packages/platform-bun/src/extension-archive.ts";
 import type { ExtensionManifest } from "../../packages/runtime/src/extension-protocol.ts";
 import { contracts } from "./src/contracts.ts";
+
+const PackageMetadata = Schema.Struct({
+  name: Schema.String,
+  version: Schema.String,
+});
 
 const root = path.resolve(import.meta.dir, "../..");
 const source = path.join(import.meta.dir, "src");
@@ -82,7 +89,7 @@ export async function buildAwsVaultExtension(outdir: string) {
     });
     if (!bundle.success) {
       throw new Error(
-        `AWS vault extension bundle failed: ${bundle.logs.join("\n")}`
+        `AWS vault extension bundle failed: ${bundle.logs.map((log) => log.message).join("\n")}`
       );
     }
     await Promise.all(
@@ -123,9 +130,11 @@ export async function buildAwsVaultExtension(outdir: string) {
           ),
           ".."
         );
-        const metadata = JSON.parse(
-          await readFile(path.join(directory, "package.json"), "utf-8")
-        ) as { name: string; version: string };
+        const metadata = Schema.decodeUnknownSync(PackageMetadata)(
+          JSON.parse(
+            await readFile(path.join(directory, "package.json"), "utf-8")
+          )
+        );
         if (metadata.name !== name) {
           throw new Error(`Unexpected dependency resolution for ${name}`);
         }

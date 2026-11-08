@@ -98,8 +98,8 @@ async function withLake<A, E>(
   }
 }
 
-test("captured policy changes only on a new publication and author policies preserve newest", () =>
-  withLake((f) =>
+test("captured policy changes only on a new publication and author policies preserve newest", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const one = yield* f.publish(make(), 1);
       yield* f.publish(make(), 2);
@@ -124,8 +124,8 @@ test("captured policy changes only on a new publication and author policies pres
     })
   ));
 
-test("apply recomputes current newest and policy; tombstoning newest preserves its policy", () =>
-  withLake((f) =>
+test("apply recomputes current newest and policy; tombstoning newest preserves its policy", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const one = yield* f.publish(make(), 1);
       yield* f.publish(make(), 2);
@@ -165,8 +165,8 @@ test("apply recomputes current newest and policy; tombstoning newest preserves i
     })
   ));
 
-test("daily single-version identities require operator age selection; protected producers never collect", () =>
-  withLake((f) =>
+test("daily single-version identities require operator age selection; protected producers never collect", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       for (let n = 0; n < 8; n += 1) {
         const ref = yield* f.publish(
@@ -203,8 +203,8 @@ test("daily single-version identities require operator age selection; protected 
     })
   ));
 
-test("shared digests are counted once and principal-scoped plans cannot delete another actor's content", () =>
-  withLake((f) =>
+test("shared digests are counted once and principal-scoped plans cannot delete another actor's content", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const owner = yield* f.publish(make(), 42, "owner");
       const other = yield* f.publish(make(), 42, "other", "Succeeded", "other");
@@ -236,8 +236,8 @@ test("shared digests are counted once and principal-scoped plans cannot delete a
     })
   ));
 
-test("reclamation invalidates non-anchor query and version cursors and exposes retained latest", () =>
-  withLake((f) =>
+test("reclamation invalidates non-anchor query and version cursors and exposes retained latest", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const one = yield* f.publish(make(), 1);
       yield* f.publish(make(), 2);
@@ -258,7 +258,7 @@ test("reclamation invalidates non-anchor query and version cursors and exposes r
           .query(
             query,
             "owner",
-            Schema.decodeUnknownSync(Schema.String)(q.cursor)
+            yield* Schema.decodeUnknownEffect(Schema.String)(q.cursor)
           )
           .pipe(Effect.flip)).code
       ).toBe("CursorExpired");
@@ -267,7 +267,9 @@ test("reclamation invalidates non-anchor query and version cursors and exposes r
           .versions(
             {
               artifactId: one.artifactId,
-              cursor: Schema.decodeUnknownSync(Schema.String)(v.cursor),
+              cursor: yield* Schema.decodeUnknownEffect(Schema.String)(
+                v.cursor
+              ),
               limit: 1,
             },
             "owner"
@@ -281,8 +283,8 @@ test("reclamation invalidates non-anchor query and version cursors and exposes r
     })
   ));
 
-test("applied receipts outlive expiry, while never-applied plans expire even after pruning", () =>
-  withLake((f) =>
+test("applied receipts outlive expiry, while never-applied plans expire even after pruning", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.now());
       const ref = yield* f.publish();
@@ -307,8 +309,8 @@ test("applied receipts outlive expiry, while never-applied plans expire even aft
   ));
 
 for (const phase of ["before-unlink", "after-unlink"] as const) {
-  test(`pending cleanup survives failure ${phase} and resumes idempotently from another connection`, () =>
-    withLake((f) =>
+  test(`pending cleanup survives failure ${phase} and resumes idempotently from another connection`, async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         const ref = yield* f.publish();
         const plan = yield* f.lake.planReclamation({
@@ -316,7 +318,7 @@ for (const phase of ["before-unlink", "after-unlink"] as const) {
           artifactId: ref.artifactId,
           version: 1,
         });
-        f.database.exec(
+        f.database.run(
           phase === "before-unlink"
             ? "CREATE TRIGGER fault BEFORE UPDATE OF started ON lake_reclamation_unlinks BEGIN SELECT RAISE(ABORT,'simulated interruption before unlink'); END"
             : "CREATE TRIGGER fault BEFORE UPDATE OF receiptJson ON lake_reclamation_plans WHEN json_extract(NEW.receiptJson,'$.reclaimedBytes') > 0 BEGIN SELECT RAISE(ABORT,'simulated interruption after unlink'); END"
@@ -329,7 +331,7 @@ for (const phase of ["before-unlink", "after-unlink"] as const) {
         expect(existsSync(path.join(f.blobs, ref.digest))).toBe(
           phase === "before-unlink"
         );
-        f.database.exec("DROP TRIGGER fault");
+        f.database.run("DROP TRIGGER fault");
         const reopened = new Database(f.filename);
         try {
           yield* resumeReclamation(reopened, f.blobs, f.lease);
@@ -344,8 +346,8 @@ for (const phase of ["before-unlink", "after-unlink"] as const) {
     ));
 }
 
-test("recovery rechecks a new identical publication before unlinking an old intent", () =>
-  withLake((f) =>
+test("recovery rechecks a new identical publication before unlinking an old intent", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const ref = yield* f.publish(make(), 42);
       const plan = yield* f.lake.planReclamation({
@@ -353,11 +355,11 @@ test("recovery rechecks a new identical publication before unlinking an old inte
         artifactId: ref.artifactId,
         version: 1,
       });
-      f.database.exec(
+      f.database.run(
         "CREATE TRIGGER fault BEFORE UPDATE OF started ON lake_reclamation_unlinks BEGIN SELECT RAISE(ABORT,'hold cleanup'); END"
       );
       yield* f.lake.applyReclamation({ planId: plan.planId }).pipe(Effect.flip);
-      f.database.exec("DROP TRIGGER fault");
+      f.database.run("DROP TRIGGER fault");
       const next = yield* f.publish(make(), 42);
       const receipt = yield* f.lake.applyReclamation({ planId: plan.planId });
       expect(receipt.reclaimedBytes).toBe(0);
@@ -366,8 +368,8 @@ test("recovery rechecks a new identical publication before unlinking an old inte
     })
   ));
 
-test("bulk selection advances past protected rows and through bounded plans", () =>
-  withLake((f) =>
+test("bulk selection advances past protected rows and through bounded plans", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const seed = yield* f.publish(make(), 1, "seed", "Waiting");
       f.old(seed.artifactId, 1);
@@ -417,8 +419,8 @@ test("bulk selection advances past protected rows and through bounded plans", ()
     })
   ));
 
-test("plan admission cap counts only unexpired unapplied plans", () =>
-  withLake((f) =>
+test("plan admission cap counts only unexpired unapplied plans", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const ids: string[] = [];
       for (let n = 0; n < 64; n += 1) {
@@ -435,8 +437,8 @@ test("plan admission cap counts only unexpired unapplied plans", () =>
     }).pipe(Effect.provide(TestClock.layer()))
   ));
 
-test("age and count use OR, schema selectors rank across the identity, and aliases stay isolated", () =>
-  withLake((f) =>
+test("age and count use OR, schema selectors rank across the identity, and aliases stay isolated", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const artifact = make({ maxAge: "30 days", maxVersions: 3 });
       for (const age of [60, 40, 35, 2, 1]) {
@@ -498,8 +500,8 @@ test("age and count use OR, schema selectors rank across the identity, and alias
     })
   ));
 
-test("metadata failure rolls back tombstones, epoch and receipt together", () =>
-  withLake((f) =>
+test("metadata failure rolls back tombstones, epoch and receipt together", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const ref = yield* f.publish();
       const plan = yield* f.lake.planReclamation({
@@ -507,7 +509,7 @@ test("metadata failure rolls back tombstones, epoch and receipt together", () =>
         artifactId: ref.artifactId,
         version: 1,
       });
-      f.database.exec(
+      f.database.run(
         "CREATE TRIGGER fault BEFORE INSERT ON lake_reclamation_epochs BEGIN SELECT RAISE(ABORT,'metadata commit interrupted'); END"
       );
       yield* f.lake.applyReclamation({ planId: plan.planId }).pipe(Effect.flip);
@@ -524,7 +526,7 @@ test("metadata failure rolls back tombstones, epoch and receipt together", () =>
           .query("SELECT COUNT(*) AS count FROM lake_reclamation_unlinks")
           .get()
       ).toEqual({ count: 0 });
-      f.database.exec("DROP TRIGGER fault");
+      f.database.run("DROP TRIGGER fault");
       expect(
         (yield* f.lake.applyReclamation({ planId: plan.planId }))
           .deletedVersions
@@ -541,7 +543,7 @@ test("metadata failure rolls back tombstones, epoch and receipt together", () =>
 test("legacy lake migration preserves metadata, backfills timestamps and expires legacy cursors only after reclamation", () => {
   const db = new Database(":memory:");
   try {
-    db.exec(
+    db.run(
       "CREATE TABLE lake_records(sequence INTEGER PRIMARY KEY, principal TEXT, artifactId TEXT, version INTEGER, schemaId TEXT, metadataJson TEXT)"
     );
     const at = "2026-10-05T10:20:30.123Z";

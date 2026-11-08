@@ -12,6 +12,7 @@ import {
 import { Schema } from "effect";
 
 import { cli, effectory, start } from "./fixtures/cli.ts";
+import { arrayContaining, objectContaining } from "./fixtures/matchers.ts";
 
 const application = `
 import {Application,Report,Task,Workflow} from "@offtree/effectory-sdk";
@@ -83,9 +84,9 @@ test("report CLI reads Markdown/data, waits independently, retries after daemon 
     });
     const origins = await cli(directory, ["run", "list", "--origin", "report"]);
     expect(origins).toMatchObject({
-      items: expect.arrayContaining([
-        expect.objectContaining({
-          report: expect.objectContaining({ sourceRunId: source.runId }),
+      items: arrayContaining([
+        objectContaining({
+          report: objectContaining({ sourceRunId: source.runId }),
         }),
       ]),
     });

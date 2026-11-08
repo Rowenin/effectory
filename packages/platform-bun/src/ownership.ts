@@ -36,7 +36,7 @@ export function ownershipLayer(filename: string) {
           const database = new Database(filename, { create: true });
           try {
             chmodSync(filename, 0o600);
-            database.exec("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
+            database.run("PRAGMA busy_timeout = 0; BEGIN EXCLUSIVE");
             let active = true;
             return {
               assertActive: () => {
@@ -48,7 +48,7 @@ export function ownershipLayer(filename: string) {
               },
               release: () => {
                 active = false;
-                database.exec("ROLLBACK");
+                database.run("ROLLBACK");
                 database.close();
               },
               token: crypto.randomUUID(),

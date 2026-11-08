@@ -94,7 +94,7 @@ function cleanup(
   const store = createRetirementStore(db, repositoryId, principal);
   return Effect.gen(function* () {
     for (const [table, where] of retirementDeletionSteps(planId)) {
-      if (!table || !where) {
+      if (table === undefined || where === undefined) {
         continue;
       }
       while (
@@ -155,7 +155,7 @@ function cleanup(
         .query("SELECT 1 FROM host_retirement_native WHERE planId=? LIMIT 1")
         .get(planId)
     );
-    if (hasNative) {
+    if (hasNative !== null) {
       yield* native.pipe(
         Effect.provide(
           SqlMessageStorage.layer.pipe(
@@ -306,7 +306,7 @@ export function reclaimRuns(
             };
             checkpoint();
             const beforeBytes = statSync(filename).size;
-            db.exec("VACUUM");
+            db.run("VACUUM");
             checkpoint();
             flush(filename);
             flush(path.dirname(filename));

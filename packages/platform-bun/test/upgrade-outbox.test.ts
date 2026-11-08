@@ -7,7 +7,7 @@ import { inspectUpgradeOutbox } from "../src/upgrade-outbox.ts";
 
 function fixture() {
   const db = new Database(":memory:");
-  db.exec(`CREATE TABLE host_runs(runId TEXT PRIMARY KEY); CREATE TABLE host_waits(waitId TEXT PRIMARY KEY,runId TEXT,status TEXT);
+  db.run(`CREATE TABLE host_runs(runId TEXT PRIMARY KEY); CREATE TABLE host_waits(waitId TEXT PRIMARY KEY,runId TEXT,status TEXT);
     CREATE TABLE host_outbox(id INTEGER PRIMARY KEY,kind TEXT,runId TEXT,waitId TEXT,delivered INTEGER);
     CREATE INDEX host_outbox_pending ON host_outbox(delivered,id);
     INSERT INTO host_runs VALUES('run');
@@ -43,10 +43,10 @@ test.each([
     const db = fixture();
     try {
       if (fault === "unknown") {
-        db.exec("UPDATE host_outbox SET kind='FutureOperation' WHERE id=450");
+        db.run("UPDATE host_outbox SET kind='FutureOperation' WHERE id=450");
       }
       if (fault === "orphan") {
-        db.exec("UPDATE host_outbox SET runId='absent' WHERE id=450");
+        db.run("UPDATE host_outbox SET runId='absent' WHERE id=450");
       }
       if (
         fault === "missing-wait" ||
@@ -54,17 +54,17 @@ test.each([
         fault === "open-wait" ||
         fault === "unknown-wait-status"
       ) {
-        db.exec(
+        db.run(
           "UPDATE host_outbox SET kind='Settle',waitId='wait' WHERE id=450"
         );
         if (fault === "foreign-wait") {
-          db.exec("INSERT INTO host_waits VALUES('wait','other','Answered')");
+          db.run("INSERT INTO host_waits VALUES('wait','other','Answered')");
         }
         if (fault === "open-wait") {
-          db.exec("INSERT INTO host_waits VALUES('wait','run','Open')");
+          db.run("INSERT INTO host_waits VALUES('wait','run','Open')");
         }
         if (fault === "unknown-wait-status") {
-          db.exec("INSERT INTO host_waits VALUES('wait','run','FutureStatus')");
+          db.run("INSERT INTO host_waits VALUES('wait','run','FutureStatus')");
         }
       }
       const before = db.query("SELECT * FROM host_outbox ORDER BY id").all();
@@ -131,10 +131,10 @@ test.each([-1, 0])(
 test("outbox inspection skips delivered history but refuses an index that can hide invalid flags", async () => {
   const db = fixture();
   try {
-    db.exec("UPDATE host_outbox SET delivered=1");
+    db.run("UPDATE host_outbox SET delivered=1");
     const inspection = await Effect.runPromise(inspectUpgradeOutbox(db));
     expect(inspection.rows).toBe(0);
-    db.exec(
+    db.run(
       "DROP INDEX host_outbox_pending; CREATE INDEX host_outbox_pending ON host_outbox(delivered,id) WHERE delivered=0"
     );
     const failure = await Effect.runPromise(

@@ -56,7 +56,7 @@ test("a held run permits its live sibling's publication and reads, but rejects a
         yield* store.admitAttempt(run.runId, "manual", 1, "manual");
         yield* store.admitAttempt(run.runId, "manual", 1, "manual");
         expect((yield* store.getRun(run.runId)).status).toBe("NeedsAttention");
-        const ref = Schema.decodeUnknownSync(artifact.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(artifact.refSchema)(
           yield* lake.publish(identity, "value", artifact, 42, { key: "same" })
         );
         const binding = lake.reader(identity, () => true);

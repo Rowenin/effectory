@@ -16,7 +16,12 @@ const { values } = parseArgs({
   },
 });
 assert.ok(
-  values.previous && values.target && values.output,
+  values.previous !== undefined &&
+    values.previous !== "" &&
+    values.target !== undefined &&
+    values.target !== "" &&
+    values.output !== undefined &&
+    values.output !== "",
   "Usage: bun scripts/verify-runtime-upgrade.ts --previous OLD_BINARY --target NEW_BINARY --output NEW_EVIDENCE_DIRECTORY [--breaking INCOMPATIBLE_FIXTURE_BINARY]"
 );
 const previous = realpathSync(values.previous);
@@ -37,10 +42,10 @@ const environment = {
   EFFECTORY_PREVIOUS_BINARY: previous,
   EFFECTORY_UPGRADE_BINARY: target,
   EFFECTORY_UPGRADE_PROOF_DIR: output,
-  ...(values.bootstrap
+  ...(values.bootstrap !== undefined && values.bootstrap !== ""
     ? { EFFECTORY_BOOTSTRAP_BINARY: realpathSync(values.bootstrap) }
     : {}),
-  ...(values.breaking
+  ...(values.breaking !== undefined && values.breaking !== ""
     ? { EFFECTORY_BREAKING_BINARY: realpathSync(values.breaking) }
     : {}),
 };
@@ -48,7 +53,9 @@ const cases = [
   "wait-rollback",
   "lifecycle",
   "writers",
-  ...(values.breaking ? ["breaking"] : []),
+  ...(values.breaking !== undefined && values.breaking !== ""
+    ? ["breaking"]
+    : []),
 ];
 for (const name of cases) {
   const child = Bun.spawn(
@@ -83,7 +90,7 @@ const results = Object.fromEntries(
       name,
       {
         digest: digest(filename),
-        result: JSON.parse(readFileSync(filename, "utf-8")),
+        result: JSON.parse(readFileSync(filename, "utf-8")) as unknown,
       },
     ];
   })
@@ -97,7 +104,7 @@ writeFileSync(
       platform: process.platform,
       predecessor: { filename: previous, sha256: digest(previous) },
       target: { filename: target, sha256: digest(target) },
-      ...(values.bootstrap
+      ...(values.bootstrap !== undefined && values.bootstrap !== ""
         ? {
             bootstrap: {
               filename: realpathSync(values.bootstrap),
@@ -105,7 +112,7 @@ writeFileSync(
             },
           }
         : {}),
-      ...(values.breaking
+      ...(values.breaking !== undefined && values.breaking !== ""
         ? {
             breaking: {
               filename: environment.EFFECTORY_BREAKING_BINARY,

@@ -72,7 +72,7 @@ export function installHostModules() {
     : Object.fromEntries(
         Object.keys(hostModuleLoaders).map((specifier) => {
           const filename = Bun.resolveSync(specifier, import.meta.dir);
-          // oxlint-disable-next-line node/global-require, unicorn/prefer-module -- Synchronous, lazily evaluated host module.
+          // oxlint-disable-next-line node/global-require, unicorn/prefer-module, typescript/no-unsafe-type-assertion -- Synchronous, lazily evaluated host module; require() is untyped.
           return [specifier, () => require(filename) as object];
         })
       );
@@ -82,6 +82,7 @@ export function installHostModules() {
       for (const [specifier, load] of Object.entries(loaders)) {
         // A module namespace is an object of its named exports.
         builder.module(specifier, () => ({
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
           exports: load() as Record<string, unknown>,
           loader: "object",
         }));

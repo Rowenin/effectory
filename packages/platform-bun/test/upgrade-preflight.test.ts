@@ -99,16 +99,16 @@ test.each([
         INSERT INTO host_outbox(kind,runId,waitId,intentKey,delivered) SELECT 'Dispatch',?,NULL,'extra/'||x,0 FROM n`)
           .run(run.runId);
         if (fault === "late-intent") {
-          database.exec(
+          database.run(
             "UPDATE host_outbox SET kind='FutureIntent' WHERE id=451"
           );
         } else {
-          database.exec("PRAGMA foreign_keys=OFF");
-          database.exec("UPDATE host_outbox SET runId='missing' WHERE id=451");
+          database.run("PRAGMA foreign_keys=OFF");
+          database.run("UPDATE host_outbox SET runId='missing' WHERE id=451");
         }
       }
       if (fault === "recovery-format") {
-        database.exec("DROP TABLE host_attempt_windows");
+        database.run("DROP TABLE host_attempt_windows");
       }
     } finally {
       database.close();

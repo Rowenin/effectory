@@ -23,16 +23,16 @@ export const quiet = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 export function decode(
   vault: string,
   key: string,
-  codec: Schema.Codec<unknown, string, never, never>,
+  codec: Schema.Codec<unknown, string>,
   raw: string
 ): Effect.Effect<unknown, VaultSecretInvalid> {
   return Effect.uninterruptibleMask((restore) =>
     Effect.gen(function* () {
       const exit = yield* Effect.exit(
         restore(
-          quiet(
-            Effect.suspend(() => Schema.decodeUnknownEffect(codec)(raw))
-          ).pipe(Effect.timeoutOption("5 seconds"))
+          quiet(Effect.suspend(() => Schema.decodeEffect(codec)(raw))).pipe(
+            Effect.timeoutOption("5 seconds")
+          )
         )
       );
       if (Exit.isFailure(exit)) {

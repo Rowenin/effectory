@@ -10,6 +10,8 @@ import { Schema } from "effect";
 
 import type { createPagination } from "./pagination.ts";
 
+const parseJson = (text: string): unknown => JSON.parse(text);
+
 const Position = Schema.Struct({
   acceptedAt: Schema.String,
   runId: Schema.String,
@@ -100,10 +102,10 @@ function readRows(
         tags: Schema.decodeUnknownSync(RunTags)(JSON.parse(stored.tagsJson)),
         ...(stored.reportJson === null
           ? {}
-          : { report: JSON.parse(stored.reportJson) }),
+          : { report: parseJson(stored.reportJson) }),
         ...(stored.scheduleJson === null
           ? {}
-          : { schedule: JSON.parse(stored.scheduleJson) }),
+          : { schedule: parseJson(stored.scheduleJson) }),
       });
       bytes += Buffer.byteLength(JSON.stringify(row));
       if (scanned > 10_000 || bytes > 16_777_216) {
@@ -133,12 +135,9 @@ export function runHistory(
   value: typeof RunListRequest.Type,
   principal: string
 ) {
-  const { cursor, tags, ...rest } = Schema.decodeUnknownSync(RunListRequest)(
-    value,
-    {
-      onExcessProperty: "error",
-    }
-  );
+  const { cursor, tags, ...rest } = Schema.decodeSync(RunListRequest)(value, {
+    onExcessProperty: "error",
+  });
   const query = {
     ...rest,
     ...(tags && Object.keys(tags).length ? { tags } : {}),

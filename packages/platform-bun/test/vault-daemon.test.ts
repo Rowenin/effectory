@@ -4,7 +4,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { effectory, start } from "./fixtures/cli.ts";
+
+const decodeJsonObject = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+);
 
 test("vault CLI, two providers, guards, kill/restart, and offline escrow", async () => {
   const base = await mkdtemp(path.join(os.tmpdir(), "effectory-vault-cli-"));
@@ -35,10 +41,7 @@ test("vault CLI, two providers, guards, kill/restart, and offline escrow", async
       code,
       stderr,
       stdout,
-      value:
-        json && stdout.trim()
-          ? (JSON.parse(stdout) as Record<string, unknown>)
-          : undefined,
+      value: json && stdout.trim() ? decodeJsonObject(stdout) : undefined,
     };
   };
   try {

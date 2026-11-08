@@ -92,7 +92,7 @@ test("subtree history budgets siblings without loading their bodies, resumes emp
     );
     expect(first.items).toEqual([]);
     expect(first.cursor).not.toBeNull();
-    if (!first.cursor) {
+    if (first.cursor === null) {
       throw new Error("Missing continuation");
     }
     event("Log", { message: "outside snapshot", nodeId: path });
@@ -156,7 +156,7 @@ test("subtree event byte boundaries preserve the next event and a matching overs
       store.reportSubtreeEvents(run.runId, "owner", "child", path, {})
     );
     expect(page.items.map((row) => row.sequence)).toEqual([first]);
-    if (!page.cursor) {
+    if (page.cursor === null) {
       throw new Error("Missing continuation");
     }
     const next = await Effect.runPromise(

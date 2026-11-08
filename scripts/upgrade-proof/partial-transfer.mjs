@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 
-import { Cause, Effect, Exit } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { ownershipLayer } from "../../packages/platform-bun/src/ownership.ts";
 import { acceptRuntimeUpgrade } from "../../packages/platform-bun/src/upgrade-executor.ts";
@@ -12,8 +12,20 @@ import { makeUpgradeJournal } from "../../packages/platform-bun/src/upgrade-jour
 import { runtimeUpgradePolicy } from "../../packages/platform-bun/src/upgrade-policy.ts";
 import { old } from "./process.mjs";
 
+/** Storage descriptors are only compared, never interpreted. */
+const StorageBuild = Schema.Struct({
+  targetBuild: Schema.optionalKey(Schema.Unknown),
+});
+
+/**
+ * Hashes every file below `root`, ignoring SQLite ownership and shared-memory files.
+ * @param {string} root Directory to snapshot.
+ * @returns {Record<string, string>} Digest, or `"directory"`, by path.
+ */
 function snapshot(root) {
+  /** @type {Record<string, string>} */
   const entries = {};
+  /** @type {(directory: string) => void} */
   const walk = (directory) => {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       if (
@@ -37,7 +49,13 @@ function snapshot(root) {
   return entries;
 }
 
-/** Exact target source at a deterministic barrier; predecessor writes and subsequent resume use real binaries. */
+/**
+ * Exact target source at a deterministic barrier; predecessor writes and subsequent resume use real binaries.
+ * @param {ReturnType<typeof import("./process.mjs").harness>} h Process harness for the proof.
+ * @param {string} requestedRepository Repository being upgraded.
+ * @param {string} root Proof root holding the escrowed key.
+ * @param {{ planId: string, source: { build?: unknown }, target: { build?: unknown } }} plan Ready upgrade plan from the target binary.
+ */
 export async function partialTransfer(h, requestedRepository, root, plan) {
   const repository = realpathSync(requestedRepository);
   const policy = runtimeUpgradePolicy();
@@ -47,7 +65,7 @@ export async function partialTransfer(h, requestedRepository, root, plan) {
     "Compiled target and checkpoint source must have identical ABI"
   );
   const escrow = path.join(root, "partial-transfer-key.json");
-  const exit = await Effect.runPromise(
+  const exit = await Effect.runPromiseExit(
     Effect.gen(function* () {
       const journal = yield* makeUpgradeJournal(repository);
       const saved = yield* journal.inspect(plan.planId);
@@ -61,25 +79,26 @@ export async function partialTransfer(h, requestedRepository, root, plan) {
       Effect.scoped,
       Effect.provide(
         ownershipLayer(path.join(repository, ".effectory/state.sqlite.owner"))
-      ),
-      Effect.exit
+      )
     )
   );
   assert.ok(Exit.isFailure(exit));
   assert.match(Cause.pretty(exit.cause), /proof checkpoint/u);
+  /** @type {unknown} */
   const credential = JSON.parse(
     readFileSync(path.join(repository, ".effectory/credentials.json"), "utf-8")
   );
+  Schema.asserts(StorageBuild, credential);
   assert.equal(credential.targetBuild, plan.target.build);
-  assert.equal(
-    JSON.parse(
-      readFileSync(
-        path.join(repository, ".effectory/runtime-storage.json"),
-        "utf-8"
-      )
-    ).targetBuild,
-    plan.source.build
+  /** @type {unknown} */
+  const storage = JSON.parse(
+    readFileSync(
+      path.join(repository, ".effectory/runtime-storage.json"),
+      "utf-8"
+    )
   );
+  Schema.asserts(StorageBuild, storage);
+  assert.equal(storage.targetBuild, plan.source.build);
   const results = [];
   for (const args of [
     ["daemon", "serve"],

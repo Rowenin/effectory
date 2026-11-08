@@ -31,10 +31,14 @@ const submit = (key: string, entries: EncodedReportPlan = [entry]) => ({
   requestKey: key,
   targetId: "source",
 });
+const storeLayer = (filename: string) =>
+  hostStoreLayer(filename).pipe(
+    Layer.provide(ownershipLayer(`${filename}.owner`))
+  );
 async function databaseTest(
   body: (
     filename: string,
-    layer: Layer.Layer<typeof HostStore.Service, unknown>
+    layer: ReturnType<typeof storeLayer>
   ) => Promise<void>
 ) {
   const directory = await mkdtemp(
@@ -42,12 +46,7 @@ async function databaseTest(
   );
   const filename = path.join(directory, "state.sqlite");
   try {
-    await body(
-      filename,
-      hostStoreLayer(filename).pipe(
-        Layer.provide(ownershipLayer(`${filename}.owner`))
-      )
-    );
+    await body(filename, storeLayer(filename));
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -61,14 +60,14 @@ const materialize = (runId: string) =>
     }
   });
 
-test("report retry refuses an unavailable pinned revision before writing and replays accepted receipts before checking code", () =>
-  databaseTest(async (_filename, layer) => {
+test("report retry refuses an unavailable pinned revision before writing and replays accepted receipts before checking code", async () =>
+  await databaseTest(async (_filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
         const source = yield* store.submit(submit("source"), "pinned", "owner");
         const [id] = yield* store.reportIds(source.runId);
-        if (!id) {
+        if (id === undefined) {
           return yield* Effect.die("Missing report");
         }
         yield* store.reportCancel(
@@ -118,8 +117,8 @@ test("report retry refuses an unavailable pinned revision before writing and rep
     );
   }));
 
-test("report generations survive reopening, pin their source plan, and promote once with inherited tags", () =>
-  databaseTest(async (_filename, layer) => {
+test("report generations survive reopening, pin their source plan, and promote once with inherited tags", async () =>
+  await databaseTest(async (_filename, layer) => {
     let id = "";
     let sourceId = "";
     await Effect.runPromise(
@@ -192,8 +191,8 @@ test("report generations survive reopening, pin their source plan, and promote o
     );
   }));
 
-test("ineligible and excluded sources settle without running reporters", () =>
-  databaseTest(async (_filename, layer) => {
+test("ineligible and excluded sources settle without running reporters", async () =>
+  await databaseTest(async (_filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -204,7 +203,7 @@ test("ineligible and excluded sources settle without running reporters", () =>
         );
         yield* materialize(root.runId);
         const [excluded] = yield* store.reportIds(root.runId);
-        if (!excluded) {
+        if (excluded === undefined) {
           return yield* Effect.die("Missing report");
         }
         expect(yield* store.reportGet(excluded)).toMatchObject({
@@ -234,7 +233,7 @@ test("ineligible and excluded sources settle without running reporters", () =>
         );
         yield* store.reportMaterialize(armed.sourceId);
         const [missing] = yield* store.reportIds(source.runId);
-        if (!missing) {
+        if (missing === undefined) {
           return yield* Effect.die("Missing report");
         }
         expect(yield* store.reportGet(missing)).toMatchObject({
@@ -246,8 +245,8 @@ test("ineligible and excluded sources settle without running reporters", () =>
     );
   }));
 
-test("promotion and its outbox roll back together, and four report slots do not consume normal admission", () =>
-  databaseTest(async (filename, layer) => {
+test("promotion and its outbox roll back together, and four report slots do not consume normal admission", async () =>
+  await databaseTest(async (filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -267,7 +266,7 @@ test("promotion and its outbox roll back together, and four report slots do not 
           Effect.sync(() => new Database(filename)),
           (connection) => Effect.sync(() => connection.close())
         );
-        db.exec(
+        db.run(
           "CREATE TRIGGER fail_bind BEFORE UPDATE OF reportRunId ON host_reports BEGIN SELECT RAISE(ABORT, 'injected bind failure'); END"
         );
         expect(Exit.isFailure(yield* Effect.exit(store.reportPromote()))).toBe(
@@ -275,7 +274,7 @@ test("promotion and its outbox roll back together, and four report slots do not 
         );
         expect(yield* store.listRuns()).toHaveLength(1);
         expect(yield* store.outbox()).toHaveLength(1);
-        db.exec("DROP TRIGGER fail_bind");
+        db.run("DROP TRIGGER fail_bind");
         const admitted: string[] = [];
         for (let index = 0; index < 4; index += 1) {
           const run = yield* store.reportPromote();
@@ -292,7 +291,7 @@ test("promotion and its outbox roll back together, and four report slots do not 
           (yield* store.submit(submit("normal", []), "pinned", "owner")).status
         ).toBe("Queued");
         const [first] = admitted;
-        if (!first) {
+        if (first === undefined) {
           return yield* Effect.die("Expected admitted run");
         }
         yield* store.project(first, "NeedsAttention");
@@ -302,8 +301,8 @@ test("promotion and its outbox roll back together, and four report slots do not 
     );
   }));
 
-test("promotion rotates between sources instead of draining a large source first", () =>
-  databaseTest(async (_filename, layer) => {
+test("promotion rotates between sources instead of draining a large source first", async () =>
+  await databaseTest(async (_filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -326,14 +325,14 @@ test("promotion rotates between sources instead of draining a large source first
     );
   }));
 
-test("WaitingSource cancellation survives settlement, and retry receipts precede generation conflicts", () =>
-  databaseTest(async (_filename, layer) => {
+test("WaitingSource cancellation survives settlement, and retry receipts precede generation conflicts", async () =>
+  await databaseTest(async (_filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
         const source = yield* store.submit(submit("source"), "pinned", "owner");
         const [id] = yield* store.reportIds(source.runId);
-        if (!id) {
+        if (id === undefined) {
           return yield* Effect.die("Missing report");
         }
         const receipt = yield* store.reportCancel(
@@ -432,8 +431,8 @@ test("WaitingSource cancellation survives settlement, and retry receipts precede
     );
   }));
 
-test("bulk cancellation fences promotion, drains bounded batches after reopen, and excludes later invocations and retries", () =>
-  databaseTest(async (_filename, layer) => {
+test("bulk cancellation fences promotion, drains bounded batches after reopen, and excludes later invocations and retries", async () =>
+  await databaseTest(async (_filename, layer) => {
     let sourceId = "";
     const selected: string[] = [];
     let later: string[] = [];
@@ -503,7 +502,7 @@ test("bulk cancellation fences promotion, drains bounded batches after reopen, a
           yield* store.project(admitted.runId, "Cancelled", null);
         }
         const [first] = selected;
-        if (!first) {
+        if (first === undefined) {
           return yield* Effect.die("Missing selection");
         }
         retried = (yield* store.reportRetry(
@@ -582,8 +581,8 @@ test("bulk cancellation fences promotion, drains bounded batches after reopen, a
     );
   }));
 
-test("report inspection pages freeze generation membership while aggregates stay current", () =>
-  databaseTest(async (_filename, layer) => {
+test("report inspection pages freeze generation membership while aggregates stay current", async () =>
+  await databaseTest(async (_filename, layer) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -617,7 +616,7 @@ test("report inspection pages freeze generation membership while aggregates stay
           total: 3,
         });
         const [original] = first.items;
-        if (!original || !first.cursor) {
+        if (!original || first.cursor === null) {
           return yield* Effect.die("Missing page");
         }
         expect(
@@ -688,8 +687,8 @@ test("report inspection pages freeze generation membership while aggregates stay
 
 test(
   "sixteen attachments on 1000 invocations keep scans, inspection and cancellation bounded",
-  () =>
-    databaseTest(async (_filename, layer) => {
+  async () =>
+    await databaseTest(async (_filename, layer) => {
       await Effect.runPromise(
         Effect.gen(function* () {
           const store = yield* HostStore;
@@ -769,8 +768,8 @@ test(
   60_000
 );
 
-test("32 attention reports do not consume admission slots and drain leaves queued obligations durable", () =>
-  databaseTest(async (_filename, layer) => {
+test("32 attention reports do not consume admission slots and drain leaves queued obligations durable", async () =>
+  await databaseTest(async (_filename, layer) => {
     let sourceId = "";
     await Effect.runPromise(
       Effect.gen(function* () {

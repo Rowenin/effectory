@@ -119,7 +119,7 @@ test.each([
     const f = fixture();
     try {
       f.authorize();
-      f.database.exec(fault);
+      f.database.run(fault);
       const before = f.database.serialize();
       const exit = await Effect.runPromiseExit(
         inspectUpgradeRecovery(f.database)

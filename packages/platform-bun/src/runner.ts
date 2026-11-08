@@ -43,12 +43,14 @@ function dispatch(intent: Outbox) {
       }
     } else if (intent.kind === "Cancel") {
       yield* stopInvocations(run.runId);
-      yield* run.engineId
+      yield* run.engineId !== null && run.engineId !== ""
         ? execution.interrupt(run.engineId)
         : store.project(run.runId, "Cancelled", null, "Control");
     } else if (
-      intent.waitId &&
-      run.engineId &&
+      intent.waitId !== null &&
+      intent.waitId !== "" &&
+      run.engineId !== null &&
+      run.engineId !== "" &&
       !terminal.has(run.status) &&
       run.status !== "Cancelling"
     ) {
@@ -92,7 +94,7 @@ function attentionIfOverdue(run: Run) {
 
 function reconcile(run: Run) {
   return Effect.gen(function* () {
-    if (!run.engineId) {
+    if (run.engineId === null || run.engineId === "") {
       return;
     }
     const store = yield* HostStore;
@@ -163,6 +165,11 @@ function reconcile(run: Run) {
   });
 }
 
+const invalidWaitPath = () =>
+  new OperationError({
+    code: "Unavailable",
+    message: "Wait path is invalid",
+  });
 export const tick = Effect.gen(function* () {
   const store = yield* HostStore;
   yield* store.expire();
@@ -219,16 +226,14 @@ export const runnerLayer = Layer.effect(
           const run = yield* store.getRun(wait.runId, principal);
           const application = yield* catalog.get(run.revision);
           const path = yield* Effect.try({
-            catch: () =>
-              new OperationError({
-                code: "Unavailable",
-                message: "Wait path is invalid",
-              }),
-            try: () =>
-              Schema.decodeUnknownSync(Schema.Array(Schema.String))(
-                JSON.parse(wait.nodeId)
-              ),
-          });
+            catch: invalidWaitPath,
+            try: (): unknown => JSON.parse(wait.nodeId),
+          }).pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(Schema.Array(Schema.String))
+            ),
+            Effect.mapError(invalidWaitPath)
+          );
           const node = waitDeclaration(
             application.registry,
             run.targetId,

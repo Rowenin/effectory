@@ -7,7 +7,7 @@ import { inspectUpgradeWork } from "../src/upgrade-work.ts";
 
 function fixture() {
   const db = new Database(":memory:");
-  db.exec(`
+  db.run(`
     CREATE TABLE host_runs(runId TEXT PRIMARY KEY, revision TEXT, status TEXT);
     CREATE TABLE host_report_groups(groupId TEXT PRIMARY KEY, sourceRunId TEXT);
     CREATE TABLE host_reports(sequence INTEGER PRIMARY KEY, reportId TEXT, groupId TEXT, status TEXT);
@@ -59,7 +59,7 @@ test("breaking-work inventory includes held runs, unsettled reports/continuation
 test("inventory samples stay bounded while complete counts include all affected work", async () => {
   const db = fixture();
   try {
-    db.exec("UPDATE host_runs SET status='Running' WHERE revision='older'");
+    db.run("UPDATE host_runs SET status='Running' WHERE revision='older'");
     const result = await Effect.runPromise(inspectUpgradeWork(db));
     expect(result.counts.runs).toBe(456);
     expect(result.revisions[0]?.examples).toHaveLength(20);
@@ -81,7 +81,7 @@ test.each([
   async (mutation) => {
     const db = fixture();
     try {
-      db.exec(mutation);
+      db.run(mutation);
       const before = db.serialize();
       const failure = await Effect.runPromise(
         inspectUpgradeWork(db).pipe(Effect.flip)

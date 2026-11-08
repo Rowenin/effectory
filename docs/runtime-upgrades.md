@@ -6,18 +6,18 @@ The runtime keeps build hashes for provenance and retained-bundle integrity. A s
 
 ## Supported transitions
 
-The executable proof matrix passed for these exact transitions. Final repository verification and source identities are recorded with the evidence below:
+The executable proof matrix passed for these exact transitions. Evidence for each platform is recorded in [the current certification record](runtime-effect-4.1-certification.json):
 
 | Predecessor | Source storage | Target | Platform |
 | --- | --- | --- | --- |
-| Build `fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2`, Effect 4.0.5; fresh repository | 1 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.0.5 | Darwin ARM64 |
-| Build `fe46ad3fa836f61192ee29d76695082ced3d571857716442a22031e45eef79a2`, Effect 4.0.5; previously upgraded repository | 3 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.0.5 | Darwin ARM64 |
-| Build `9f1797ddc28f42ceb77fa8dac1c8806da9207d00a568a792874216237b965f97`, Effect 4.0.5 | 1 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.0.5 | Darwin ARM64 |
-| Build `677f3350bff79f245d1fe4f76ef98610767981875529cf5948949bbefd507cdc`, Effect 4.0.5 | 2 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.0.5 | Darwin ARM64 |
+| Effectory v0.1.0 release, build `a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9`, Effect 4.0.5; fresh repository | 1 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.1.2 | Darwin ARM64 |
+| Effectory v0.1.0 release, build `a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9`, Effect 4.0.5; fresh repository | 1 | Execution contract `effectory.execution/v1`, storage 3, Effect 4.1.2 | Linux x64 |
 
-The target is build `c26a3010cee6c4d7dac060b8a4b70388d5c856e5263ad764533db6a5ce9f7357`. Its exact executable, unchanged source manifest and four real transition matrices are recorded in [the current certification record](runtime-http-disconnect-certification.json). The [format-1-to-2 certificate](runtime-upgrade-certification.json) and [earlier storage-3 target certificate](runtime-upgrade-format2-certification.json) remain historical evidence for their original executables. Other predecessor/build/source-format combinations and platforms remain unsupported until separately tested and listed. Linux component tests do not establish a Linux executable upgrade edge.
+The target is build `1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8`. Each edge was proved with the published v0.1.0 executable for its platform. Repositories that v0.1.0 itself upgraded from an earlier development build (storage 3) are not certified for this target. Earlier edges all targeted Effect 4.0.5, so they cannot match this host. Their records remain historical evidence: [Effect 4.0.5 disconnect certificate](runtime-http-disconnect-certification.json), [format-1-to-2 certificate](runtime-upgrade-certification.json) and [earlier storage-3 target certificate](runtime-upgrade-format2-certification.json). Other predecessor/build/source-format combinations and platforms remain unsupported until separately tested and listed.
 
-A fresh repository created by the previous host has no upgrade marker and uses source storage 1. A repository that already passed through runtime upgrade uses its recorded storage format. Both states are tested separately for the previous current host; its build hash alone does not determine the stored format.
+Effect 4.0.6 changed how a failure combines with a defect: a cleanup defect now makes a declared task failure fatal. Retained runs executing on this host follow that rule; see [task cleanup cause evidence](task-cleanup-cause-evidence.md).
+
+A fresh repository created by the previous host has no upgrade marker and uses source storage 1. A repository that already passed through runtime upgrade uses its recorded storage format. Each state needs its own tested edge; a build hash alone does not determine the stored format.
 
 ## Plan and apply offline
 

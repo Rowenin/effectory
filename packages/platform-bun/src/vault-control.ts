@@ -12,10 +12,10 @@ import type { Catalog } from "./catalog.ts";
 import { keyDirectory, vaultOperation } from "./vault-store.ts";
 import type { Mutation } from "./vault-store.ts";
 
-const error = (code: (typeof OperationError.Type)["code"], message: string) =>
+const error = (code: OperationError["code"], message: string) =>
   new OperationError({ code, message });
 const adminError = (failure: Vault.ReadError) => {
-  let code: (typeof OperationError.Type)["code"] = "Unavailable";
+  let code: OperationError["code"] = "Unavailable";
   if (failure instanceof Vault.VaultSecretNotFound) {
     code = "NotFound";
   } else if (failure instanceof Vault.VaultSecretInvalid) {

@@ -62,8 +62,9 @@ export async function archiveFixture(
   };
   try {
     await Promise.all(
-      Object.entries(contents).map(([name, value]) =>
-        writeFile(path.join(directory, name), value)
+      Object.entries(contents).map(
+        async ([name, value]) =>
+          await writeFile(path.join(directory, name), value)
       )
     );
     const process = Bun.spawn(

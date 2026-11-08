@@ -9,7 +9,7 @@ import { makeUpgradeJournal } from "../../src/upgrade-journal.ts";
 import { executorTestPolicy } from "./upgrade-executor-policy.ts";
 
 const [repository, planId, stage] = process.argv.slice(2);
-if (!repository || !planId || !stage) {
+if (repository === undefined || planId === undefined || stage === undefined) {
   throw new Error("Missing crash fixture arguments");
 }
 await Effect.runPromise(

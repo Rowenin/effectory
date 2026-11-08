@@ -68,7 +68,7 @@ test("archived bundles are never imported, stored runs remain readable, and exec
     await Effect.runPromise(
       store.project(run.runId, "Succeeded", { preserved: true })
     );
-    db.exec("UPDATE host_outbox SET delivered=1");
+    db.run("UPDATE host_outbox SET delivered=1");
     db.close();
     const accepted = await f.run(
       Effect.gen(function* () {
@@ -115,7 +115,7 @@ test("archived bundles are never imported, stored runs remain readable, and exec
         expect(() => catalog.assertExecutable(revision)).toThrow(oldBuild);
         const refusal = yield* Effect.result(catalog.get(revision));
         expect(refusal._tag).toBe("Failure");
-        const manifest = JSON.parse(
+        const manifest: unknown = JSON.parse(
           readFileSync(
             path.join(f.state, "revisions", catalog.active, "manifest.json"),
             "utf-8"
@@ -141,7 +141,7 @@ test("archived bundles are never imported, stored runs remain readable, and exec
       expect(preserved.result).toEqual({
         preserved: true,
       });
-      reopened.exec(
+      reopened.run(
         `UPDATE host_runs SET status='Waiting' WHERE runId='${run.runId}'`
       );
     } finally {

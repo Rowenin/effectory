@@ -15,7 +15,7 @@ import {
   RunStatus,
 } from "@effectory/runtime/protocol";
 import { canonical } from "@offtree/effectory-sdk/internal/boundary";
-import { Clock, Effect, Schema } from "effect";
+import { Cause, Clock, Effect, Exit, Schema } from "effect";
 
 import { versionProtection, isProtected } from "./lake-protection.ts";
 import { RetentionPolicy } from "./lake-retention-store.ts";
@@ -97,7 +97,7 @@ function identity(database: Database, artifactId: string, snapshot: number) {
         "SELECT version FROM lake_records WHERE artifactId = ? AND sequence <= ? AND reclaimedAt IS NULL ORDER BY version DESC LIMIT 1 OFFSET ?"
       )
       .get(artifactId, snapshot, count - 1);
-    const value = row ? decodeVersionRow(row).version : null;
+    const value = row === null ? null : decodeVersionRow(row).version;
     versions.set(count, value);
     return value;
   };
@@ -190,6 +190,8 @@ function retainedReferences(database: Database, digest: string, limit = 1) {
       .get(digest, limit)
   ).value;
 }
+const unreadableRecoveryIntents = (error: unknown) =>
+  storageError(error, "Could not read reclamation recovery intents");
 export function reclamationReceipt(
   database: Database,
   planId: string
@@ -299,20 +301,23 @@ export function resumeReclamation(
     let after = 0;
     let failure: string | undefined;
     while (true) {
-      const jobs = yield* Effect.try({
-        catch: (error) =>
-          storageError(error, "Could not read reclamation recovery intents"),
-        try: () => {
+      const rows = yield* Effect.try({
+        catch: unreadableRecoveryIntents,
+        try: (): unknown => {
           lease.assertActive();
-          return Schema.decodeUnknownSync(Schema.Array(ReclamationJob))(
-            database
-              .query(
-                `SELECT id,planId,digest,bytes,started FROM lake_reclamation_unlinks WHERE state = 'Pending' AND id > ? ${planId ? "AND planId = ?" : ""} ORDER BY id LIMIT 32`
-              )
-              .all(after, ...(planId ? [planId] : []))
-          );
+          return database
+            .query(
+              `SELECT id,planId,digest,bytes,started FROM lake_reclamation_unlinks WHERE state = 'Pending' AND id > ? ${planId !== undefined && planId !== "" ? "AND planId = ?" : ""} ORDER BY id LIMIT 32`
+            )
+            .all(
+              after,
+              ...(planId !== undefined && planId !== "" ? [planId] : [])
+            );
         },
       });
+      const jobs = yield* Schema.decodeUnknownEffect(
+        Schema.Array(ReclamationJob)
+      )(rows).pipe(Effect.mapError(unreadableRecoveryIntents));
       if (jobs.length === 0) {
         break;
       }
@@ -327,15 +332,16 @@ export function resumeReclamation(
                 "SELECT id,planId,digest,bytes,started FROM lake_reclamation_unlinks WHERE id = ? AND state = 'Pending'"
               )
               .get(job.id);
-            if (!pending) {
+            if (pending === null) {
               return;
             }
+            // A row that no longer decodes is recorded like a failed unlink.
+            const decoded = Schema.decodeUnknownExit(ReclamationJob)(pending);
             try {
-              unlinkReclamationJob(
-                database,
-                directory,
-                Schema.decodeUnknownSync(ReclamationJob)(pending)
-              );
+              if (Exit.isFailure(decoded)) {
+                throw Cause.squash(decoded.cause);
+              }
+              unlinkReclamationJob(database, directory, decoded.value);
             } catch (error) {
               failure = String(error).slice(0, 500);
               database
@@ -364,7 +370,7 @@ export function resumeReclamation(
         : "";
       return yield* fail(
         "Unavailable",
-        `Reclamation cleanup remains pending${planId ? ` for plan ${planId}` : ""}${counts}: ${failure}. Re-run lake reclaim apply with the same plan id.`
+        `Reclamation cleanup remains pending${planId !== undefined && planId !== "" ? ` for plan ${planId}` : ""}${counts}: ${failure}. Re-run lake reclaim apply with the same plan id.`
       );
     }
   });
@@ -437,13 +443,13 @@ export function createReclamation(
     });
   const planReclamation = (value: ReclamationRequest, principal = "owner") =>
     Effect.gen(function* () {
-      const request = yield* Effect.try({
-        catch: () => fail("InvalidInput", "Invalid reclamation selection"),
-        try: () =>
-          Schema.decodeUnknownSync(ReclamationRequest)(value, {
-            onExcessProperty: "error",
-          }),
-      });
+      const request = yield* Schema.decodeEffect(ReclamationRequest)(value, {
+        onExcessProperty: "error",
+      }).pipe(
+        Effect.mapError(() =>
+          fail("InvalidInput", "Invalid reclamation selection")
+        )
+      );
       const now = yield* Clock.currentTimeMillis;
       const snapshot = yield* perform(
         () =>
@@ -632,13 +638,13 @@ export function createReclamation(
     principal = "owner"
   ) =>
     Effect.gen(function* () {
-      const request = yield* Effect.try({
-        catch: () => fail("InvalidInput", "Invalid reclamation plan id"),
-        try: () =>
-          Schema.decodeUnknownSync(ReclamationApply)(value, {
-            onExcessProperty: "error",
-          }),
-      });
+      const request = yield* Schema.decodeEffect(ReclamationApply)(value, {
+        onExcessProperty: "error",
+      }).pipe(
+        Effect.mapError(() =>
+          fail("InvalidInput", "Invalid reclamation plan id")
+        )
+      );
       const now = yield* Clock.currentTimeMillis;
       yield* perform(() =>
         database
@@ -648,7 +654,7 @@ export function createReclamation(
                 "SELECT * FROM lake_reclamation_plans WHERE planId = ? AND principal = ?"
               )
               .get(request.planId, principal);
-            if (!raw) {
+            if (raw === null) {
               throw fail(
                 "NotFound",
                 "Reclamation plan was not found for this actor"
@@ -676,7 +682,7 @@ export function createReclamation(
                   `${rowSql()} WHERE r.principal = ? AND r.sequence = ? AND r.reclaimedAt IS NULL`
                 )
                 .get(principal, candidate.sequence);
-              if (!rawRow) {
+              if (rawRow === null) {
                 continue;
               }
               const row = Schema.decodeUnknownSync(Row)(rawRow);

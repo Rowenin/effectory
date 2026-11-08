@@ -1,13 +1,13 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 
-import { Effect, Fiber } from "effect";
+import { Effect, Fiber, Schema } from "effect";
 
 import { upgradeScanner } from "../src/upgrade-scan.ts";
 
 test("dense inspection pages shrink before JavaScript materialization and still visit every row once", async () => {
   const db = new Database(":memory:");
-  db.exec("CREATE TABLE journal(id INTEGER PRIMARY KEY,payload TEXT)");
+  db.run("CREATE TABLE journal(id INTEGER PRIMARY KEY,payload TEXT)");
   const payload = "😀".repeat(131_072);
   db.transaction(() => {
     for (let id = 1; id <= 25; id += 1) {
@@ -22,7 +22,9 @@ test("dense inspection pages shrink before JavaScript materialization and still 
         "fixture",
         "SELECT id position,payload FROM journal WHERE /* after */ ORDER BY id LIMIT ?",
         (raw) => {
-          const row = raw as { position: number; payload: string };
+          const row = Schema.decodeUnknownSync(
+            Schema.Struct({ payload: Schema.String, position: Schema.Finite })
+          )(raw);
           expect(row.payload).toBe(payload);
           seen.push(row.position);
         }
@@ -39,7 +41,7 @@ test("dense inspection pages shrink before JavaScript materialization and still 
 
 test("an oversized journal row refuses before the visitor and releases the transaction", async () => {
   const db = new Database(":memory:");
-  db.exec(
+  db.run(
     "CREATE TABLE journal(id INTEGER PRIMARY KEY,payload BLOB); INSERT INTO journal VALUES(1,zeroblob(8388609))"
   );
   try {
@@ -60,7 +62,7 @@ test("an oversized journal row refuses before the visitor and releases the trans
     expect(visited).toBe(false);
     expect(scanner.totals.rows).toBe(0);
     expect(db.inTransaction).toBe(false);
-    db.exec("BEGIN EXCLUSIVE; ROLLBACK");
+    db.run("BEGIN EXCLUSIVE; ROLLBACK");
   } finally {
     db.close();
   }
@@ -68,7 +70,7 @@ test("an oversized journal row refuses before the visitor and releases the trans
 
 test("interruption between bounded pages leaves no live read cursor or transaction", async () => {
   const db = new Database(":memory:");
-  db.exec(`CREATE TABLE journal(id INTEGER PRIMARY KEY);
+  db.run(`CREATE TABLE journal(id INTEGER PRIMARY KEY);
     WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<10000) INSERT INTO journal SELECT x FROM n`);
   try {
     let visited = 0;
@@ -90,7 +92,7 @@ test("interruption between bounded pages leaves no live read cursor or transacti
     expect(visited).toBeGreaterThan(0);
     expect(visited).toBeLessThan(10_000);
     expect(db.inTransaction).toBe(false);
-    db.exec("BEGIN EXCLUSIVE; ROLLBACK");
+    db.run("BEGIN EXCLUSIVE; ROLLBACK");
   } finally {
     db.close();
   }

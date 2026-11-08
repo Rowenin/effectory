@@ -41,17 +41,17 @@ export interface SelectionFlags {
 export function selectionFor<E, R>(
   client: {
     readonly SystemStatus: (
-      request: Record<never, never>
+      request: Record<string, never>
     ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
   },
   flags: SelectionFlags
 ) {
   return Effect.gen(function* () {
     const used =
-      flags.reportOnly.length ||
-      flags.reportOnlyTags.length ||
-      flags.reportSkip.length ||
-      flags.reportSkipTags.length ||
+      flags.reportOnly.length > 0 ||
+      flags.reportOnlyTags.length > 0 ||
+      flags.reportSkip.length > 0 ||
+      flags.reportSkipTags.length > 0 ||
       Option.isSome(flags.reportSkipAll);
     if (!used) {
       return {};

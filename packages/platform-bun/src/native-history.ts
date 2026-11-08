@@ -120,11 +120,7 @@ export function nativeTaskResult(engineId: string) {
       Effect.mapError((error) =>
         error instanceof OperationError ? error : unsupported()
       ),
-      Effect.catchCause((cause) =>
-        Cause.hasDies(cause)
-          ? Effect.fail(unsupported())
-          : Effect.failCause(cause)
-      )
+      Effect.catchCauseIf(Cause.hasDies, () => Effect.fail(unsupported()))
     );
   });
 }

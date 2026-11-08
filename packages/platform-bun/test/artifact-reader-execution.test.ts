@@ -157,9 +157,9 @@ test("real runner provides artifact reads to task Layers and automatically queue
         expect((yield* wait(consumer.runId)).result).toBe(42);
         for (let i = 0; i < 500; i += 1) {
           const ids = yield* store.reportIds(first.runId);
-          if (ids[0]) {
+          if (ids[0] !== undefined) {
             const report = yield* store.reportGet(ids[0]);
-            if (report.reportRunId) {
+            if (report.reportRunId !== null) {
               const result = yield* wait(report.reportRunId);
               expect(result.status).toBe("Succeeded");
               expect(result.result).toEqual({ data: 42, markdown: "# Result" });

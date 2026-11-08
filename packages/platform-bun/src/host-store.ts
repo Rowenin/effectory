@@ -191,7 +191,7 @@ function submissionFingerprint(request: Submit, scheduled = false) {
   } catch {
     throw error("InvalidInput", "Invalid report selection");
   }
-  const tags = Schema.decodeUnknownSync(RunTags)(
+  const tags = Schema.decodeSync(RunTags)(
     "tags" in request ? request.tags : {}
   );
   const checks = submissionChecks(request);
@@ -214,9 +214,7 @@ function submissionDecision(request: Submit, isReport: boolean) {
   }
   if (request.resolvedReportSelection) {
     return canonical(
-      Schema.decodeUnknownSync(SelectionDecision)(
-        request.resolvedReportSelection
-      )
+      Schema.decodeSync(SelectionDecision)(request.resolvedReportSelection)
     );
   }
   if (
@@ -256,7 +254,7 @@ export function createStore(database: Database, lease: Lease) {
     )
     .get();
   if (
-    existingRunsTable &&
+    existingRunsTable !== null &&
     database
       .query("PRAGMA table_info(host_runs)")
       .all()
@@ -268,12 +266,12 @@ export function createStore(database: Database, lease: Lease) {
   ) {
     // Older hosts explicitly require admissionNamespace. Renaming it makes them
     // refuse before they can admit a request whose full history was retired.
-    database.exec(
+    database.run(
       "ALTER TABLE host_runs RENAME COLUMN admissionNamespace TO admissionLane"
     );
   }
   if (
-    existingRunsTable &&
+    existingRunsTable !== null &&
     !database
       .query("PRAGMA table_info(host_runs)")
       .all()
@@ -289,7 +287,7 @@ export function createStore(database: Database, lease: Lease) {
       "Host database uses an older admission format; use its original Effectory build and backup before upgrading"
     );
   }
-  database.exec(`
+  database.run(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = FULL;
     PRAGMA foreign_keys = ON;
@@ -352,24 +350,22 @@ export function createStore(database: Database, lease: Lease) {
       Schema.Array(Schema.Struct({ name: Schema.String }))
     )(database.query("PRAGMA table_info(host_runs)").all());
     if (!columns.some((column) => column.name === "checksJson")) {
-      database.exec(
+      database.run(
         `ALTER TABLE host_runs ADD COLUMN checksJson TEXT NOT NULL DEFAULT '{"failOn":"low"}'`
       );
     }
     if (!columns.some((column) => column.name === "tagsJson")) {
-      database.exec(
+      database.run(
         "ALTER TABLE host_runs ADD COLUMN tagsJson TEXT NOT NULL DEFAULT '{}'"
       );
     }
     if (!columns.some((column) => column.name === "reportSelectionJson")) {
-      database.exec(
-        "ALTER TABLE host_runs ADD COLUMN reportSelectionJson TEXT"
-      );
+      database.run("ALTER TABLE host_runs ADD COLUMN reportSelectionJson TEXT");
     }
     if (!columns.some((column) => column.name === "reportJson")) {
-      database.exec("ALTER TABLE host_runs ADD COLUMN reportJson TEXT");
+      database.run("ALTER TABLE host_runs ADD COLUMN reportJson TEXT");
     }
-    database.exec(
+    database.run(
       "CREATE INDEX IF NOT EXISTS host_runs_origin_status ON host_runs(admissionLane, status)"
     );
   })();
@@ -414,7 +410,7 @@ export function createStore(database: Database, lease: Lease) {
     const raw = database
       .query("SELECT * FROM host_runs WHERE runId = ?")
       .get(runId);
-    if (!raw) {
+    if (raw === null) {
       const retired = retiredRun(database, runId);
       throw error(
         "NotFound",
@@ -452,7 +448,7 @@ export function createStore(database: Database, lease: Lease) {
     const raw = database
       .query("SELECT * FROM host_waits WHERE waitId = ?")
       .get(waitId);
-    if (!raw) {
+    if (raw === null) {
       throw error("NotFound", `Wait not found: ${waitId}`);
     }
     const row = Schema.decodeUnknownSync(WaitRow)(raw);
@@ -474,7 +470,7 @@ export function createStore(database: Database, lease: Lease) {
         .query(
           "SELECT sequence FROM host_events WHERE runId = ? AND eventKey = ?"
         )
-        .get(runId, key)
+        .get(runId, key) !== null
     ) {
       return;
     }
@@ -529,7 +525,7 @@ export function createStore(database: Database, lease: Lease) {
             .query(
               "SELECT sequence FROM host_events WHERE runId = ? AND eventKey = ?"
             )
-            .get(runId, key)
+            .get(runId, key) !== null
         ) {
           return;
         }
@@ -716,7 +712,7 @@ export function createStore(database: Database, lease: Lease) {
           "SELECT * FROM host_runs WHERE principal = ? AND admissionLane = ? AND requestKey = ?"
         )
         .get(principal, namespace, request.requestKey);
-      if (prior) {
+      if (prior !== null) {
         const row = Schema.decodeUnknownSync(RunRow)(prior);
         if (row.fingerprint !== fingerprint) {
           throw error(
@@ -760,7 +756,7 @@ export function createStore(database: Database, lease: Lease) {
       }
       const selection = submissionDecision(request, report !== undefined);
       const runId = crypto.randomUUID();
-      const tags = Schema.decodeUnknownSync(RunTags)(
+      const tags = Schema.decodeSync(RunTags)(
         request.resolvedTags ?? request.tags ?? {}
       );
       database
@@ -810,14 +806,14 @@ export function createStore(database: Database, lease: Lease) {
       if (!Schema.is(CancellationRequest)(value)) {
         throw error("InvalidInput", "Invalid cancellation request");
       }
-      const request = Schema.decodeUnknownSync(CancellationRequest)(value, {
+      const request = Schema.decodeSync(CancellationRequest)(value, {
         onExcessProperty: "error",
       });
       refuseRetired(database, "run", request.runId, actor, true);
       const authorized = database
         .query("SELECT runId FROM host_runs WHERE runId = ? AND principal = ?")
         .get(request.runId, actor);
-      if (!authorized) {
+      if (authorized === null) {
         throw error("NotFound", "Run was not found");
       }
       const reason = request.reason ?? null;
@@ -827,7 +823,7 @@ export function createStore(database: Database, lease: Lease) {
           "SELECT fingerprint, receiptJson FROM host_cancellation_receipts WHERE runId = ? AND requestKey = ? AND actor = ?"
         )
         .get(request.runId, request.requestKey, actor);
-      if (previous) {
+      if (previous !== null) {
         const row = Schema.decodeUnknownSync(
           Schema.Struct({
             fingerprint: Schema.String,
@@ -900,7 +896,7 @@ export function createStore(database: Database, lease: Lease) {
         .get(id);
       return {
         ...retired,
-        ...(raw?.scheduleJson
+        ...(raw !== null && raw.scheduleJson !== null && raw.scheduleJson !== ""
           ? {
               schedule: Schema.decodeUnknownSync(StoredScheduleProvenance)(
                 JSON.parse(raw.scheduleJson)
@@ -916,6 +912,7 @@ export function createStore(database: Database, lease: Lease) {
     (...args: Parameters<(typeof schedules)[K]>) =>
       perform(() => {
         // All schedule operations are synchronous and serialized by the host's lease.
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- TypeScript cannot type a generic method lookup by key
         const operation = schedules[key] as (
           ...values: Parameters<(typeof schedules)[K]>
         ) => ReturnType<(typeof schedules)[K]>;
@@ -1014,7 +1011,7 @@ export function createStore(database: Database, lease: Lease) {
           const stopped = database
             .query("SELECT reasonJson FROM host_fences WHERE runId=?")
             .get(runId);
-          if (stopped || terminal.has(getRun(runId).status)) {
+          if (stopped !== null || terminal.has(getRun(runId).status)) {
             return false;
           }
           reportSources.enterWorkflow(runId, path);
@@ -1051,7 +1048,7 @@ export function createStore(database: Database, lease: Lease) {
                 tag: Schema.String,
               })
             )(raw);
-            return Schema.decodeUnknownSync(Event)({
+            return Schema.decodeSync(Event)({
               ...row,
               payload: json(row.payloadJson),
             });
@@ -1110,7 +1107,7 @@ export function createStore(database: Database, lease: Lease) {
         const row = database
           .query("SELECT reasonJson FROM host_fences WHERE runId = ?")
           .get(runId);
-        if (!row) {
+        if (row === null) {
           return null;
         }
         const { reasonJson } = Schema.decodeUnknownSync(
@@ -1123,11 +1120,11 @@ export function createStore(database: Database, lease: Lease) {
         const row = database
           .query("SELECT requestedAt FROM host_fences WHERE runId = ?")
           .get(runId);
-        return row
-          ? Schema.decodeUnknownSync(
+        return row === null
+          ? null
+          : Schema.decodeUnknownSync(
               Schema.Struct({ requestedAt: Schema.Finite })
-            )(row).requestedAt
-          : null;
+            )(row).requestedAt;
       }),
     getRun: (runId: string, principal?: string) =>
       perform(() => {
@@ -1140,11 +1137,11 @@ export function createStore(database: Database, lease: Lease) {
       perform(() => {
         if (
           principal !== undefined &&
-          !database
+          database
             .query(
               "SELECT w.waitId FROM host_waits w JOIN host_runs r ON r.runId = w.runId WHERE w.waitId = ? AND r.principal = ?"
             )
-            .get(waitId, principal)
+            .get(waitId, principal) === null
         ) {
           refuseRetired(database, "wait", waitId, principal, mutation);
           throw error("NotFound", "Wait was not found");
@@ -1189,11 +1186,12 @@ export function createStore(database: Database, lease: Lease) {
           const row = database
             .query("SELECT reasonJson FROM host_fences WHERE runId = ?")
             .get(runId);
-          const reason = row
-            ? Schema.decodeUnknownSync(
-                Schema.Struct({ reasonJson: Schema.NullOr(Schema.String) })
-              )(row).reasonJson
-            : null;
+          const reason =
+            row === null
+              ? null
+              : Schema.decodeUnknownSync(
+                  Schema.Struct({ reasonJson: Schema.NullOr(Schema.String) })
+                )(row).reasonJson;
           return {
             fenced: row !== null,
             reason:
@@ -1282,7 +1280,7 @@ export function createStore(database: Database, lease: Lease) {
             "SELECT * FROM host_runs WHERE principal = ? AND admissionLane = 'manual' AND requestKey = ?"
           )
           .get(principal, request.requestKey);
-        if (!prior) {
+        if (prior === null) {
           return null;
         }
         const row = Schema.decodeUnknownSync(RunRow)(prior);
@@ -1302,7 +1300,7 @@ export function createStore(database: Database, lease: Lease) {
               "SELECT runId, targetId, kind, revision, acceptedAt, status, lastSequence, scheduleJson, tagsJson, reportJson FROM host_runs WHERE runId = ? AND principal = ?"
             )
             .get(runId, principal);
-          if (!raw) {
+          if (raw === null) {
             refuseRetired(database, "run", runId, principal);
             throw error("NotFound", "Run was not found");
           }
@@ -1370,7 +1368,7 @@ export function createStore(database: Database, lease: Lease) {
               "SELECT waitId FROM host_waits WHERE runId = ? AND nodeId = ?"
             )
             .get(input.runId, input.nodeId);
-          if (existing) {
+          if (existing !== null) {
             return getWait(
               Schema.decodeUnknownSync(
                 Schema.Struct({ waitId: Schema.String })
@@ -1400,7 +1398,7 @@ export function createStore(database: Database, lease: Lease) {
             run.status === "Cancelling" ||
             database
               .query("SELECT runId FROM host_fences WHERE runId = ?")
-              .get(input.runId)
+              .get(input.runId) !== null
           ) {
             throw error("WaitClosed", "Run no longer admits waits");
           }
@@ -1535,7 +1533,7 @@ export function createStore(database: Database, lease: Lease) {
               "SELECT engineId, payloadJson FROM host_invocations WHERE runId = ? AND nodeId = ?"
             )
             .get(runId, nodeId);
-          if (prior) {
+          if (prior !== null) {
             const previous = Schema.decodeUnknownSync(
               Schema.Struct({
                 engineId: Schema.String,
@@ -1751,7 +1749,7 @@ export function createStore(database: Database, lease: Lease) {
     ) => reportSearch(database, pagination, request, principal, perform),
     reportSettleSource: (
       sourceId: string,
-      status: (typeof SourceIdentity.Type)["status"],
+      status: SourceIdentity["status"],
       category: FailureCategory | null,
       reason: typeof IneligibleReason.Type | null
     ) =>
@@ -1868,7 +1866,7 @@ export function createStore(database: Database, lease: Lease) {
               "SELECT * FROM host_receipts WHERE waitId = ? AND requestKey = ?"
             )
             .get(wait.waitId, request.requestKey);
-          if (prior) {
+          if (prior !== null) {
             const receipt = Schema.decodeUnknownSync(
               Schema.Struct({
                 actor: Schema.String,

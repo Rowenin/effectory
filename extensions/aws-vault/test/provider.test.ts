@@ -14,7 +14,6 @@ import {
 
 import { make } from "../src/contracts.ts";
 import { capture } from "../src/options.ts";
-import type { Options } from "../src/options.ts";
 import { makeBackend } from "../src/provider.ts";
 
 const canary = "CANARY-aws-vault-private-value";
@@ -135,9 +134,12 @@ test("options are strict, immutable and do not expose submitted values", () => {
       secrets: { token: { secretId: canary, versionId: undefined } },
     },
   ]) {
-    expect(() => make(invalid as Options)).toThrow("Invalid AWS vault options");
+    // Runtime callers are untyped, so bypass the static options parameter.
+    expect(() => {
+      Reflect.apply(make, undefined, [invalid]);
+    }).toThrow("Invalid AWS vault options");
     try {
-      make(invalid as Options);
+      Reflect.apply(make, undefined, [invalid]);
     } catch (error) {
       expect(String(error)).not.toContain(canary);
     }
@@ -339,12 +341,12 @@ test("timeout aborts a real HTTP request through Distilled and FetchHttpClient",
   let requests = 0;
   let disconnected = 0;
   const server = Bun.serve({
-    fetch: (request) => {
+    fetch: async (request) => {
       requests += 1;
       request.signal.addEventListener("abort", () => {
         disconnected += 1;
       });
-      return new Promise<Response>(() => {});
+      return await new Promise<Response>(() => {});
     },
     hostname: "127.0.0.1",
     port: 0,

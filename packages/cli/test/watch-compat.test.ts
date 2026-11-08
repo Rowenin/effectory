@@ -73,11 +73,11 @@ test("old daemon refuses foreground before admission, with command-specific reco
           const server = yield* Effect.acquireRelease(
             Effect.sync(() =>
               Bun.serve({
-                fetch: (request) =>
-                  request
+                fetch: async (request) =>
+                  await request
                     .clone()
                     .text()
-                    .then((body) => {
+                    .then(async (body) => {
                       if (
                         body.includes('"TaskRun"') ||
                         body.includes('"WorkflowRun"') ||
@@ -87,13 +87,13 @@ test("old daemon refuses foreground before admission, with command-specific reco
                       ) {
                         submissions += 1;
                       }
-                      return handler(request);
+                      return await handler(request);
                     }),
                 hostname: "127.0.0.1",
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           mkdirSync(path.join(repository, ".effectory"));
           writeFileSync(

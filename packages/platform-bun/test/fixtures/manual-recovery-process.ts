@@ -17,11 +17,11 @@ import { Runner } from "../../src/runner.ts";
 import { writeReady } from "./ready.ts";
 
 const [filename, mode, readyFile] = process.argv.slice(2);
-if (!filename || !mode || !readyFile) {
+if (filename === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Expected database, mode and ready path");
 }
 const audit = new Database(`${filename}.audit`);
-audit.exec(
+audit.run(
   "CREATE TABLE IF NOT EXISTS actions (name TEXT PRIMARY KEY,count INTEGER NOT NULL)"
 );
 const bump = (name: string) =>
@@ -67,8 +67,9 @@ const charge = Task.make(
       bump("charge");
       yield* (yield* ArtifactStorage).publish(receipt, value, { key: "same" });
       if (mode !== "complete") {
-        yield* Effect.promise(() =>
-          writeReady(readyFile, JSON.stringify({ status: "Action" }))
+        yield* Effect.promise(
+          async () =>
+            await writeReady(readyFile, JSON.stringify({ status: "Action" }))
         );
         return yield* Effect.never;
       }
@@ -129,8 +130,8 @@ const program = Effect.gen(function* () {
         "owner"
       );
       if (assessment.state === "Recoverable") {
-        yield* Effect.promise(() =>
-          writeReady(readyFile, JSON.stringify(assessment))
+        yield* Effect.promise(
+          async () => await writeReady(readyFile, JSON.stringify(assessment))
         );
         return yield* Effect.never;
       }
@@ -140,7 +141,7 @@ const program = Effect.gen(function* () {
         { runId: run.runId },
         "owner"
       );
-      if (assessment.token) {
+      if (assessment.token !== null) {
         yield* store.recover(
           {
             acknowledgeReexecution: true,
@@ -153,8 +154,8 @@ const program = Effect.gen(function* () {
       }
     }
     if (mode === "complete" && current.status === "Succeeded") {
-      yield* Effect.promise(() =>
-        writeReady(readyFile, JSON.stringify(current))
+      yield* Effect.promise(
+        async () => await writeReady(readyFile, JSON.stringify(current))
       );
       return;
     }
@@ -172,7 +173,7 @@ const accept = Effect.gen(function* () {
     return yield* Effect.die("Missing run");
   }
   const assessment = yield* store.recoveryGet({ runId: run.runId }, "owner");
-  if (!assessment.token) {
+  if (assessment.token === null) {
     return yield* Effect.die(JSON.stringify(assessment));
   }
   const accepted = yield* store.recover(
@@ -184,7 +185,9 @@ const accept = Effect.gen(function* () {
     },
     "owner"
   );
-  yield* Effect.promise(() => writeReady(readyFile, JSON.stringify(accepted)));
+  yield* Effect.promise(
+    async () => await writeReady(readyFile, JSON.stringify(accepted))
+  );
 });
 const effect =
   mode === "accept"

@@ -30,7 +30,7 @@ export const aggregateExit = (value: typeof ReportAggregate.Type) => {
 };
 export const reportsPreflight = <E, R>(client: {
   readonly SystemStatus: (
-    request: Record<never, never>
+    request: Record<string, never>
   ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
 }) =>
   Effect.gen(function* () {
@@ -81,8 +81,8 @@ export const reportText = (text: string, output?: string) =>
           code: "Unavailable",
           message: "Cannot write report output",
         }),
-      try: () =>
-        new Promise<void>((resolve, reject) => {
+      try: async () =>
+        await new Promise<void>((resolve, reject) => {
           const failed = (error: Error) => reject(error);
           process.stdout.once("error", failed);
           try {
@@ -96,7 +96,7 @@ export const reportText = (text: string, output?: string) =>
             });
           } catch (error) {
             process.stdout.removeListener("error", failed);
-            reject(error);
+            reject(error instanceof Error ? error : new Error(String(error)));
           }
         }),
     });

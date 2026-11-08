@@ -79,15 +79,13 @@ export const reconcileReportSources = Effect.gen(function* () {
   yield* store.reportCancellationDrain();
   yield* Effect.yieldNow;
   for (let slot = 0; slot < 4; slot += 1) {
-    const promoted = yield* store
-      .reportPromote()
-      .pipe(
-        Effect.catch((error) =>
-          error.code === "LimitExceeded" || error.code === "Unavailable"
-            ? Effect.succeed(null)
-            : Effect.fail(error)
-        )
-      );
+    const promoted = yield* store.reportPromote().pipe(
+      Effect.catchIf(
+        (error) =>
+          error.code === "LimitExceeded" || error.code === "Unavailable",
+        () => Effect.succeed(null)
+      )
+    );
     if (promoted === null) {
       break;
     }

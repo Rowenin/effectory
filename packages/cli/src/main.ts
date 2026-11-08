@@ -78,7 +78,7 @@ import {
   waitReport,
   waitReports,
 } from "./reports.ts";
-import { tagsFor } from "./tags.ts";
+import { inputError, tagsFor } from "./tags.ts";
 import { offlineVault, readSecret, writeSecret } from "./vault-io.ts";
 
 const root = Command.make("effectory").pipe(
@@ -114,10 +114,8 @@ const page = (config: {
   limit: config.limit,
   ...(Option.isSome(config.cursor) ? { cursor: config.cursor.value } : {}),
 });
-const optionalText = <K extends string>(
-  key: K,
-  value: Option.Option<string>
-) => (Option.isSome(value) ? { [key]: value.value } : {});
+const optionalText = (key: string, value: Option.Option<string>) =>
+  Option.isSome(value) ? { [key]: value.value } : {};
 const revision = (value: Option.Option<string>) =>
   Option.isSome(value) ? { revision: value.value } : {};
 const print = (value: unknown) =>
@@ -137,13 +135,19 @@ const withClient = <A, E, R>(
       return yield* body(client);
     })
   );
+const invalidJsonInput = () =>
+  new OperationError({
+    code: "InvalidInput",
+    message: "Expected JSON input of at most 1 MiB from one input source",
+  });
+const endpointChangedBeforeDrain = () =>
+  new OperationError({
+    code: "Unavailable",
+    message: "Daemon endpoint changed before drain",
+  });
 function parseInput(input: Option.Option<string>, file: Option.Option<string>) {
   return Effect.tryPromise({
-    catch: () =>
-      new OperationError({
-        code: "InvalidInput",
-        message: "Expected JSON input of at most 1 MiB from one input source",
-      }),
+    catch: invalidJsonInput,
     try: async () => {
       if (Option.isSome(input) && Option.isSome(file)) {
         throw new Error("Use one input source");
@@ -184,9 +188,12 @@ function parseInput(input: Option.Option<string>, file: Option.Option<string>) {
       }
       const parsed: unknown = JSON.parse(text);
       checkJsonBudget(parsed);
-      return Schema.decodeUnknownSync(Schema.Json)(parsed);
+      return parsed;
     },
-  });
+  }).pipe(
+    Effect.flatMap(Schema.decodeUnknownEffect(Schema.Json)),
+    Effect.mapError(invalidJsonInput)
+  );
 }
 
 type WatchClient = Effect.Success<ReturnType<typeof createWatchClient>>;
@@ -205,7 +212,7 @@ function observationHint(
     }
     return Console.error(
       `${accepted ? `Run ${runId} was accepted. ` : ""}Inspect with run get ${runId}.${recovery}`
-    ).pipe(Effect.catchCause(() => Effect.void));
+    ).pipe(Effect.ignoreCause);
   };
 }
 
@@ -276,11 +283,11 @@ function observe(
           Effect.map((status) =>
             status.capabilities.includes("run.recovery.v1")
           ),
-          Effect.catch(() => Effect.succeed(false))
+          Effect.orElseSucceed(() => false)
         );
         yield* Console.error(
           `Outside action is available or the run needs attention. Inspect run waits ${runId} and run get ${runId}.${supportsRecovery && run.status === "NeedsAttention" ? ` Assess uncertain tasks with run recover ${runId}.` : ""}`
-        ).pipe(Effect.catchCause(() => Effect.void));
+        ).pipe(Effect.ignoreCause);
       }
     }).pipe(
       // oxlint-disable-next-line promise/prefer-await-to-callbacks -- Effect callback, not a Promise.
@@ -486,11 +493,11 @@ function definitions(kind: "task" | "workflow") {
                   Array.isArray(description.reports) &&
                   description.reports.length > 0
                     ? Console.error(
-                        `Reports: effectory report list ${result.runId}${result.reportSelection?.required.length ? " (required reports remain selected)" : ""}`
+                        `Reports: effectory report list ${result.runId}${(result.reportSelection?.required.length ?? 0) > 0 ? " (required reports remain selected)" : ""}`
                       )
                     : Effect.void
                 ),
-                Effect.catchCause(() => Effect.void)
+                Effect.ignoreCause
               );
             }
             yield* observe(
@@ -595,7 +602,7 @@ const reportCommands = Command.make("report").pipe(
               }
               if (note !== null) {
                 yield* Effect.sync(() => console.error(note)).pipe(
-                  Effect.catchCause(() => Effect.void)
+                  Effect.ignoreCause
                 );
               }
             }
@@ -700,7 +707,7 @@ const reportCommands = Command.make("report").pipe(
                     ? Effect.void
                     : Console.error(
                         `Delivery uncertain. Retry effectory report retry ${config.id} --request-key ${key}`
-                      ).pipe(Effect.catchCause(() => Effect.void))
+                      ).pipe(Effect.ignoreCause)
                 ),
                 Effect.flatMap(print)
               );
@@ -744,7 +751,7 @@ const reportCommands = Command.make("report").pipe(
                   ? Effect.void
                   : Console.error(
                       `Delivery uncertain. Retry report cancel with the same selection, reason and --request-key ${key}`
-                    ).pipe(Effect.catchCause(() => Effect.void))
+                    ).pipe(Effect.ignoreCause)
               ),
               Effect.flatMap(print)
             );
@@ -955,7 +962,7 @@ const runCommands = Command.make("run").pipe(
                     error instanceof OperationError
                       ? Effect.void
                       : Console.error(recoveryRetry(action.request)).pipe(
-                          Effect.catchCause(() => Effect.void)
+                          Effect.ignoreCause
                         )
                   )
                 );
@@ -1044,7 +1051,7 @@ const runCommands = Command.make("run").pipe(
       (config) =>
         withClient((client) =>
           Effect.gen(function* () {
-            const request = yield* Schema.decodeUnknownEffect(LogListRequest)({
+            const request = yield* Schema.decodeEffect(LogListRequest)({
               ...page(config),
               runId: config.id,
               ...optionalText("nodeId", config.nodeId),
@@ -1102,7 +1109,7 @@ const runCommands = Command.make("run").pipe(
       (config) =>
         withClient((client) =>
           Effect.gen(function* () {
-            const request = yield* Schema.decodeUnknownEffect(WaitListRequest)({
+            const request = yield* Schema.decodeEffect(WaitListRequest)({
               ...page(config),
               ...optionalText("runId", config.id),
               ...optionalText("kind", config.kind),
@@ -1262,7 +1269,7 @@ const reclaim = Command.make("reclaim").pipe(
         withClient((client) =>
           Effect.gen(function* () {
             const request = yield* Effect.try({
-              catch: (error) => error as OperationError,
+              catch: inputError,
               try: () =>
                 parseReclamation({
                   policy: config.policy,
@@ -1447,24 +1454,18 @@ const daemon = Command.make("daemon").pipe(
               crypto.randomUUID()
             );
             const endpoint = yield* Effect.try({
-              catch: () =>
-                new OperationError({
-                  code: "Unavailable",
-                  message: "Daemon endpoint changed before drain",
-                }),
-              try: () =>
-                Schema.decodeUnknownSync(Endpoint)(
-                  JSON.parse(
-                    readFileSync(
-                      path.join(
-                        repository.repository,
-                        ".effectory/daemon.json"
-                      ),
-                      "utf-8"
-                    )
+              catch: endpointChangedBeforeDrain,
+              try: (): unknown =>
+                JSON.parse(
+                  readFileSync(
+                    path.join(repository.repository, ".effectory/daemon.json"),
+                    "utf-8"
                   )
                 ),
-            });
+            }).pipe(
+              Effect.flatMap(Schema.decodeUnknownEffect(Endpoint)),
+              Effect.mapError(endpointChangedBeforeDrain)
+            );
             const receipt = yield* client
               .SystemDrain({
                 gracePeriodMs: config.grace,
@@ -1741,9 +1742,7 @@ const operation = Command.make("operation").pipe(
       (config) =>
         withClient((client) =>
           Effect.gen(function* () {
-            const request = yield* Schema.decodeUnknownEffect(
-              OperationListRequest
-            )({
+            const request = yield* Schema.decodeEffect(OperationListRequest)({
               ...page(config),
               ...optionalText("kind", config.kind),
               ...optionalText("status", config.status),

@@ -22,7 +22,7 @@ export function binaryPool(capacity = 4) {
     [];
   const release = () => {
     let next = queue.shift();
-    while (next?.cancelled) {
+    while (next?.cancelled === true) {
       next = queue.shift();
     }
     if (next) {
@@ -127,9 +127,7 @@ export function binaryOwner(pool: BinaryPool) {
     ).pipe(
       Effect.as(once(releaseReference)),
       Effect.onInterrupt(() => Effect.sync(releaseReference)),
-      Effect.catch((error) =>
-        Effect.sync(releaseReference).pipe(Effect.andThen(Effect.fail(error)))
-      )
+      Effect.tapError(() => Effect.sync(releaseReference))
     );
   });
   const read = (

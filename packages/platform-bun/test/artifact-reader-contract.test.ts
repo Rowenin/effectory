@@ -86,8 +86,8 @@ async function withStore<A, E>(
 for (const invocation of [false, true]) {
   test(
     `report source exemption exceeds 1024 and projection rebuild/rollback remains conservative (workflow invocation: ${invocation})`,
-    () =>
-      withStore((f, directory) =>
+    async () =>
+      await withStore((f, directory) =>
         Effect.gen(function* () {
           const run = yield* f.store.submit(
             {
@@ -137,7 +137,7 @@ for (const invocation of [false, true]) {
           const refs = [];
           for (let i = 0; i < 1025; i += 1) {
             refs.push(
-              Schema.decodeUnknownSync(Json.refSchema)(
+              yield* Schema.decodeUnknownEffect(Json.refSchema)(
                 yield* f.lake.publish(
                   identity,
                   "value",
@@ -165,30 +165,31 @@ for (const invocation of [false, true]) {
             f.db.query("SELECT COUNT(*) AS n FROM lake_report_holds").get()
           ).toEqual({ n: 1 });
           // A failed report transition must roll its hold back atomically.
-          try {
-            f.db
-              .transaction(() => {
-                f.db
-                  .query(
-                    "UPDATE host_reports SET status='Cancelled' WHERE reportRunId=?"
-                  )
-                  .run(reporter.identity.runId);
-                expect(
+          const rollback = yield* Effect.try({
+            catch: String,
+            try: () =>
+              f.db
+                .transaction(() => {
                   f.db
-                    .query("SELECT COUNT(*) AS n FROM lake_report_holds")
-                    .get()
-                ).toEqual({ n: 0 });
-                throw new Error("rollback");
-              })
-              .immediate();
-          } catch (error) {
-            expect(String(error)).toContain("rollback");
-          }
+                    .query(
+                      "UPDATE host_reports SET status='Cancelled' WHERE reportRunId=?"
+                    )
+                    .run(reporter.identity.runId);
+                  expect(
+                    f.db
+                      .query("SELECT COUNT(*) AS n FROM lake_report_holds")
+                      .get()
+                  ).toEqual({ n: 0 });
+                  throw new Error("rollback");
+                })
+                .immediate(),
+          }).pipe(Effect.flip);
+          expect(rollback).toContain("rollback");
           expect(
             f.db.query("SELECT COUNT(*) AS n FROM lake_report_holds").get()
           ).toEqual({ n: 1 });
           // Simulate an older database without the reader projection.
-          f.db.exec(
+          f.db.run(
             "DROP TRIGGER lake_report_insert; DROP TRIGGER lake_report_update; DROP TRIGGER lake_report_delete; DROP TABLE lake_report_holds;"
           );
           const reopened = createLake(f.db, path.join(directory, "blobs"), {
@@ -235,11 +236,11 @@ for (const invocation of [false, true]) {
 
 test(
   "protection details truncate consumers without losing counts or overlap",
-  () =>
-    withStore((f) =>
+  async () =>
+    await withStore((f) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("producer");
-        const ref = Schema.decodeUnknownSync(Json.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Json.refSchema)(
           yield* f.lake.publish(
             producer.identity,
             "value",
@@ -414,11 +415,11 @@ test("documented graph example publishes and reads through the actual runner", a
 
 test.skipIf(process.getuid?.() === 0)(
   "binary reads preserve transient storage failure classification",
-  () =>
-    withStore((f, directory) =>
+  async () =>
+    await withStore((f, directory) =>
       Effect.gen(function* () {
         const producer = yield* f.admit("source");
-        const ref = Schema.decodeUnknownSync(Bytes.refSchema)(
+        const ref = yield* Schema.decodeUnknownEffect(Bytes.refSchema)(
           yield* f.lake.publishBytes(
             producer.identity,
             "bytes",
@@ -430,15 +431,15 @@ test.skipIf(process.getuid?.() === 0)(
         yield* f.store.project(producer.identity.runId, "Succeeded");
         const consumer = yield* f.admit("consumer");
         const filename = path.join(directory, "blobs", ref.digest);
-        yield* Effect.promise(() => chmod(filename, 0));
+        yield* Effect.promise(async () => await chmod(filename, 0));
         try {
           expect(
             yield* consumer.binding.reader.bytes(Bytes, ref).pipe(Effect.flip)
           ).toMatchObject({ _tag: "ArtifactUnavailable", reason: "Storage" });
         } finally {
-          yield* Effect.promise(() => chmod(filename, 0o600));
+          yield* Effect.promise(async () => await chmod(filename, 0o600));
         }
-        yield* Effect.promise(() => rm(filename));
+        yield* Effect.promise(async () => await rm(filename));
         expect(
           yield* consumer.binding.reader.bytes(Bytes, ref).pipe(Effect.flip)
         ).toMatchObject({ _tag: "ArtifactReadError", reason: "Corrupt" });

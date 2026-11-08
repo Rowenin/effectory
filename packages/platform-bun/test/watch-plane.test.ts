@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 
 import type { RunWatchFrame } from "@effectory/runtime/watch-rpc";
 import { WatchPlane } from "@effectory/runtime/watch-rpc";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Exit, Layer, Scope, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { RpcClient } from "effect/rpc";
 
@@ -90,12 +90,13 @@ test("real RPC preserves preceding batch frames before typed oversized failure",
         const server = yield* Effect.acquireRelease(
           Effect.sync(() =>
             Bun.serve({
-              fetch: async (incoming) => handler(await watchRequest(incoming)),
+              fetch: async (incoming) =>
+                await handler(await watchRequest(incoming)),
               hostname: "127.0.0.1",
               port: 0,
             })
           ),
-          (running) => Effect.promise(() => running.stop(true))
+          (running) => Effect.promise(async () => await running.stop(true))
         );
         const url = `http://127.0.0.1:${server.port}/rpc/watch`;
         const protocol = RpcClient.layerProtocolHttp({ url }).pipe(
@@ -117,10 +118,11 @@ test("real RPC preserves preceding batch frames before typed oversized failure",
         expect(seen).toEqual([event(1, "first"), event(2, "second")]);
         expect(failure).toMatchObject({ code: "LimitExceeded" });
         expect(String(failure)).toContain("--jsonl --after-sequence 3");
-        const raw = yield* Effect.promise(() =>
-          fetch(url, { body: body(), method: "POST" }).then((response) =>
-            response.text()
-          )
+        const raw = yield* Effect.promise(
+          async () =>
+            await fetch(url, { body: body(), method: "POST" }).then(
+              async (response) => await response.text()
+            )
         );
         for (const line of raw.trim().split("\n")) {
           expect(line.length).toBeLessThanOrEqual(watchLineLimit);
@@ -137,8 +139,11 @@ test("watch bounds defect lines and typed errors", async () => {
         const handler = yield* makeWatchHandler(() =>
           Stream.die("x".repeat(watchLineLimit * 2))
         );
-        const response = yield* Effect.promise(() =>
-          handler(request(body())).then((value) => value.text())
+        const response = yield* Effect.promise(
+          async () =>
+            await handler(request(body())).then(
+              async (value) => await value.text()
+            )
         );
         expect(response.length).toBeLessThan(4096);
         expect(response).toContain("Unavailable");
@@ -188,54 +193,55 @@ test("sixteen active watch producers reject the seventeenth with typed error and
         const server = yield* Effect.acquireRelease(
           Effect.sync(() =>
             Bun.serve({
-              fetch: (incoming) => handler(incoming),
+              fetch: async (incoming) => await handler(incoming),
               hostname: "127.0.0.1",
               idleTimeout: 0,
               port: 0,
             })
           ),
-          (running) => Effect.promise(() => running.stop(true))
+          (running) => Effect.promise(async () => await running.stop(true))
         );
         const url = `http://127.0.0.1:${server.port}/rpc/watch`;
-        const controllers: AbortController[] = [];
+        // Child scope owns the client signals; closing it aborts these requests.
+        const connections = yield* Scope.fork(yield* Effect.scope);
         for (let index = 0; index < 16; index += 1) {
-          const controller = new AbortController();
-          controllers.push(controller);
-          const response = yield* Effect.promise(() =>
-            fetch(url, {
-              body: body(),
-              method: "POST",
-              signal: controller.signal,
-            })
+          const signal = yield* Effect.abortSignal.pipe(
+            Scope.provide(connections)
+          );
+          const response = yield* Effect.promise(
+            async () =>
+              await fetch(url, {
+                body: body(),
+                method: "POST",
+                signal,
+              })
           );
           expect(response.status).toBe(200);
           const reader = readerFor(response);
-          yield* Effect.promise(() => reader.read());
+          yield* Effect.promise(async () => await reader.read());
         }
         expect(opened).toBe(16);
-        const refused = yield* Effect.promise(() =>
-          fetch(url, { body: body(), method: "POST" }).then((response) =>
-            response.text()
-          )
+        const refused = yield* Effect.promise(
+          async () =>
+            await fetch(url, { body: body(), method: "POST" }).then(
+              async (response) => await response.text()
+            )
         );
         expect(refused).toContain("LimitExceeded");
         expect(refused).toContain("16 watch connections active");
-        for (const controller of controllers) {
-          controller.abort();
-        }
+        yield* Scope.close(connections, Exit.void);
         yield* Effect.repeat(Effect.yieldNow, {
           until: () => closed === 16,
         }).pipe(Effect.timeout("2 seconds"));
         expect(closed).toBe(16);
-        const controller = new AbortController();
-        const response = yield* Effect.promise(() =>
-          fetch(url, {
-            body: body(),
-            method: "POST",
-            signal: controller.signal,
-          })
+        const response = yield* Effect.promise(
+          async () =>
+            await fetch(url, {
+              body: body(),
+              method: "POST",
+            })
         );
-        yield* Effect.promise(() => readerFor(response).read());
+        yield* Effect.promise(async () => await readerFor(response).read());
         expect(opened).toBe(17);
         // Keep this producer active: server shutdown must close it before the outer lake scope.
       })

@@ -4,6 +4,8 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import {
   cli,
   operation,
@@ -15,6 +17,16 @@ import {
 } from "../../../packages/platform-bun/test/fixtures/published-extension.ts";
 import { buildAwsVaultExtension } from "../build.ts";
 
+const SecretRequest = Schema.Struct({ SecretId: Schema.String });
+const Operation = Schema.Struct({ operationId: Schema.String });
+const Result = Schema.Struct({ result: Schema.Unknown });
+const Run = Schema.Struct({ result: Schema.Unknown, runId: Schema.String });
+const Started = Schema.Struct({ runId: Schema.String });
+const RunState = Schema.Struct({
+  error: Schema.optionalKey(Schema.Unknown),
+  status: Schema.optionalKey(Schema.String),
+});
+
 test("real AWS extension installs, typechecks, defers auth, rotates and reloads in a new daemon", async () => {
   const base = await mkdtemp(path.join(tmpdir(), "effectory-aws-extension-"));
   const repository = path.join(base, "consumer");
@@ -23,7 +35,9 @@ test("real AWS extension installs, typechecks, defers auth, rotates and reloads 
   let raw = "CANARY-installed-aws-value-1";
   const server = Bun.serve({
     fetch: async (request) => {
-      requests.push((await request.json()) as { SecretId: string });
+      requests.push(
+        Schema.decodeUnknownSync(SecretRequest)(await request.json())
+      );
       expect(request.headers.get("authorization")).toContain(
         "/eu-west-1/secretsmanager/aws4_request"
       );
@@ -65,16 +79,18 @@ test("real AWS extension installs, typechecks, defers auth, rotates and reloads 
     );
     const initial = await start(repository, environment);
     children.push(initial);
-    const add = (await cli(repository, [
-      "extension",
-      "add",
-      "github:fixture/aws@v1",
-      "--asset",
-      "effectory-aws-vault.tgz",
-      "--as",
-      "AwsSecretsManager",
-      "--trust",
-    ])) as { operationId: string };
+    const add = Schema.decodeUnknownSync(Operation)(
+      await cli(repository, [
+        "extension",
+        "add",
+        "github:fixture/aws@v1",
+        "--asset",
+        "effectory-aws-vault.tgz",
+        "--as",
+        "AwsSecretsManager",
+        "--trust",
+      ])
+    );
     expect((await operation(repository, add.operationId)).status).toBe(
       "Succeeded"
     );
@@ -119,24 +135,26 @@ export default Application.make({ tasks: [Read, Leak], vaults: [Credentials], ex
     });
     const first = await start(repository, environment);
     children.push(first);
-    const run = (await cli(repository, [
-      "task",
-      "run",
-      "read",
-      "--input",
-      JSON.stringify(raw),
-    ])) as { result: unknown; runId: string };
+    const run = Schema.decodeUnknownSync(Run)(
+      await cli(repository, [
+        "task",
+        "run",
+        "read",
+        "--input",
+        JSON.stringify(raw),
+      ])
+    );
     expect(run.result).toBe(true);
     raw = "CANARY-installed-aws-value-2";
     expect(
-      (
-        (await cli(repository, [
+      Schema.decodeUnknownSync(Result)(
+        await cli(repository, [
           "task",
           "run",
           "read",
           "--input",
           JSON.stringify(raw),
-        ])) as { result: unknown }
+        ])
       ).result
     ).toBe(true);
     expect(requests).toHaveLength(2);
@@ -146,21 +164,21 @@ export default Application.make({ tasks: [Read, Leak], vaults: [Credentials], ex
     expect(
       JSON.stringify(await cli(repository, ["run", "logs", run.runId]))
     ).not.toContain("CANARY-");
-    const leak = (await cli(repository, [
-      "task",
-      "run",
-      "leak",
-      "--input",
-      "null",
-      "--background",
-    ])) as { runId: string };
-    let failure: { status?: string; error?: unknown } = {};
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      failure = (await cli(repository, [
+    const leak = Schema.decodeUnknownSync(Started)(
+      await cli(repository, [
+        "task",
         "run",
-        "get",
-        leak.runId,
-      ])) as typeof failure;
+        "leak",
+        "--input",
+        "null",
+        "--background",
+      ])
+    );
+    let failure: typeof RunState.Type = {};
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      failure = Schema.decodeUnknownSync(RunState)(
+        await cli(repository, ["run", "get", leak.runId])
+      );
       if (failure.status === "Failed") {
         break;
       }
@@ -174,14 +192,14 @@ export default Application.make({ tasks: [Read, Leak], vaults: [Credentials], ex
     const restarted = await start(repository, environment);
     children.push(restarted);
     expect(
-      (
-        (await cli(repository, [
+      Schema.decodeUnknownSync(Result)(
+        await cli(repository, [
           "task",
           "run",
           "read",
           "--input",
           JSON.stringify(raw),
-        ])) as { result: unknown }
+        ])
       ).result
     ).toBe(true);
     await cli(repository, ["daemon", "stop"]);

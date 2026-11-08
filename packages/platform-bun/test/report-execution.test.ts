@@ -84,14 +84,14 @@ const awaitReports = (runId: string, count: number) =>
     return yield* Effect.die("Reports did not finish");
   });
 
-test("automatic reports read typed outcomes through task-local Layers, page history, and close escaped readers", () => {
+test("automatic reports read typed outcomes through task-local Layers, page history, and close escaped readers", async () => {
   const source = Task.make(
     {
       error: Schema.Never,
       id: "source",
-      input: Schema.Number,
+      input: Schema.Finite,
       replay: "idempotent",
-      success: Schema.Number,
+      success: Schema.Finite,
       version: 1,
     },
     (value) => Effect.succeed(value + 1)
@@ -133,7 +133,7 @@ test("automatic reports read typed outcomes through task-local Layers, page hist
       id: "reporter",
       input: Report.sourceOf(source),
       replay: "idempotent",
-      success: Report.result(Schema.Number),
+      success: Report.result(Schema.Finite),
       version: 1,
     },
     (identity) =>
@@ -157,7 +157,7 @@ test("automatic reports read typed outcomes through task-local Layers, page hist
         });
         const events = yield* history.events({ limit: 1 });
         expect(events.items[0]?.runId).toBe(identity.runId);
-        if (events.cursor) {
+        if (events.cursor !== null) {
           expect(
             (yield* history.events({ cursor: events.cursor, limit: 1 }))
               .items[0]?.sequence
@@ -166,7 +166,7 @@ test("automatic reports read typed outcomes through task-local Layers, page hist
         return { data: value, markdown: `# Result ${value}` };
       })
   ).provide(layer);
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -193,7 +193,7 @@ test("automatic reports read typed outcomes through task-local Layers, page hist
       );
       const [record] = yield* awaitReports(run.runId, 1);
       expect(record?.status).toBe("Succeeded");
-      if (!record?.reportRunId || !escaped) {
+      if (record === undefined || record.reportRunId === null || !escaped) {
         return yield* Effect.die("Missing report result");
       }
       const reportRun = yield* store.getRun(record.reportRunId);
@@ -211,7 +211,7 @@ test("automatic reports read typed outcomes through task-local Layers, page hist
   );
 }, 15_000);
 
-test("an invocation reporter finishes while its parent waits and never creates recursive reports", () => {
+test("an invocation reporter finishes while its parent waits and never creates recursive reports", async () => {
   const source = Task.make(
     {
       error: Schema.Never,
@@ -258,7 +258,7 @@ test("an invocation reporter finishes while its parent waits and never creates r
       return result;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -292,7 +292,7 @@ test("an invocation reporter finishes while its parent waits and never creates r
       const [record] = yield* awaitReports(run.runId, 1);
       expect(record?.status).toBe("Succeeded");
       expect((yield* store.getRun(run.runId)).status).toBe("Waiting");
-      if (!record?.reportRunId) {
+      if (record === undefined || record.reportRunId === null) {
         return yield* Effect.die("Missing report run");
       }
       expect(yield* store.reportIds(record.reportRunId)).toEqual([]);
@@ -301,7 +301,7 @@ test("an invocation reporter finishes while its parent waits and never creates r
   );
 }, 15_000);
 
-test("report retries use their stored execution policy without changing the source outcome", () => {
+test("report retries use their stored execution policy without changing the source outcome", async () => {
   let attempts = 0;
   const Transient = Schema.TaggedStruct("Transient", {});
   const source = Task.make(
@@ -321,7 +321,7 @@ test("report retries use their stored execution policy without changing the sour
       id: "reporter",
       input: Report.Source,
       replay: "idempotent",
-      success: Report.result(Schema.Number),
+      success: Report.result(Schema.Finite),
       version: 1,
     },
     () =>
@@ -332,7 +332,7 @@ test("report retries use their stored execution policy without changing the sour
           : Effect.succeed({ data: attempts, markdown: "retry succeeded" });
       })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -381,7 +381,7 @@ test("report retries use their stored execution policy without changing the sour
   );
 }, 15_000);
 
-test("a timed-out reporter releases its resources while another report succeeds", () => {
+test("a timed-out reporter releases its resources while another report succeeds", async () => {
   let released = false;
   const source = Task.make(
     {
@@ -424,7 +424,7 @@ test("a timed-out reporter releases its resources while another report succeeds"
     },
     () => Effect.succeed({ data: null, markdown: "done" })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -469,7 +469,7 @@ test("a timed-out reporter releases its resources while another report succeeds"
   );
 }, 15_000);
 
-test("report results retain their guarded wire value through deadlines and root projection", () => {
+test("report results retain their guarded wire value through deadlines and root projection", async () => {
   const token = "CANARY-report-final-encoding-123456789";
   const credentials = Vault.make({
     id: "credentials",
@@ -512,7 +512,7 @@ test("report results retain their guarded wire value through deadlines and root 
         return { data: "safe", markdown: "safe" };
       })
   ).provide(Vault.layer(credentials, Vault.memory({ token })));
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -537,7 +537,7 @@ test("report results retain their guarded wire value through deadlines and root 
         "owner"
       );
       const [record] = yield* awaitReports(sourceRun.runId, 1);
-      if (!record?.reportRunId) {
+      if (record === undefined || record.reportRunId === null) {
         return yield* Effect.die("Missing report");
       }
       const run = yield* store.getRun(record.reportRunId);
@@ -548,7 +548,7 @@ test("report results retain their guarded wire value through deadlines and root 
   );
 }, 15_000);
 
-test("four report handlers leave normal tasks runnable and release their permits", () => {
+test("four report handlers leave normal tasks runnable and release their permits", async () => {
   const gate = Deferred.makeUnsafe<boolean>();
   let active = 0;
   let peak = 0;
@@ -599,7 +599,7 @@ test("four report handlers leave normal tasks runnable and release their permits
           })
       )
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: Array.from({ length: 16 }, (_, index) =>
         Report.make({

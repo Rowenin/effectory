@@ -135,9 +135,7 @@ describe("authoring boundaries", () => {
       workflows: [Welcome],
     }).provide(ClientLive);
     const registry = await Effect.runPromise(
-      Effect.gen(function* () {
-        return yield* Application.Registry;
-      }).pipe(Effect.provide(app.layer))
+      Application.Registry.pipe(Effect.provide(app.layer))
     );
     expect(registry.tasks.has("greet")).toBe(true);
     expect(registry.workflows.has("welcome")).toBe(true);
@@ -147,10 +145,10 @@ describe("authoring boundaries", () => {
 // Compile-only negative fixtures. These functions are deliberately never called.
 export function typeFixtures() {
   // @ts-expect-error Service requirement cannot disappear before provision.
-  Effect.runPromise(Task.test(Greet, { input: { name: "Ada" } }));
+  void Effect.runPromise(Task.test(Greet, { input: { name: "Ada" } }));
   // @ts-expect-error Required input field has the wrong type.
   Task.test(Greet, { input: { name: 123 } });
-  Effect.runPromise(
+  void Effect.runPromise(
     // @ts-expect-error Application still requires GreetingClient.
     Effect.scoped(Layer.build(Application.make({ tasks: [Greet] }).layer))
   );
@@ -185,12 +183,14 @@ export function typeFixtures() {
         return "hello";
       })
   );
-  return Effect.gen(function* () {
-    const graph = yield* Workflow.Builder;
-    // @ts-expect-error Task input type must be inferred from the task contract.
-    yield* graph.task("bad", Greet, { name: 1 });
-    const input = yield* graph.input(Input);
-    // @ts-expect-error Ref field selection is type checked.
-    Ref.field(input, "unknown");
-  });
 }
+
+// Compile-only graph fixture. Effects are lazy, so this is never run.
+export const graphTypeFixture = Effect.gen(function* () {
+  const graph = yield* Workflow.Builder;
+  // @ts-expect-error Task input type must be inferred from the task contract.
+  yield* graph.task("bad", Greet, { name: 1 });
+  const input = yield* graph.input(Input);
+  // @ts-expect-error Ref field selection is type checked.
+  Ref.field(input, "unknown");
+});

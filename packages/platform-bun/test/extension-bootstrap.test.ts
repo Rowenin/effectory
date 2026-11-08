@@ -84,7 +84,9 @@ test("restore CLI requires local trust, works without an application, and refuse
     await Effect.runPromise(
       Effect.gen(function* () {
         yield* RepositoryLease;
-        const occupied = yield* Effect.promise(() => restore(repository, true));
+        const occupied = yield* Effect.promise(
+          async () => await restore(repository, true)
+        );
         expect(occupied.code).not.toBe(0);
       }).pipe(
         Effect.provide(

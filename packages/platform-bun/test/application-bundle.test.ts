@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { Effect } from "effect";
 
@@ -11,6 +10,7 @@ import {
   buildApplication,
   digestOf,
 } from "../src/application-bundle.ts";
+import { importModule } from "./fixtures/import-module.ts";
 
 test("dependency package metadata is bundled and covered by the source snapshot", async () => {
   const repository = await realpath(
@@ -40,7 +40,9 @@ test("dependency package metadata is bundled and covered by the source snapshot"
     expect(() => assertUnchanged(bundle.inputs)).not.toThrow();
     const retained = path.join(repository, "retained.mjs");
     await writeFile(retained, bundle.source);
-    const imported = await import(pathToFileURL(retained).href);
+    const imported = await importModule<{ default: string }>(retained, {
+      default: "string",
+    });
     expect(imported.default).toBe("1.2.3");
 
     await writeFile(filename, manifest.replace("1.2.3", "2.0.0"));

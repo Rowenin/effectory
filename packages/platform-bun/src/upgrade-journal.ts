@@ -30,7 +30,7 @@ const digest = (text: string) =>
   createHash("sha256").update(text).digest("hex");
 const conflict = (message: string) =>
   new OperationError({ code: "Conflict", message });
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   text: string
 ): S["Type"] => {

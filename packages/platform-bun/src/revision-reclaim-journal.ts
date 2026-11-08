@@ -31,7 +31,7 @@ const limit = 2_097_152;
 const gateLimit = 65_536;
 const fingerprint = (value: typeof ReclaimPreview.Type) =>
   createHash("sha256").update(canonical(value)).digest("hex");
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   text: string
 ): S["Type"] => {

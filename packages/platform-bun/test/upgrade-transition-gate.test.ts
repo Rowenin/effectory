@@ -50,9 +50,12 @@ test("unfinished intent refuses normal writers without acknowledging or changing
         failure = error;
       }
       expect(failure).toBeInstanceOf(OperationError);
-      expect((failure as OperationError).code).toBe("RevisionUnavailable");
-      expect((failure as OperationError).message).toContain(planId);
-      expect((failure as OperationError).message).toContain(targetBuild);
+      if (!(failure instanceof OperationError)) {
+        throw new TypeError("Expected an OperationError");
+      }
+      expect(failure.code).toBe("RevisionUnavailable");
+      expect(failure.message).toContain(planId);
+      expect(failure.message).toContain(targetBuild);
       expect(hash(filename)).toBe(before);
     }
   } finally {
@@ -105,8 +108,11 @@ test.each([
         failure = error;
       }
       expect(failure).toBeInstanceOf(OperationError);
-      expect((failure as OperationError).code).toBe("RevisionUnavailable");
-      expect((failure as OperationError).message).not.toContain("CANARY");
+      if (!(failure instanceof OperationError)) {
+        throw new TypeError("Expected an OperationError");
+      }
+      expect(failure.code).toBe("RevisionUnavailable");
+      expect(failure.message).not.toContain("CANARY");
       expect(hash(victim)).toBe(before);
     } finally {
       rmSync(repository, { force: true, recursive: true });

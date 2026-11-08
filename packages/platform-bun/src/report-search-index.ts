@@ -15,7 +15,7 @@ const columns =
 
 /** Called in the host migration transaction. New generations use the same insert projection. */
 export function createReportSearchIndex(database: Database) {
-  database.exec(`
+  database.run(`
     CREATE TABLE IF NOT EXISTS host_report_search (
       sequence INTEGER PRIMARY KEY REFERENCES host_reports(sequence), principal TEXT NOT NULL,
       sourceRunId TEXT NOT NULL, rootKind TEXT NOT NULL, rootTargetId TEXT NOT NULL,

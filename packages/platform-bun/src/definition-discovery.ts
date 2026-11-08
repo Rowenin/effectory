@@ -13,7 +13,7 @@ export const listDefinitions = (
   Effect.gen(function* () {
     const catalog = yield* Catalog;
     const store = yield* HostStore;
-    const { cursor, ...query } = yield* Schema.decodeUnknownEffect(
+    const { cursor, ...query } = yield* Schema.decodeEffect(
       DefinitionListRequest
     )(value, { onExcessProperty: "error" }).pipe(
       Effect.mapError(

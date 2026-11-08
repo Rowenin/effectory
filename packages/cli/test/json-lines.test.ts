@@ -62,14 +62,13 @@ test("a broken JSON-Lines sink fails without advancing its checkpoint", async ()
     },
   });
   let advanced = false;
-  const outcome = await Effect.runPromise(
+  const outcome = await Effect.runPromiseExit(
     writeJsonLine({ sequence: 1 }, sink).pipe(
       Effect.tap(() =>
         Effect.sync(() => {
           advanced = true;
         })
-      ),
-      Effect.exit
+      )
     )
   );
   expect(outcome._tag).toBe("Failure");

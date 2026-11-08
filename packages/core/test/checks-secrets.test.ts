@@ -37,7 +37,7 @@ test("known secrets are scrubbed from stored messages and refused in identifiers
         );
       yield* checks
         .assert("crash", Effect.die(token), { message: token })
-        .pipe(Effect.catchCause(() => Effect.void));
+        .pipe(Effect.ignoreCause);
       return true;
     })
   ).provide(layer);

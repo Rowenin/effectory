@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import type { Expression } from "@effectory/runtime/lake-protocol";
+import type { Field } from "@offtree/effectory-sdk/internal/artifact-query-schema";
 
 /** Keep index expressions identical to the corresponding candidate predicates. */
 export function initializeQueryIndexes(database: Database) {
@@ -12,7 +13,7 @@ export function initializeQueryIndexes(database: Database) {
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'lake_query_tags'"
           )
           .get() !== null;
-      database.exec(`
+      database.run(`
     CREATE INDEX IF NOT EXISTS lake_query_identity ON lake_records(principal, schemaId, schemaVersion, artifactId, sequence) WHERE reclaimedAt IS NULL;
     CREATE INDEX IF NOT EXISTS lake_query_run ON lake_records(principal, schemaId, schemaVersion, json_extract(metadataJson, '$.runId'), sequence) WHERE reclaimedAt IS NULL;
     CREATE INDEX IF NOT EXISTS lake_query_task ON lake_records(principal, schemaId, schemaVersion, json_extract(metadataJson, '$.taskId'), sequence) WHERE reclaimedAt IS NULL;
@@ -34,13 +35,22 @@ export function initializeQueryIndexes(database: Database) {
     END;
   `);
       if (!installed) {
-        database.exec(`INSERT INTO lake_query_tags(sequence, name, value)
+        database.run(`INSERT INTO lake_query_tags(sequence, name, value)
         SELECT r.sequence, entry.key, entry.value FROM lake_records r, json_each(r.metadataJson, '$.tags') entry
         WHERE r.reclaimedAt IS NULL AND entry.type = 'text'`);
       }
     })
     .immediate();
 }
+
+type MetadataField = Extract<Field, { readonly metadata: unknown }>["metadata"];
+
+/** Metadata equalities with a matching candidate index. */
+const metadataClauses: ReadonlyMap<MetadataField, string> = new Map([
+  ["artifactId", "r.artifactId = ?"],
+  ["runId", "json_extract(r.metadataJson, '$.runId') = ?"],
+  ["taskId", "json_extract(r.metadataJson, '$.taskId') = ?"],
+]);
 
 /**
  * Only necessary equalities may narrow the candidate set. The full predicate
@@ -74,25 +84,10 @@ export function queryCandidates(expression: Expression | undefined) {
       continue;
     }
     if ("metadata" in node.field) {
-      switch (node.field.metadata) {
-        case "artifactId": {
-          clauses.push("r.artifactId = ?");
-          values.push(node.value);
-          break;
-        }
-        case "runId": {
-          clauses.push("json_extract(r.metadataJson, '$.runId') = ?");
-          values.push(node.value);
-          break;
-        }
-        case "taskId": {
-          clauses.push("json_extract(r.metadataJson, '$.taskId') = ?");
-          values.push(node.value);
-          break;
-        }
-        default: {
-          break;
-        }
+      const clause = metadataClauses.get(node.field.metadata);
+      if (clause !== undefined) {
+        clauses.push(clause);
+        values.push(node.value);
       }
     } else if (
       "tag" in node.field &&

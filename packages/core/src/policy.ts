@@ -24,7 +24,8 @@ export function durationMillis(text: string, allowZero = false): number {
   };
   const unit = match?.groups?.unit;
   const amount =
-    Number(match?.groups?.amount) * (unit ? (units[unit] ?? 0) : 0);
+    Number(match?.groups?.amount) *
+    (unit === undefined || unit === "" ? 0 : (units[unit] ?? 0));
   if (
     !match ||
     !Number.isFinite(amount) ||

@@ -13,9 +13,10 @@
   ],
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "check": "ultracite check .",
-    "fix": "ultracite fix .",
+    "typecheck": "effect-tsgo tsrs --noEmit",
+    "check": "oxfmt --check . && bun run lint",
+    "lint": "effect-tsgo --tsrs-lint oxlint --type-aware --deny-warnings",
+    "fix": "oxfmt . && effect-tsgo --tsrs-lint oxlint --type-aware --fix",
     "test": "bun test",
     "verify": "bun run typecheck && bun run check && bun run test",
     "prepare": "effect-tsgo patch && git config core.hooksPath .githooks",
@@ -27,26 +28,26 @@
     "generate:host-modules": "bun scripts/generate-host-modules.ts"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.5",
-    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/platform-bun": "4.1.2",
+    "@effect/sql-sqlite-bun": "4.1.2",
     "@offtree/effectory-sdk": "workspace:*",
-    "effect": "4.0.5"
+    "effect": "4.1.2"
   },
   "devDependencies": {
-    "@effect/tsgo": "0.56.0",
-    "@types/bun": "1.4.3",
-    "@types/node": "24.10.0",
-    "oxfmt": "0.74.0",
-    "oxlint": "1.89.0",
+    "@effect/tsgo": "0.67.5",
+    "@types/bun": "1.4.4",
+    "@types/node": "24.19.2",
+    "oxfmt": "0.77.0",
+    "oxlint": "1.92.0",
     "typescript": "7.0.2",
-    "ultracite": "8.0.1"
+    "ultracite": "8.1.1"
   },
   "overrides": {
-    "effect": "4.0.5"
+    "effect": "4.1.2"
   },
   "engines": {
-    "bun": ">=1.4.3",
+    "bun": ">=1.4.4",
     "node": ">=24.11.1"
   },
-  "packageManager": "bun@1.4.3"
+  "packageManager": "bun@1.4.4"
 }

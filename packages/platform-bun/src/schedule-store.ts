@@ -89,7 +89,7 @@ const fail = (code: OperationError["code"], message: string) =>
   new OperationError({ code, message });
 const hash = (value: Schema.Json) =>
   createHash("sha256").update(canonical(value)).digest("hex");
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   text: string
 ): S["Type"] => Schema.decodeUnknownSync(schema)(JSON.parse(text));
@@ -126,7 +126,7 @@ export function createScheduleStore(
     ) => Run;
   }
 ) {
-  database.exec(`
+  database.run(`
     CREATE TABLE IF NOT EXISTS host_scheduler (singleton INTEGER PRIMARY KEY CHECK(singleton=1), generation INTEGER NOT NULL, revision TEXT, errorJson TEXT);
     INSERT OR IGNORE INTO host_scheduler VALUES (1, 0, NULL, NULL);
     CREATE TABLE IF NOT EXISTS host_schedules (
@@ -153,7 +153,7 @@ export function createScheduleStore(
     const raw = database
       .query("SELECT * FROM host_schedules WHERE scheduleId = ?")
       .get(id);
-    if (!raw) {
+    if (raw === null) {
       const current = Schema.decodeUnknownSync(
         Schema.Struct({ revision: Schema.NullOr(Schema.String) })
       )(database.query("SELECT revision FROM host_scheduler").get());
@@ -204,14 +204,15 @@ export function createScheduleStore(
       cron: definition.cron,
       generation: row.generation,
       lastError,
-      lastMissed: missed
-        ? decode(
-            MissedRange,
-            Schema.decodeUnknownSync(
-              Schema.Struct({ dataJson: Schema.String })
-            )(missed).dataJson
-          )
-        : null,
+      lastMissed:
+        missed === null
+          ? null
+          : decode(
+              MissedRange,
+              Schema.decodeUnknownSync(
+                Schema.Struct({ dataJson: Schema.String })
+              )(missed).dataJson
+            ),
       lastRun: last?.schedule
         ? {
             runId: last.runId,
@@ -232,7 +233,7 @@ export function createScheduleStore(
         "SELECT sequence, dataJson FROM host_schedule_history WHERE scheduleId = ? ORDER BY sequence DESC LIMIT 1"
       )
       .get(id);
-    if (entry._tag === "Missed" && last) {
+    if (entry._tag === "Missed" && last !== null) {
       const prior = Schema.decodeUnknownSync(HistoryRow)(last);
       const value = decode(ScheduleHistoryEntry, prior.dataJson);
       if (
@@ -356,13 +357,13 @@ export function createScheduleStore(
           cron: definition.cron,
           description: definition.description ?? null,
           input: definition.encodedInput,
-          reportPlan: Schema.decodeUnknownSync(ReportPlan)(
+          reportPlan: Schema.decodeSync(ReportPlan)(
             reportPlans.get(definition.id) ?? []
           ),
           reportSelection: definition.reportSelection,
           ...(reportDecision === undefined ? {} : { reportDecision }),
           scheduleId: definition.id,
-          tags: Schema.decodeUnknownSync(RunTags)({
+          tags: Schema.decodeSync(RunTags)({
             ...definition.workflow.tags,
             ...definition.tags,
           }),
@@ -386,7 +387,8 @@ export function createScheduleStore(
         const raw = database
           .query("SELECT * FROM host_schedules WHERE scheduleId = ?")
           .get(definition.id);
-        const prior = raw ? Schema.decodeUnknownSync(Stored)(raw) : null;
+        const prior =
+          raw === null ? null : Schema.decodeUnknownSync(Stored)(raw);
         if (!prior || prior.removed || prior.digest !== digest) {
           database
             .query("UPDATE host_scheduler SET generation = generation + 1")
@@ -588,9 +590,10 @@ export function createScheduleStore(
       now: number
     ) => {
       owner(principal);
-      const { cursor, ...request } = Schema.decodeUnknownSync(
-        ScheduleHistoryRequest
-      )(input, { onExcessProperty: "error" });
+      const { cursor, ...request } = Schema.decodeSync(ScheduleHistoryRequest)(
+        input,
+        { onExcessProperty: "error" }
+      );
       const row = get(request.scheduleId);
       const limit = request.limit ?? 50;
       const scope = {
@@ -677,9 +680,10 @@ export function createScheduleStore(
       now: number
     ) => {
       owner(principal);
-      const { cursor, ...request } = Schema.decodeUnknownSync(
-        ScheduleListRequest
-      )(input, { onExcessProperty: "error" });
+      const { cursor, ...request } = Schema.decodeSync(ScheduleListRequest)(
+        input,
+        { onExcessProperty: "error" }
+      );
       const limit = request.limit ?? 50;
       const scope = {
         kind: "schedules",
@@ -746,13 +750,12 @@ export function createScheduleStore(
     ) =>
       database.transaction(() => {
         owner(principal);
-        const request = Schema.decodeUnknownSync(
+        const request = Schema.decodeSync(
           paused ? SchedulePauseRequest : ScheduleResumeRequest
         )(input, { onExcessProperty: "error" });
         const row = get(request.scheduleId, activeRevision);
         const reason = paused
-          ? (Schema.decodeUnknownSync(SchedulePauseRequest)(input).reason ??
-            null)
+          ? (Schema.decodeSync(SchedulePauseRequest)(input).reason ?? null)
           : null;
         if (reason !== null && Buffer.byteLength(reason) > 8192) {
           throw fail("LimitExceeded", "Pause reason exceeds 8 KiB");
@@ -763,7 +766,7 @@ export function createScheduleStore(
             "SELECT fingerprint, receiptJson FROM host_schedule_receipts WHERE scheduleId = ? AND actor = ? AND requestKey = ?"
           )
           .get(row.scheduleId, principal, request.requestKey);
-        if (prior) {
+        if (prior !== null) {
           const receipt = Schema.decodeUnknownSync(
             Schema.Struct({
               fingerprint: Schema.String,

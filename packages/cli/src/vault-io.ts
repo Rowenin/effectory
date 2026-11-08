@@ -70,7 +70,10 @@ export function readSecret(filename: string) {
           const chunks: Buffer[] = [];
           let bytes = 0;
           for await (const chunk of stream) {
-            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            const value: unknown = chunk;
+            const buffer = Buffer.isBuffer(value)
+              ? value
+              : Buffer.from(String(value));
             bytes += buffer.byteLength;
             if (bytes > 65_536) {
               stream.destroy();
@@ -103,8 +106,8 @@ export const writeSecret = (
             code: "Unavailable",
             message: "Secret output could not be written",
           }),
-        try: () =>
-          new Promise<void>((resolve, reject) => {
+        try: async () =>
+          await new Promise<void>((resolve, reject) => {
             process.stdout.write(value, (error) =>
               error ? reject(error) : resolve()
             );

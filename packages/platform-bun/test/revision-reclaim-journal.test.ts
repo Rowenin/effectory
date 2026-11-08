@@ -69,11 +69,11 @@ async function fixture(
     path.join(tmpdir(), "effectory-reclaim-journal-")
   );
   mkdirSync(path.join(directory, ".effectory"));
-  const run = <A, E>(
+  const run = async <A, E>(
     f: (j: Journal) => Effect.Effect<A, E>,
     step?: (name: string) => Effect.Effect<void>
   ) =>
-    Effect.runPromise(
+    await Effect.runPromise(
       Effect.flatMap(makeReclaimJournal(directory, step), f).pipe(
         Effect.provide(
           ownershipLayer(path.join(directory, ".effectory/state.sqlite.owner"))
@@ -87,8 +87,8 @@ async function fixture(
   }
 }
 
-test("accepted intent survives a failure before its first history record and blocks both current and predecessor routing", () =>
-  fixture(async (directory, run) => {
+test("accepted intent survives a failure before its first history record and blocks both current and predecessor routing", async () =>
+  await fixture(async (directory, run) => {
     const value = preview();
     await run((j) => j.save(value, now));
     const exit = await run(
@@ -138,8 +138,8 @@ test("accepted intent survives a failure before its first history record and blo
     expect(skipped.code).toBe("Conflict");
   }));
 
-test("completed receipts replay after expiry and recreation and never clear another maintenance gate", () =>
-  fixture(async (directory, run) => {
+test("completed receipts replay after expiry and recreation and never clear another maintenance gate", async () =>
+  await fixture(async (directory, run) => {
     const value = preview();
     const id = value.plan.planId;
     await run((j) =>
@@ -193,8 +193,8 @@ test("completed receipts replay after expiry and recreation and never clear anot
     );
   }));
 
-test("refused, expired and empty previews never create an acceptance gate", () =>
-  fixture(async (directory, run) => {
+test("refused, expired and empty previews never create an acceptance gate", async () =>
+  await fixture(async (directory, run) => {
     const value = preview();
     await run((j) => j.save(value, now));
     await run((j) =>
@@ -235,8 +235,8 @@ test("refused, expired and empty previews never create an acceptance gate", () =
     ).toBe(false);
   }));
 
-test("live previews are bounded, expired previews are removed, and incomplete records are refused", () =>
-  fixture(async (directory, run) => {
+test("live previews are bounded, expired previews are removed, and incomplete records are refused", async () =>
+  await fixture(async (directory, run) => {
     await run((j) =>
       Effect.gen(function* () {
         for (let i = 0; i < 32; i += 1) {
@@ -266,8 +266,12 @@ test("live previews are bounded, expired previews are removed, and incomplete re
       `${fresh.plan.planId}.json`
     );
     const before = readFileSync(filename, "utf-8");
-    const unsupported = JSON.parse(before);
-    unsupported.format = 2;
+    const unsupported = {
+      ...Schema.decodeSync(
+        Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+      )(before),
+      format: 2,
+    };
     writeFileSync(filename, JSON.stringify(unsupported));
     const failure = await run((j) =>
       j.inspect(fresh.plan.planId).pipe(Effect.flip)

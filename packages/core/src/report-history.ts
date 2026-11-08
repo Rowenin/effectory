@@ -59,9 +59,11 @@ export const Outcome = Schema.Union([
     status: Schema.Literals(["Rejected", "TimedOut", "Cancelled"]),
   }),
 ]);
+/** Counts Unicode code points, matching string iteration. */
+const codePointLength = (text: string) => text.match(/./gsu)?.length ?? 0;
 export const PathPreview = Schema.Struct({
   text: Schema.String.check(
-    Schema.makeFilter((value) => [...value].length <= 2048)
+    Schema.makeFilter((value) => codePointLength(value) <= 2048)
   ),
   truncated: Schema.Boolean,
 });

@@ -119,7 +119,7 @@ test("workflow admission, DI reads and inherited lake metadata agree in a real h
           run = yield* store.getRun(run.runId);
         }
         expect(run.status).toBe("Succeeded");
-        const reference = Schema.decodeUnknownSync(Report.refSchema)(
+        const reference = yield* Schema.decodeUnknownEffect(Report.refSchema)(
           run.result
         );
         const content = yield* lake.get(

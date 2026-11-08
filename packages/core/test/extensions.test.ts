@@ -75,7 +75,7 @@ const contracts = {
 };
 const Installed = Extension.installed(
   contracts,
-  () => Promise.resolve(Tools),
+  async () => await Promise.resolve(Tools),
   "a".repeat(64)
 );
 const Flow = Workflow.make(
@@ -111,9 +111,9 @@ test("typed installed contracts compose into a local graph and load lazily on in
   let loads = 0;
   const installed = Extension.installed(
     contracts,
-    () => {
+    async () => {
       loads += 1;
-      return Promise.resolve(Tools);
+      return await Promise.resolve(Tools);
     },
     "b".repeat(64)
   );
@@ -195,7 +195,7 @@ test("installed contract identity is checked against the separately loaded imple
       ...contracts,
       tasks: { Inspect: Task.contract({ ...Contributed.spec }) },
     },
-    () => Promise.resolve(Tools),
+    async () => await Promise.resolve(Tools),
     "c".repeat(64)
   );
   await expect(
@@ -304,14 +304,14 @@ test("patch bindings reject missing targets, wrong versions and cyclic ordering"
 // Compile-only proofs: generated contracts preserve inputs/results, and only
 // selected implementations add their external service requirements.
 export function extensionTypeFixtures() {
-  Effect.runPromise(
+  void Effect.runPromise(
     read(
       Application.make({ extensions: [Extension.use(Installed)] }).provide(
         ClientLive
       )
     )
   );
-  Effect.runPromise(
+  void Effect.runPromise(
     read(
       Application.make({
         extensions: [
@@ -325,7 +325,7 @@ export function extensionTypeFixtures() {
     Application.make({ extensions: [Extension.use(Installed)] })
   );
   // @ts-expect-error Contributed handlers retain Client in the Application Layer.
-  Effect.runPromise(missingClient);
+  void Effect.runPromise(missingClient);
   const missingCache = read(
     Application.make({
       extensions: [
@@ -335,7 +335,7 @@ export function extensionTypeFixtures() {
     }).provide(ClientLive)
   );
   // @ts-expect-error The selected replacement additionally requires Cache.
-  Effect.runPromise(missingCache);
+  void Effect.runPromise(missingCache);
   const configuredOptions: Extension.Options<typeof Tools> = {
     implementations: [Cached.providerId],
   };
@@ -346,19 +346,21 @@ export function extensionTypeFixtures() {
     }).provide(ClientLive)
   );
   // @ts-expect-error Optional configuration may select Cache; its service cannot disappear.
-  Effect.runPromise(configured);
+  void Effect.runPromise(configured);
   // @ts-expect-error Generated declarations restrict the replacement identifiers.
   Extension.use(Installed, { implementations: ["acme/tools/not-exported"] });
-  return Effect.gen(function* () {
-    const graph = yield* Workflow.Builder;
-    // @ts-expect-error Installed task inputs retain their declared shape.
-    yield* graph.task("bad", Installed.tasks.Inspect, { name: 123 });
-    const value = yield* graph.task("valid", Installed.tasks.Inspect, {
-      name: "x",
-    });
-    const typed: Ref.Ref<string> = value;
-    // @ts-expect-error Installed task results are not widened.
-    const wrong: Ref.Ref<number> = value;
-    return { typed, wrong };
-  });
 }
+
+// Compile-only graph fixture. Effects are lazy, so this is never run.
+export const extensionGraphTypeFixture = Effect.gen(function* () {
+  const graph = yield* Workflow.Builder;
+  // @ts-expect-error Installed task inputs retain their declared shape.
+  yield* graph.task("bad", Installed.tasks.Inspect, { name: 123 });
+  const value = yield* graph.task("valid", Installed.tasks.Inspect, {
+    name: "x",
+  });
+  const typed: Ref.Ref<string> = value;
+  // @ts-expect-error Installed task results are not widened.
+  const wrong: Ref.Ref<number> = value;
+  return { typed, wrong };
+});

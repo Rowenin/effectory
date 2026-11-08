@@ -20,6 +20,11 @@ function isObject(
 ): value is Readonly<Record<string, Schema.Json>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function isArray(
+  value: Schema.Json | undefined
+): value is readonly Schema.Json[] {
+  return Array.isArray(value);
+}
 const object = (value: Schema.Json | undefined) =>
   isObject(value) ? value : undefined;
 function fieldChild(
@@ -31,7 +36,7 @@ function fieldChild(
     return properties[key];
   }
   if (shape.type === "array" && /^(?:0|[1-9][0-9]*)$/u.test(key)) {
-    return Array.isArray(shape.prefixItems)
+    return isArray(shape.prefixItems)
       ? (shape.prefixItems[Number(key)] ?? shape.items)
       : shape.items;
   }
@@ -89,7 +94,7 @@ export function queryFields(
       return resolve(document.definitions[name], remaining, depth + 1);
     }
     const variants = shape.anyOf ?? shape.oneOf;
-    if (Array.isArray(variants)) {
+    if (isArray(variants)) {
       return variants.flatMap((variant) =>
         resolve(variant, remaining, depth + 1)
       );

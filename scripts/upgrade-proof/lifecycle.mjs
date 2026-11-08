@@ -11,6 +11,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { seedFormat2, finishLegacySeed } from "./format2-seed.mjs";
 import { partialTransfer } from "./partial-transfer.mjs";
 import { harness, old, target } from "./process.mjs";
@@ -20,6 +22,85 @@ const repo = path.join(root, "source");
 mkdirSync(repo);
 console.log({ root });
 const h = harness(root);
+
+/** Only the fields this proof reads; other CLI output and rows are kept untouched. */
+const RunReceipt = Schema.Struct({
+  revision: Schema.optionalKey(Schema.Unknown),
+  runId: Schema.String,
+});
+const ProducerReceipt = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+  runId: Schema.String,
+});
+const Resubmission = Schema.Struct({
+  runId: Schema.optionalKey(Schema.Unknown),
+});
+const ArtifactRef = Schema.Struct({
+  artifactId: Schema.String,
+  version: Schema.optionalKey(Schema.Unknown),
+});
+const Page = Schema.Struct({ items: Schema.Array(Schema.Unknown) });
+const OpenWait = Schema.Struct({ waitId: Schema.String });
+const ReportItem = Schema.Struct({
+  reportId: Schema.optionalKey(Schema.Unknown),
+  reportRunId: Schema.optionalKey(Schema.Unknown),
+});
+const Recovery = Schema.Struct({
+  state: Schema.optionalKey(Schema.Unknown),
+  token: Schema.optionalKey(Schema.Unknown),
+});
+const RecoveryToken = Schema.Struct({ token: Schema.String });
+const UpgradePlan = Schema.Struct({
+  plan: Schema.Struct({
+    planId: Schema.String,
+    source: Schema.Struct({
+      build: Schema.optionalKey(Schema.Unknown),
+      storage: Schema.optionalKey(Schema.Unknown),
+    }),
+    status: Schema.optionalKey(Schema.Unknown),
+    target: Schema.Struct({ build: Schema.optionalKey(Schema.Unknown) }),
+  }),
+});
+const UpgradeReceipt = Schema.Struct({
+  phase: Schema.optionalKey(Schema.Unknown),
+});
+const ReclaimPlan = Schema.Struct({
+  candidates: Schema.Array(Schema.Unknown),
+  protectedBy: Schema.Struct({
+    consumerVersions: Schema.optionalKey(Schema.Unknown),
+    reportVersions: Schema.optionalKey(Schema.Unknown),
+  }),
+});
+const TaskResult = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+});
+const Recovered = Schema.Struct({
+  outcome: Schema.optionalKey(Schema.Unknown),
+});
+const FinishedRun = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+  revision: Schema.optionalKey(Schema.Unknown),
+  status: Schema.optionalKey(Schema.Unknown),
+});
+const ReportSummary = Schema.Struct({
+  Succeeded: Schema.optionalKey(Schema.Unknown),
+});
+const AuditEntry = Schema.Struct({
+  attempt: Schema.optionalKey(Schema.Unknown),
+  kind: Schema.optionalKey(Schema.Unknown),
+  occurrence: Schema.optionalKey(Schema.Unknown),
+});
+const Occurrence = Schema.Struct({ scheduledFor: Schema.String });
+const ScheduleRow = Schema.Struct({
+  digest: Schema.optionalKey(Schema.Unknown),
+  generation: Schema.optionalKey(Schema.Unknown),
+  watermark: Schema.Finite,
+});
+const RetainedSchedule = Schema.Struct({
+  digest: Schema.optionalKey(Schema.Unknown),
+  generation: Schema.optionalKey(Schema.Unknown),
+});
+
 const app = `
 import {appendFileSync,existsSync} from 'node:fs';
 import {Application,Artifact,ArtifactStorage,ArtifactReader,ArtifactReadError,ArtifactUnavailable,Report,Task,Workflow,WorkflowSchedule,Vault} from '@offtree/effectory-sdk';
@@ -46,21 +127,30 @@ const schedule=WorkflowSchedule.make({id:'minute',cron:'* * * * *',input:null,wo
 export default Application.make({tasks:[Secret,Echo,Flaky,Manual,Produce,Acquire,Read,Reporter,Scheduled],workflows:[Sleep,Retry,Consumer],schedules:[schedule],reports:[Report.make({id:'report',target:Produce,task:Reporter,scope:'run',execution:{attemptTimeout:'5 minutes'}})],vaults:[Credentials]}).provide(Vault.layer(Credentials,Vault.local));
 `;
 writeFileSync(path.join(repo, "effectory.ts"), app);
-const cli = (b, args) => h.cli(b, repo, args);
+/** @type {(b: string, args: string[]) => Promise<unknown>} */
+const cli = async (b, args) => await h.cli(b, repo, args);
 const audit = () =>
   existsSync(path.join(repo, "audit.jsonl"))
     ? readFileSync(path.join(repo, "audit.jsonl"), "utf-8")
         .trim()
         .split(`
 `)
-        .map((x) => JSON.parse(x))
+        .map((x) => {
+          /** @type {unknown} */
+          const entry = JSON.parse(x);
+          Schema.asserts(AuditEntry, entry);
+          return entry;
+        })
     : [];
+/** @type {(sql: string) => unknown[]} */
 const dbRead = (sql) => {
   const db = new Database(path.join(repo, ".effectory/state.sqlite"), {
     readonly: true,
   });
   try {
-    return db.query(sql).all();
+    /** @type {unknown[]} */
+    const rows = db.query(sql).all();
+    return rows;
   } finally {
     db.close();
   }
@@ -92,6 +182,7 @@ try {
     "--request-key",
     "produce",
   ]);
+  Schema.asserts(ProducerReceipt, producer);
   const consumer = await cli(old, [
     "workflow",
     "run",
@@ -102,9 +193,20 @@ try {
     "--request-key",
     "consumer",
   ]);
+  Schema.asserts(RunReceipt, consumer);
   const approval = await h.until(
     "consumer wait",
-    () => cli(old, ["run", "waits", consumer.runId, "--status", "Open"]),
+    async () => {
+      const page = await cli(old, [
+        "run",
+        "waits",
+        consumer.runId,
+        "--status",
+        "Open",
+      ]);
+      Schema.asserts(Page, page);
+      return page;
+    },
     (p) => p.items.length > 0
   );
   const sleep = await cli(old, [
@@ -117,6 +219,7 @@ try {
     "--request-key",
     "sleep",
   ]);
+  Schema.asserts(RunReceipt, sleep);
   const retry = await cli(old, [
     "workflow",
     "run",
@@ -127,6 +230,7 @@ try {
     "--request-key",
     "retry",
   ]);
+  Schema.asserts(RunReceipt, retry);
   await h.until(
     "retry backoff",
     () => audit(),
@@ -142,6 +246,7 @@ try {
     "--request-key",
     "manual",
   ]);
+  Schema.asserts(RunReceipt, manual);
   await h.until(
     "manual entered",
     () => audit(),
@@ -152,14 +257,21 @@ try {
   daemon = await h.start(old, repo);
   const held = await h.until(
     "manual hold",
-    () => cli(old, ["run", "recover", manual.runId]),
+    async () => {
+      const recovery = await cli(old, ["run", "recover", manual.runId]);
+      Schema.asserts(Recovery, recovery);
+      return recovery;
+    },
     (v) => v.state === "Recoverable"
   );
   const reports = await cli(old, ["report", "list", producer.runId]);
+  Schema.asserts(Page, reports);
   assert.equal(reports.items.length, 1);
   await cli(old, ["daemon", "stop"]);
   await daemon.exited;
+  /** @type {unknown} */
   const schedules = dbRead("SELECT * FROM host_schedules");
+  Schema.asserts(Schema.Array(ScheduleRow), schedules);
   const pins = dbRead("SELECT * FROM lake_consumer_pins");
   const rows = dbRead("SELECT * FROM host_reports");
   console.log({ held, pins, rows, schedules });
@@ -176,13 +288,16 @@ try {
       path.join(root, "partial-transfer-key.json"),
     ]);
   }
-  const { plan } = await cli(target, ["upgrade", "plan"]);
+  const planned = await cli(target, ["upgrade", "plan"]);
+  Schema.asserts(UpgradePlan, planned);
+  const { plan } = planned;
   assert.equal(plan.source.storage, legacySeed?.plan.target.storage ?? 1);
   assert.equal(plan.status, "Ready", JSON.stringify(plan));
   const partial = legacySeed
     ? await partialTransfer(h, repo, root, plan)
     : null;
   const applied = await cli(target, ["upgrade", "apply", plan.planId]);
+  Schema.asserts(UpgradeReceipt, applied);
   assert.equal(applied.phase, "Complete");
   assert.deepEqual(dbRead("SELECT * FROM host_schedules"), schedules);
   assert.deepEqual(dbRead("SELECT * FROM lake_consumer_pins"), pins);
@@ -193,6 +308,7 @@ try {
   }
   daemon = await h.start(target, repo);
   await finishLegacySeed(h, target, repo, legacySeed);
+  Schema.asserts(ArtifactRef, producer.result);
   const protection = await cli(target, [
     "lake",
     "reclaim",
@@ -202,6 +318,7 @@ try {
     "--version",
     String(producer.result.version),
   ]);
+  Schema.asserts(ReclaimPlan, protection);
   assert.equal(protection.protectedBy.consumerVersions, 1);
   assert.equal(protection.protectedBy.reportVersions, 1);
   assert.equal(protection.candidates.length, 0);
@@ -209,39 +326,48 @@ try {
 
   const heldAgain = await h.until(
     "retained hold",
-    () => cli(target, ["run", "recover", manual.runId]),
+    async () => {
+      const recovery = await cli(target, ["run", "recover", manual.runId]);
+      Schema.asserts(Recovery, recovery);
+      return recovery;
+    },
     (v) => v.state === "Recoverable"
   );
   assert.equal(heldAgain.token, held.token);
   assert.equal(audit().filter((x) => x.kind === "manual").length, 1);
-  assert.equal(
-    (await cli(target, ["task", "run", "secret", "--input", "null"])).result,
-    true
-  );
-  for (const [kind, id, receipt, input] of [
+  const secretRun = await cli(target, [
+    "task",
+    "run",
+    "secret",
+    "--input",
+    "null",
+  ]);
+  Schema.asserts(TaskResult, secretRun);
+  assert.equal(secretRun.result, true);
+  /** @type {Array<[string, string, { runId: string }, unknown]>} */
+  const resubmissions = [
     ["workflow", "sleep", sleep, null],
     ["workflow", "retry", retry, null],
     ["task", "manual", manual, null],
     ["task", "produce", producer, null],
     ["workflow", "consumer", consumer, producer.result],
-  ]) {
-    assert.equal(
-      (
-        await cli(target, [
-          kind,
-          "run",
-          id,
-          "--input",
-          JSON.stringify(input),
-          "--background",
-          "--request-key",
-          id,
-        ])
-      ).runId,
-      receipt.runId
-    );
+  ];
+  for (const [kind, id, receipt, input] of resubmissions) {
+    const resubmitted = await cli(target, [
+      kind,
+      "run",
+      id,
+      "--input",
+      JSON.stringify(input),
+      "--background",
+      "--request-key",
+      id,
+    ]);
+    Schema.asserts(Resubmission, resubmitted);
+    assert.equal(resubmitted.runId, receipt.runId);
   }
   writeFileSync(path.join(repo, "manual-finish"), "yes");
+  Schema.asserts(RecoveryToken, heldAgain);
   const accepted = await cli(target, [
     "run",
     "recover",
@@ -252,39 +378,53 @@ try {
     "--request-key",
     "recover",
   ]);
+  Schema.asserts(Recovered, accepted);
   assert.equal(accepted.outcome, "Accepted");
+  const [openWait] = approval.items;
+  Schema.asserts(OpenWait, openWait);
   await cli(target, [
     "run",
     "approve",
-    approval.items[0].waitId,
+    openWait.waitId,
     "--request-key",
     "approve",
   ]);
-  for (const [run, result] of [
+  /** @type {Array<[{ revision?: unknown, runId: string }, unknown]>} */
+  const completions = [
     [sleep, "done"],
     [retry, "retried"],
     [manual, "recovered"],
     [consumer, 42],
-  ]) {
+  ];
+  for (const [run, result] of completions) {
     const finished = await cli(target, ["run", "watch", run.runId]);
+    Schema.asserts(FinishedRun, finished);
     assert.equal(finished.status, "Succeeded");
     assert.equal(finished.result, result);
     assert.equal(finished.revision, run.revision);
   }
   const reportSummary = await cli(target, ["report", "wait", producer.runId]);
+  Schema.asserts(ReportSummary, reportSummary);
   assert.equal(reportSummary.Succeeded, 1);
   const afterReport = await cli(target, ["report", "list", producer.runId]);
-  assert.equal(afterReport.items[0].reportId, reports.items[0].reportId);
-  assert.equal(afterReport.items[0].reportRunId, reports.items[0].reportRunId);
+  Schema.asserts(Page, afterReport);
+  const [reportAfter] = afterReport.items;
+  const [reportBefore] = reports.items;
+  Schema.asserts(ReportItem, reportAfter);
+  Schema.asserts(ReportItem, reportBefore);
+  assert.equal(reportAfter.reportId, reportBefore.reportId);
+  assert.equal(reportAfter.reportRunId, reportBefore.reportRunId);
   await h.until(
     "scheduled catch-up",
     () => audit(),
     (a) =>
-      a.some(
-        (x) =>
-          x.kind === "schedule" &&
-          Date.parse(x.occurrence.scheduledFor) > schedules[0].watermark
-      )
+      a.some((x) => {
+        if (x.kind !== "schedule") {
+          return false;
+        }
+        Schema.asserts(Occurrence, x.occurrence);
+        return Date.parse(x.occurrence.scheduledFor) > schedules[0].watermark;
+      })
   );
   await cli(target, ["daemon", "stop"]);
   await daemon.exited;
@@ -298,6 +438,7 @@ try {
   assert.deepEqual(manualCalls[0], manualCalls[1]);
   assert.equal(calls.filter((x) => x.kind === "report").length, 1);
   const [afterSchedule] = dbRead("SELECT * FROM host_schedules");
+  Schema.asserts(RetainedSchedule, afterSchedule);
   assert.equal(afterSchedule.generation, schedules[0].generation);
   assert.equal(afterSchedule.digest, schedules[0].digest);
   const result = {

@@ -150,7 +150,7 @@ export function createLake(
   lease: Lease
 ) {
   mkdirSync(directory, { mode: 0o700, recursive: true });
-  database.exec(`
+  database.run(`
     PRAGMA foreign_keys = ON;
     PRAGMA synchronous = FULL;
     CREATE TABLE IF NOT EXISTS lake_records (
@@ -189,7 +189,7 @@ export function createLake(
         "SELECT * FROM lake_records WHERE artifactId = ? AND version = ? AND principal = ?"
       )
       .get(artifactId, version, principal);
-    if (!raw) {
+    if (raw === null) {
       throw fail("NotFound", "Artifact version was not found");
     }
     if (
@@ -231,10 +231,11 @@ export function createLake(
         )
         .get(identity.runId, identity.invocationPath, identity.attempt);
       const owner =
-        admitted &&
-        Schema.decodeUnknownSync(Schema.Struct({ owner: Schema.String }))(
-          admitted
-        ).owner;
+        admitted === null
+          ? null
+          : Schema.decodeUnknownSync(Schema.Struct({ owner: Schema.String }))(
+              admitted
+            ).owner;
       const run = Schema.decodeUnknownSync(
         Schema.Struct({
           lastSequence: Schema.Int,
@@ -251,7 +252,7 @@ export function createLake(
       if (
         database
           .query("SELECT runId FROM host_fences WHERE runId = ?")
-          .get(identity.runId) ||
+          .get(identity.runId) !== null ||
         owner !== lease.token ||
         ![
           "Queued",
@@ -270,7 +271,7 @@ export function createLake(
       const prior = database
         .query("SELECT * FROM lake_records WHERE publicationKey = ?")
         .get(publicationKey);
-      if (prior) {
+      if (prior !== null) {
         if (
           Schema.decodeUnknownSync(
             Schema.Struct({ reclaimedAt: Schema.NullOr(Schema.String) })
@@ -303,7 +304,7 @@ export function createLake(
           "SELECT fieldsJson, kind, contentType FROM lake_schemas WHERE schemaId = ? AND version = ?"
         )
         .get(artifact.id, artifact.version);
-      if (previousSchema) {
+      if (previousSchema !== null) {
         const descriptor = Schema.decodeUnknownSync(
           Schema.Struct({
             contentType: Schema.String,
@@ -378,7 +379,7 @@ export function createLake(
         tags: options.tags ?? {},
         version,
       };
-      const normalized = Schema.decodeUnknownSync(ArtifactRecord)(record);
+      const normalized = Schema.decodeSync(ArtifactRecord)(record);
       database
         .query("UPDATE lake_records SET metadataJson = ? WHERE sequence = ?")
         .run(canonical(normalized), normalized.sequence);
@@ -427,7 +428,7 @@ export function createLake(
             "Artifact digest or length does not match"
           );
         }
-        return Schema.decodeUnknownSync(Content)({
+        return Schema.decodeSync(Content)({
           metadata: record,
           value: parseJson(bytes.toString()),
         });
@@ -471,7 +472,7 @@ export function createLake(
           )
           .get(publicationKey);
         if (
-          existing &&
+          existing !== null &&
           Schema.decodeUnknownSync(
             Schema.Struct({ reclaimedAt: Schema.NullOr(Schema.String) })
           )(existing).reclaimedAt !== null

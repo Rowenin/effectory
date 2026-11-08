@@ -9,6 +9,8 @@ export const recoveryContinuation = Effect.gen(function* () {
   const scope = yield* Scope.Scope;
   const running = new Set<string>();
   let after = 0;
+  // Setup returns the delivery Effect, which shares this state across polls.
+  // @effect-diagnostics-next-line returnEffectInGen:off
   return Effect.gen(function* () {
     if (running.size >= 16) {
       return;
@@ -35,7 +37,7 @@ export const recoveryContinuation = Effect.gen(function* () {
         }
       }).pipe(
         Effect.timeout("2 seconds"),
-        Effect.catchCause(() => Effect.void),
+        Effect.ignoreCause,
         Effect.ensuring(Effect.sync(() => running.delete(row.engineId))),
         Effect.forkIn(scope)
       );

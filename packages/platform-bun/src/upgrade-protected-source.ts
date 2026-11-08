@@ -17,6 +17,11 @@ const same = (a: unknown, b: unknown) =>
   JSON.stringify(a) === JSON.stringify(b);
 const vault = ".effectory/vaults.sqlite";
 const vaultFiles = new Set([vault, `${vault}-wal`, `${vault}-journal`]);
+const protectedKinds: ReadonlyMap<string, "Credentials" | "Extensions"> =
+  new Map([
+    [".effectory/credentials.json", "Credentials"],
+    ["effectory.extensions.lock.json", "Extensions"],
+  ]);
 const invalid = () =>
   new OperationError({
     code: "RevisionUnavailable",
@@ -44,13 +49,7 @@ function normalized(
     if (vaultFiles.has(item.path)) {
       continue;
     }
-    const kinds = {
-      ".effectory/credentials.json": "Credentials",
-      "effectory.extensions.lock.json": "Extensions",
-    } as const;
-    const kind = Object.hasOwn(kinds, item.path)
-      ? kinds[item.path as keyof typeof kinds]
-      : null;
+    const kind = protectedKinds.get(item.path) ?? null;
     if (kind === null) {
       result.push(item);
       continue;

@@ -15,6 +15,8 @@ import { Schema } from "effect";
 import type { createPagination } from "./pagination.ts";
 import { refuseRetired } from "./run-retirement.ts";
 
+const parseJson = (text: string): unknown => JSON.parse(text);
+
 export function authorizeRun(
   database: Database,
   runId: string,
@@ -25,7 +27,7 @@ export function authorizeRun(
       "SELECT lastSequence FROM host_runs WHERE runId = ? AND principal = ?"
     )
     .get(runId, principal);
-  if (!row) {
+  if (row === null) {
     refuseRetired(database, "run", runId, principal);
     throw new OperationError({
       code: "NotFound",
@@ -50,7 +52,7 @@ export function eventPage(
   value: typeof EventListRequest.Type,
   principal: string
 ) {
-  const { cursor, afterSequence, ...query } = Schema.decodeUnknownSync(
+  const { cursor, afterSequence, ...query } = Schema.decodeSync(
     EventListRequest
   )(value, { onExcessProperty: "error" });
   const run = authorizeRun(database, query.runId, principal);
@@ -79,7 +81,7 @@ export function eventPage(
   const statement = database.prepare(
     "SELECT at, payloadJson, runId, sequence, tag FROM host_events WHERE runId = ? AND sequence > ? AND sequence <= ? ORDER BY sequence LIMIT ?"
   );
-  const items: (typeof Event.Type)[] = [];
+  const items: Event[] = [];
   let bytes = 0;
   let more = false;
   try {
@@ -92,7 +94,7 @@ export function eventPage(
       const { payloadJson, ...row } = Schema.decodeUnknownSync(EventRow)(raw);
       const item = Schema.decodeUnknownSync(Event)({
         ...row,
-        payload: JSON.parse(payloadJson),
+        payload: parseJson(payloadJson),
       });
       bytes += Buffer.byteLength(JSON.stringify(item));
       if (items.length >= limit || bytes > 1_048_576) {
@@ -142,10 +144,9 @@ export function waitPage(
   value: typeof WaitListRequest.Type,
   principal: string
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(WaitListRequest)(
-    value,
-    { onExcessProperty: "error" }
-  );
+  const { cursor, ...query } = Schema.decodeSync(WaitListRequest)(value, {
+    onExcessProperty: "error",
+  });
   if (query.runId !== undefined) {
     authorizeRun(database, query.runId, principal);
   }
@@ -253,7 +254,7 @@ export function logPage(
   value: typeof LogListRequest.Type,
   principal: string
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(LogListRequest)(value, {
+  const { cursor, ...query } = Schema.decodeSync(LogListRequest)(value, {
     onExcessProperty: "error",
   });
   const { lastSequence } = authorizeRun(database, query.runId, principal);
@@ -289,7 +290,7 @@ export function logPage(
       if (!logMatches(query, payload)) {
         continue;
       }
-      const item = Schema.decodeUnknownSync(LogEntry)({ ...event, ...payload });
+      const item = Schema.decodeSync(LogEntry)({ ...event, ...payload });
       bytes += Buffer.byteLength(JSON.stringify(item));
       if (items.length >= limit || bytes > 1_048_576) {
         more = true;
@@ -320,10 +321,9 @@ export function invocationScan(
   value: typeof OutputListRequest.Type,
   principal: string
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(OutputListRequest)(
-    value,
-    { onExcessProperty: "error" }
-  );
+  const { cursor, ...query } = Schema.decodeSync(OutputListRequest)(value, {
+    onExcessProperty: "error",
+  });
   authorizeRun(database, query.runId, principal);
   const limit = query.limit ?? 50;
   const scope = { kind: "outputs", principal, query: { ...query, limit } };

@@ -2,12 +2,13 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { Artifact, ArtifactStorage, Task } from "@offtree/effectory-sdk";
 import { Effect } from "effect";
+import type { Schema } from "effect";
 
 import { installHostModules } from "../src/host-runtime.ts";
+import { importModule } from "./fixtures/import-module.ts";
 
 test("binary definitions and storage retain identity across application and extension modules in both directions", async () => {
   const directory = await mkdtemp(
@@ -48,15 +49,17 @@ export const task = Task.make({ id: "binary-modules", version: 1, input: Schema.
 export const application = Application.make({ tasks: [task], extensions: [Extension.use(extension)] });
 `
     );
-    const ext = (await import(pathToFileURL(extension).href)) as {
+    const ext = await importModule<{
       ArtifactStorage: typeof ArtifactStorage;
       make: typeof Artifact.make;
-    };
+    }>(extension, { ArtifactStorage: "function", make: "function" });
     expect(ext.ArtifactStorage).toBe(ArtifactStorage);
     expect(ext.make).toBe(Artifact.make);
-    const app = (await import(pathToFileURL(application).href)) as {
-      task: Task.Definition;
-    };
+    const app = await importModule<{
+      task: Task.Definition<
+        Task.Spec & { readonly error: typeof Schema.Never }
+      >;
+    }>(application, { task: "object" });
     const result = await Effect.runPromise(
       Task.test(app.task, { input: null, tags: { team: "binary" } })
     );

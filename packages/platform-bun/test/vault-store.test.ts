@@ -254,12 +254,15 @@ test("physical page cap still permits deletion and reset, and corruption is valu
   store.init("credentials");
   const row = put(store, "large", "0", "CANARY-large-secret-".repeat(3000));
   // Fault injection on the actual store connection, never a production escape hatch.
-  const db = Reflect.get(store, "database") as Database;
+  const db: unknown = Reflect.get(store, "database");
+  if (!(db instanceof Database)) {
+    throw new TypeError("Expected the store database connection");
+  }
   const pages = db
     .query<{ page_count: number }, []>("PRAGMA page_count")
     .get()?.page_count;
   expect(pages).toBeDefined();
-  db.exec(`PRAGMA max_page_count=${pages}`);
+  db.run(`PRAGMA max_page_count=${pages}`);
   expect(() => put(store, "more", "0", "y".repeat(65_536))).toThrow();
   store.mutate({
     expectedVersion: row.version,

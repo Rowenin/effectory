@@ -3,7 +3,7 @@ import { chmodSync, lstatSync, renameSync } from "node:fs";
 import path from "node:path";
 
 import { OperationError } from "@effectory/runtime/protocol";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { validateLock } from "./extension-cache.ts";
 import { RepositoryLease } from "./ownership.ts";
@@ -56,7 +56,7 @@ function legacy(kind: FenceKind, contents: string | null) {
     throw invalid();
   }
   try {
-    const value = JSON.parse(contents);
+    const value: unknown = JSON.parse(contents);
     if (kind === "Credentials") {
       Schema.decodeUnknownSync(Credentials)(value, {
         onExcessProperty: "error",
@@ -188,10 +188,14 @@ export function fileFence(
         }
         let acceptance: typeof UpgradeAcceptance.Type;
         try {
-          acceptance = Schema.decodeUnknownSync(UpgradeAcceptance)(
+          const decoded = Schema.decodeUnknownExit(UpgradeAcceptance)(
             JSON.parse(active),
             { onExcessProperty: "error" }
           );
+          if (Exit.isFailure(decoded)) {
+            throw Cause.squash(decoded.cause);
+          }
+          acceptance = decoded.value;
         } catch {
           throw invalid();
         }

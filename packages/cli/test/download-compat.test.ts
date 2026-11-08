@@ -78,18 +78,18 @@ test("old daemon is refused before a content request or temporary file exists", 
           const server = yield* Effect.acquireRelease(
             Effect.sync(() =>
               Bun.serve({
-                fetch: (request) => {
+                fetch: async (request) => {
                   if (new URL(request.url).pathname === "/rpc/content") {
                     contentRequests += 1;
                     return new Response(null, { status: 404 });
                   }
-                  return handler(request);
+                  return await handler(request);
                 },
                 hostname: "127.0.0.1",
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           mkdirSync(path.join(repository, ".effectory"));
           writeFileSync(

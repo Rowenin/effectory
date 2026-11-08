@@ -54,11 +54,11 @@ async function fixtureLock(): Promise<typeof ExtensionLock.Type> {
     roots: { "acme/tools": { bindingName: "Tools", source } },
   };
 }
-function withJournal<A>(
+async function withJournal<A>(
   repository: string,
   use: (journal: ReturnType<typeof createExtensionJournal>) => A
 ) {
-  return Effect.runPromise(
+  return await Effect.runPromise(
     Effect.gen(function* () {
       const lease = yield* RepositoryLease;
       const db = yield* Effect.acquireRelease(

@@ -81,8 +81,9 @@ test("storage permission is exact and independent of executable revision compati
     upgradeRevisionDisposition(policy.execution.current, policy, false)
   ).toBe("Executable");
   const release = runtimeUpgradePolicy();
+  const certifiedPlatforms = ["darwin/arm64", "linux/x64"];
   expect(release.certified.length).toBe(
-    process.platform === "darwin" && process.arch === "arm64" ? 4 : 0
+    certifiedPlatforms.includes(`${process.platform}/${process.arch}`) ? 1 : 0
   );
   for (const edge of release.certified) {
     expect(
@@ -93,7 +94,7 @@ test("storage permission is exact and independent of executable revision compati
     ).toBe(edge);
     expect(
       certifiedStorageTransition(
-        { ...release, platform: "linux" },
+        { ...release, platform: "win32" },
         { build: edge.sourceBuild, storage: edge.sourceStorage }
       )
     ).toBeUndefined();

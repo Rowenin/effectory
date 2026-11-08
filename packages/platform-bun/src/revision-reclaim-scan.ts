@@ -3,9 +3,7 @@ import { Schema } from "effect";
 import type { RevisionProtection } from "./revision-reclaim-record.ts";
 import type { upgradeScanner } from "./upgrade-scan.ts";
 
-export const reclaimDecode = <
-  S extends Schema.Codec<unknown, unknown, never, never>,
->(
+export const reclaimDecode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   row: unknown
 ) => Schema.decodeUnknownSync(schema)(row, { onExcessProperty: "error" });

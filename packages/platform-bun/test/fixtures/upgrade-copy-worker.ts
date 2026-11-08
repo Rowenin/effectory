@@ -7,7 +7,13 @@ import { ownershipLayer } from "../../src/ownership.ts";
 import { createUpgradeRecoveryCopy } from "../../src/upgrade-copy.ts";
 
 const [source, destination, planId, stage, marker] = process.argv.slice(2);
-if (!source || !destination || !planId || !stage || !marker) {
+if (
+  source === undefined ||
+  destination === undefined ||
+  planId === undefined ||
+  stage === undefined ||
+  marker === undefined
+) {
   throw new Error("Missing recovery-copy fixture arguments");
 }
 await Effect.runPromise(

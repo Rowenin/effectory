@@ -47,10 +47,10 @@ function fixture() {
         principal
       )
     );
-  const search = (
+  const search = async (
     request: typeof ReportSearchRequest.Type = {},
     principal = "owner"
-  ) => Effect.runPromise(store.reportSearch(request, principal));
+  ) => await Effect.runPromise(store.reportSearch(request, principal));
   const materialize = (id: string) => {
     Effect.runSync(store.project(id, "Succeeded", null));
     for (const source of Effect.runSync(store.reportPendingSources("Ready"))) {
@@ -337,7 +337,7 @@ test("byte-limited pages preserve the unreturned invocation, with root and sourc
     ).toBe(220);
     expect([...first.items, ...rest.items]).toHaveLength(220);
     f.database
-      .exec(`WITH RECURSIVE n(v) AS (SELECT 2 UNION ALL SELECT v+1 FROM n WHERE v<12)
+      .run(`WITH RECURSIVE n(v) AS (SELECT 2 UNION ALL SELECT v+1 FROM n WHERE v<12)
       INSERT INTO host_reports(reportId,groupId,generation,status,createdAt)
       SELECT r.reportId||'/'||n.v,r.groupId,n.v,r.status,r.createdAt FROM host_reports r CROSS JOIN n WHERE r.generation=1`);
     createStore(f.database, { assertActive() {}, token: "wide-reopen" });
@@ -378,7 +378,7 @@ test("backfill failure rolls back the entire search migration and retry catches 
   const f = fixture();
   try {
     f.submit("one");
-    f.database.exec(
+    f.database.run(
       "DROP TABLE host_report_search_tags; DROP TABLE host_report_search;"
     );
     const saved = Schema.decodeUnknownSync(
@@ -407,7 +407,7 @@ test("backfill failure rolls back the entire search migration and retry catches 
     ).toHaveLength(1);
     // A pre-search writer appends a generation without indexing it.
     f.database
-      .exec(`INSERT INTO host_reports(reportId,groupId,generation,status,createdAt)
+      .run(`INSERT INTO host_reports(reportId,groupId,generation,status,createdAt)
       SELECT 'old-writer-retry',groupId,2,'Queued',createdAt FROM host_reports LIMIT 1`);
     const reopened = createStore(f.database, {
       assertActive() {},

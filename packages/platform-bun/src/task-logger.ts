@@ -19,7 +19,9 @@ function message(value: unknown, tracker?: Tracker): Schema.Json {
       Schema.decodeUnknownSync(Schema.Json)(normalized)
     );
     const safe = scrub(tracker, serialized);
-    return safe === serialized ? (JSON.parse(serialized) as Schema.Json) : safe;
+    return safe === serialized
+      ? Schema.decodeUnknownSync(Schema.Json)(JSON.parse(serialized))
+      : safe;
   } catch {
     return "[Log value omitted: exceeds JSON limits or is not JSON]";
   }

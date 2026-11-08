@@ -47,7 +47,11 @@ function fixture() {
   const assess = (limit = 50, cursor?: string) =>
     Effect.runSync(
       store.recoveryGet(
-        { limit, runId: run.runId, ...(cursor ? { cursor } : {}) },
+        {
+          limit,
+          runId: run.runId,
+          ...(cursor === undefined ? {} : { cursor }),
+        },
         "owner"
       )
     );

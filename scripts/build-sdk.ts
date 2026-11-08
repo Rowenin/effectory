@@ -26,6 +26,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 
+import { Schema } from "effect";
+
 const root = path.resolve(import.meta.dir, "..");
 const source = path.join(root, "packages", "core");
 const repository = "Rowenin/effectory";
@@ -36,15 +38,15 @@ const { values } = parseArgs({
 });
 const outdir = path.resolve(root, values.outdir);
 
-interface SourceManifest {
-  readonly dependencies: Record<string, string>;
-  readonly exports: Record<string, string>;
-  readonly name: string;
-  readonly version: string;
-}
-const manifest = JSON.parse(
+const SourceManifest = Schema.Struct({
+  dependencies: Schema.Record(Schema.String, Schema.String),
+  exports: Schema.Record(Schema.String, Schema.String),
+  name: Schema.String,
+  version: Schema.String,
+});
+const manifest = Schema.decodeSync(Schema.fromJsonString(SourceManifest))(
   readFileSync(path.join(source, "package.json"), "utf-8")
-) as SourceManifest;
+);
 
 function fail(message: string): never {
   process.stderr.write(`${message}\n`);
@@ -119,21 +121,26 @@ for (const name of emitted) {
 }
 
 const exportsMap = Object.fromEntries(
-  Object.entries(manifest.exports).map(([key, target]) => {
-    if (key === "./package.json") {
-      return [key, "./package.json"];
+  Object.entries(manifest.exports).map(
+    ([key, target]): [string, string | Record<string, string>] => {
+      if (key === "./package.json") {
+        return [key, "./package.json"];
+      }
+      const base = path.basename(target, ".ts");
+      if (
+        !emitted.includes(`${base}.js`) ||
+        !emitted.includes(`${base}.d.ts`)
+      ) {
+        fail(`export ${key} has no compiled output for ${target}`);
+      }
+      // Conditions match in order, and `types` must come first.
+      const conditions = Object.fromEntries<string>([
+        ["types", `./dist/${base}.d.ts`],
+        ["default", `./dist/${base}.js`],
+      ]);
+      return [key, conditions];
     }
-    const base = path.basename(target, ".ts");
-    if (!emitted.includes(`${base}.js`) || !emitted.includes(`${base}.d.ts`)) {
-      fail(`export ${key} has no compiled output for ${target}`);
-    }
-    // Conditions match in order, and `types` must come first.
-    const conditions = Object.fromEntries([
-      ["types", `./dist/${base}.d.ts`],
-      ["default", `./dist/${base}.js`],
-    ]);
-    return [key, conditions];
-  })
+  )
 );
 
 const effectVersion = manifest.dependencies.effect;
@@ -189,11 +196,15 @@ This release needs \`effect@${effectVersion}\`.
 );
 
 // The built package must load through its own export map.
-const smoke = (await import(
+const smoke: unknown = await import(
   pathToFileURL(path.join(outdir, "dist", "index.js")).href
-)) as Record<string, unknown>;
+);
 for (const name of ["Application", "Task", "Workflow"]) {
-  if (smoke[name] === undefined) {
+  if (
+    typeof smoke !== "object" ||
+    smoke === null ||
+    Reflect.get(smoke, name) === undefined
+  ) {
     fail(`dist/index.js does not export ${name}`);
   }
 }

@@ -7,7 +7,7 @@ import { parseTags } from "./tags.ts";
 export const searchPreflight = <E, R>(
   client: {
     readonly SystemStatus: (
-      request: Record<never, never>
+      request: Record<string, never>
     ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
   },
   workflowInvocations = false
@@ -27,27 +27,26 @@ export const searchPreflight = <E, R>(
     }
   });
 
+const invalidSearch = (cause: unknown) =>
+  cause instanceof OperationError
+    ? cause
+    : new OperationError({
+        code: "InvalidInput",
+        message: "Invalid report search filters",
+      });
 export function searchRequest(
   value: Record<string, unknown>,
   tags: readonly string[]
 ) {
-  return Effect.try({
-    catch: (cause) =>
-      cause instanceof OperationError
-        ? cause
-        : new OperationError({
-            code: "InvalidInput",
-            message: "Invalid report search filters",
-          }),
-    try: () =>
-      Schema.decodeUnknownSync(ReportSearchRequest)(
-        {
-          ...value,
-          tags: parseTags(tags),
-        },
+  return Effect.try({ catch: invalidSearch, try: () => parseTags(tags) }).pipe(
+    Effect.flatMap((parsed) =>
+      Schema.decodeEffect(ReportSearchRequest)(
+        { ...value, tags: parsed },
         { onExcessProperty: "error" }
-      ),
-  });
+      )
+    ),
+    Effect.mapError(invalidSearch)
+  );
 }
 
 // Bash/zsh ANSI-C quoting preserves arguments while keeping controls off the terminal.
@@ -77,19 +76,19 @@ export function searchContinuation(
     "report",
     "search",
   ];
-  const names = {
-    attachmentId: "attachment",
-    createdAfter: "created-after",
-    createdBefore: "created-before",
-    reporterId: "reporter",
-    runId: "run",
-    scope: "scope",
-    sourceWorkflowId: "source-workflow",
-    taskId: "task",
-    workflowId: "workflow",
-  } as const;
-  for (const [key, flag] of Object.entries(names)) {
-    const value = request[key as keyof typeof names];
+  const names = [
+    ["attachmentId", "attachment"],
+    ["createdAfter", "created-after"],
+    ["createdBefore", "created-before"],
+    ["reporterId", "reporter"],
+    ["runId", "run"],
+    ["scope", "scope"],
+    ["sourceWorkflowId", "source-workflow"],
+    ["taskId", "task"],
+    ["workflowId", "workflow"],
+  ] as const;
+  for (const [key, flag] of names) {
+    const value = request[key];
     if (value !== undefined) {
       args.push(`--${flag}`, quote(value));
     }
@@ -100,7 +99,7 @@ export function searchContinuation(
   for (const [key, value] of Object.entries(request.tags ?? {})) {
     args.push("--tag", quote(`${key}=${value}`));
   }
-  if (request.history) {
+  if (request.history === true) {
     args.push("--history");
   }
   args.push("--limit", String(request.limit ?? 50), "--cursor", quote(cursor));

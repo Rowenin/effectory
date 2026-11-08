@@ -13,7 +13,9 @@ import { assertUpgradeIdle } from "./upgrade-transition-gate.ts";
  * record which Effectory version last set the project up.
  */
 export type SdkPackage = keyof typeof hostVersions;
-const sdkPackages = Object.keys(hostVersions) as SdkPackage[];
+const isSdkPackage = (name: string): name is SdkPackage =>
+  Object.hasOwn(hostVersions, name);
+const sdkPackages = Object.keys(hostVersions).filter(isSdkPackage);
 
 /** The GitHub repository whose releases carry the binary and the SDK. */
 export const releaseRepository = "Rowenin/effectory";
@@ -40,7 +42,7 @@ function installedVersion(repository: string, name: string) {
     const manifest = path.join(directory, "node_modules", name, "package.json");
     if (existsSync(manifest)) {
       const parsed: unknown = JSON.parse(readFileSync(manifest, "utf-8"));
-      const version =
+      const version: unknown =
         typeof parsed === "object" && parsed !== null
           ? Reflect.get(parsed, "version")
           : undefined;
@@ -88,13 +90,14 @@ function readPackageJson(filename: string): PackageJson {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw invalid("package.json must contain an object");
   }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- callers check each package.json field they read
   return parsed as PackageJson;
 }
 
 /** `package.json` → `"effectory": { "version": "…" }`, like Swamp's `.swamp.yaml`. */
 function recordedVersion(manifest: PackageJson) {
   const marker = manifest.effectory;
-  const version =
+  const version: unknown =
     typeof marker === "object" && marker !== null
       ? Reflect.get(marker, "version")
       : undefined;

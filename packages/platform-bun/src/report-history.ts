@@ -79,8 +79,8 @@ export function reportHistory(
               .pipe(Effect.mapError(failure))),
           }
         : null;
-    const read = <A>(
-      body: Effect.Effect<A, unknown>
+    const read = <A, E>(
+      body: Effect.Effect<A, E>
     ): Effect.Effect<A, TaskRuntimeError> =>
       Effect.suspend(() => {
         if (!active.value) {
@@ -88,10 +88,9 @@ export function reportHistory(
         }
         return body.pipe(
           Effect.mapError(failure),
-          Effect.flatMap((value) =>
-            active.value
-              ? Effect.succeed(value)
-              : Effect.fail(invalid("Report invocation closed"))
+          Effect.filterOrFail(
+            () => active.value,
+            () => invalid("Report invocation closed")
           )
         );
       });
@@ -298,6 +297,7 @@ export function reportHistory(
       // The generic overload's dependent return type follows the canonical target
       // check and its success/error decoding above; TypeScript cannot express it
       // on the optional-argument implementation.
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the implementation satisfies every overload
       outcome: outcome as HistoryService["outcome"],
     } satisfies HistoryService;
   });

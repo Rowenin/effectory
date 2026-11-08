@@ -39,9 +39,10 @@ function capturedPolicy(database: Database, artifactId: string) {
       "SELECT retentionJson FROM lake_records WHERE artifactId=? ORDER BY version DESC LIMIT 1"
     )
     .get(artifactId);
-  const policyJson = latest
-    ? Schema.decodeUnknownSync(Latest)(latest).retentionJson
-    : null;
+  const policyJson =
+    latest === null
+      ? null
+      : Schema.decodeUnknownSync(Latest)(latest).retentionJson;
   return policyJson === null
     ? {}
     : Schema.decodeUnknownSync(RetentionPolicy)(JSON.parse(policyJson));
@@ -106,7 +107,7 @@ export function scanAutomaticRetention(
         "SELECT sequence,artifactId,epoch FROM lake_retention_identities WHERE principal='owner' AND sequence>? AND sequence<=? ORDER BY sequence LIMIT 1"
       )
       .get(checkpoint.after, checkpoint.horizon);
-    if (!next) {
+    if (next === null) {
       database
         .query(
           "UPDATE lake_automatic_state SET checkpoint=NULL,completedAt=?,nextAt=?,scanError=NULL WHERE id=1"

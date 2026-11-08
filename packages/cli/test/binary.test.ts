@@ -4,6 +4,19 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
+const Built = Schema.Struct({
+  abi: Schema.String,
+  built: Schema.Array(Schema.Struct({ file: Schema.String })),
+});
+const Version = Schema.Record(Schema.String, Schema.Unknown);
+const AgentStatus = Schema.Struct({ healthy: Schema.Boolean });
+const RunResult = Schema.Struct({
+  result: Schema.Unknown,
+  status: Schema.String,
+});
+
 const workspace = path.resolve(import.meta.dir, "../../..");
 
 function run(command: readonly string[], cwd: string) {
@@ -25,25 +38,26 @@ test("a compiled binary runs a project that has no node_modules", async () => {
   const project = path.join(directory, "project");
   let binary = "";
   try {
-    const built = JSON.parse(
-      run(
-        [
-          process.execPath,
-          "scripts/build-binary.ts",
-          "--outdir",
-          path.join(directory, "bin"),
-        ],
-        workspace
-      ).stdout
-    ) as { abi: string; built: { file: string }[] };
+    const built = Schema.decodeUnknownSync(Built)(
+      JSON.parse(
+        run(
+          [
+            process.execPath,
+            "scripts/build-binary.ts",
+            "--outdir",
+            path.join(directory, "bin"),
+          ],
+          workspace
+        ).stdout
+      )
+    );
     binary = built.built[0]?.file ?? "";
     const cli = (...args: string[]) =>
       run([binary, ...args, "--repository", project, "--json"], directory);
 
-    const version = JSON.parse(cli("version").stdout) as Record<
-      string,
-      unknown
-    >;
+    const version = Schema.decodeUnknownSync(Version)(
+      JSON.parse(cli("version").stdout)
+    );
     expect(version.compiled).toBe(true);
     // The binary carries the ABI of the sources it was built from, so a
     // repository can move between source runs and the binary.
@@ -52,9 +66,9 @@ test("a compiled binary runs a project that has no node_modules", async () => {
     // Positional path, as in `swamp repo init ./my-project`.
     run([binary, "init", project, "--json"], directory);
     cli("agent", "setup", "--harness", "codex", "--harness", "claude-code");
-    const agent = JSON.parse(cli("agent", "status").stdout) as {
-      healthy: boolean;
-    };
+    const agent = Schema.decodeUnknownSync(AgentStatus)(
+      JSON.parse(cli("agent", "status").stdout)
+    );
     expect(agent.healthy).toBe(true);
     expect(
       readFileSync(
@@ -69,9 +83,11 @@ test("a compiled binary runs a project that has no node_modules", async () => {
     );
     const started = cli("daemon", "start");
     expect(started.stderr).toContain("@offtree/effectory-sdk is not installed");
-    const result = JSON.parse(
-      cli("workflow", "run", "hello/run", "--input", '{"name":"Ada"}').stdout
-    ) as { status: string; result: unknown };
+    const result = Schema.decodeUnknownSync(RunResult)(
+      JSON.parse(
+        cli("workflow", "run", "hello/run", "--input", '{"name":"Ada"}').stdout
+      )
+    );
     expect(result).toMatchObject({ result: "Hello Ada", status: "Succeeded" });
     expect(existsSync(path.join(project, "node_modules"))).toBe(false);
     expect(existsSync(path.join(project, ".effectory", "node_modules"))).toBe(

@@ -146,13 +146,13 @@ test("task-local Layers read report history with isolated concurrent lifetimes",
     })
   ).provide(layer);
   const values = await Effect.runPromise(
-    Effect.all(
-      ["one", "two"].map((url) =>
+    Effect.forEach(
+      ["one", "two"],
+      (url) =>
         Report.test(task, {
           outcome: { _tag: "Succeeded", value: { url } },
           source,
-        })
-      ),
+        }),
       { concurrency: "unbounded" }
     )
   );
@@ -189,6 +189,7 @@ test("host history wins over Application context while task-local overrides rema
       if (!task) {
         return yield* Effect.die("Missing reporter");
       }
+      // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
       return yield* task.execute(source, runtime);
     }).pipe(Effect.provide(app.layer))
   );
@@ -250,7 +251,7 @@ test("history fixture cursors are bounded, cannot cross readers, and close with 
 
 test("report schemas reject oversized markdown and fixtures validate lazily", async () => {
   expect(() =>
-    Schema.decodeUnknownSync(Summary.successSchema)({
+    Schema.decodeSync(Summary.successSchema)({
       data: { url: "x" },
       markdown: "x".repeat(262_145),
     })
@@ -420,12 +421,12 @@ test("workflow invocation fixtures keep the typed workflow outcome without addin
     {
       error: Schema.Never,
       id: "fixture/child",
-      input: Schema.Number,
-      success: Schema.Number,
+      input: Schema.Finite,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.gen(function* () {
-      return yield* (yield* Workflow.Builder).input(Schema.Number);
+      return yield* (yield* Workflow.Builder).input(Schema.Finite);
     })
   );
   const summary = Task.make(
@@ -434,7 +435,7 @@ test("workflow invocation fixtures keep the typed workflow outcome without addin
       id: "fixture/summary",
       input: Report.sourceOf(child),
       replay: "idempotent",
-      success: Report.result(Schema.Number),
+      success: Report.result(Schema.Finite),
       version: 1,
     },
     () =>

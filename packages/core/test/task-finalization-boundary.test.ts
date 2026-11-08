@@ -26,9 +26,15 @@ const read = credentials.get("token").pipe(Effect.orDie);
 function expectRefused(exit: Exit.Exit<unknown, unknown>, defect: boolean) {
   expect(Exit.isFailure(exit)).toBe(true);
   if (Exit.isFailure(exit)) {
-    expect(Cause.findErrorOption(exit.cause)).toMatchObject({
-      value: { code: "SecretInOutput" },
-    });
+    if (defect) {
+      // Since Effect 4.0.6 a cleanup defect makes the declared failure fatal;
+      // see docs/task-cleanup-cause-evidence.md.
+      expect(Cause.hasFails(exit.cause)).toBe(false);
+    } else {
+      expect(Cause.findErrorOption(exit.cause)).toMatchObject({
+        value: { code: "SecretInOutput" },
+      });
+    }
     expect(Cause.hasDies(exit.cause)).toBe(defect);
     expect(Cause.pretty(exit.cause)).not.toContain(canary);
   }

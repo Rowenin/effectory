@@ -26,7 +26,7 @@ export const make = (
           new DefinitionError({
             message: "AWS vault extension provider could not be loaded",
           }),
-        try: () => import("./provider.ts"),
+        try: async () => await import("./provider.ts"),
       });
       return yield* provider.makeBackend(spec, captured);
     });

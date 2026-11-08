@@ -186,8 +186,10 @@ export function make<
         // The heterogeneous registry erases R only after make has accumulated
         // every task's service requirements into its public Layer signature.
         execute: (input, context) =>
+          // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
           task
             .execute(input, context)
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
             .pipe(Effect.provideContext(services as Context.Context<unknown>)),
       });
     }

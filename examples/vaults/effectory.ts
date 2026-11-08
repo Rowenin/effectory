@@ -22,7 +22,10 @@ const report = Artifact.make({
   schema: Schema.String,
   version: 1,
 });
-class Failure extends Schema.TaggedError<Failure>()("Failure", {
+class Failure extends Schema.TaggedError<
+  Failure,
+  { readonly brand: unique symbol }
+>()("Failure", {
   message: Schema.String,
 }) {}
 const Read = Task.make(

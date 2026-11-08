@@ -28,6 +28,8 @@ import {
   RevisionReclaimReceipt,
 } from "../src/revision-reclaim-record.ts";
 
+const JsonObject = Schema.Record(Schema.String, Schema.Unknown);
+
 function fixture() {
   const repository = mkdtempSync(
     path.join(tmpdir(), "effectory-reclaim-commands-")
@@ -84,9 +86,10 @@ function fixture() {
       await Effect.runPromise(
         reclaimRevisions(repository, {
           kind: "Plan",
-          selector: selected
-            ? { _tag: "Revision", revision: selected }
-            : { _tag: "Unreferenced" },
+          selector:
+            selected === undefined
+              ? { _tag: "Unreferenced" }
+              : { _tag: "Revision", revision: selected },
         })
       )
     );
@@ -221,26 +224,37 @@ test("a forged Ready preview with the original binding cannot delete active code
       "plans",
       `${plan.planId}.json`
     );
-    const saved = JSON.parse(readFileSync(filename, "utf-8"));
+    const saved = Schema.decodeSync(Schema.fromJsonString(JsonObject))(
+      readFileSync(filename, "utf-8")
+    );
+    const savedPlan = Schema.decodeUnknownSync(JsonObject)(saved.plan);
     const manifest = readFileSync(
       path.join(f.active.directory, "manifest.json")
     );
     const bundle = readFileSync(
       path.join(f.active.directory, "application.mjs")
     );
-    saved.plan.candidates = [
-      {
-        bundleDigest: digestOf(bundle),
-        bytes: manifest.length + bundle.length,
-        executionContract: null,
-        hostBuild: "f".repeat(64),
-        manifestDigest: digestOf(manifest),
-        revision: f.active.revision,
-      },
-    ];
-    saved.plan.protected = [];
-    saved.plan.logicalBytes = manifest.length + bundle.length;
-    writeFileSync(filename, JSON.stringify(saved));
+    writeFileSync(
+      filename,
+      JSON.stringify({
+        ...saved,
+        plan: {
+          ...savedPlan,
+          candidates: [
+            {
+              bundleDigest: digestOf(bundle),
+              bytes: manifest.length + bundle.length,
+              executionContract: null,
+              hostBuild: "f".repeat(64),
+              manifestDigest: digestOf(manifest),
+              revision: f.active.revision,
+            },
+          ],
+          logicalBytes: manifest.length + bundle.length,
+          protected: [],
+        },
+      })
+    );
     const refused = await Effect.runPromise(
       f.apply(plan.planId).pipe(Effect.flip)
     );
@@ -329,7 +343,11 @@ test("real CLI plans, inspects and applies offline, and validates explicit selec
     expect(inspection.code).toBe(0);
     const applied = await cli("apply", plan.planId);
     expect(applied.code, applied.stderr).toBe(0);
-    expect(JSON.parse(applied.stdout).removedFiles).toBe(2);
+    expect(
+      Schema.decodeSync(
+        Schema.fromJsonString(Schema.Struct({ removedFiles: Schema.Finite }))
+      )(applied.stdout).removedFiles
+    ).toBe(2);
     expect(existsSync(path.join(f.state, "daemon.json"))).toBe(false);
   } finally {
     f.close();

@@ -137,6 +137,7 @@ test("a generated facade preserves emitted types, exposes canonical services and
           return yield* Effect.die("Extension task not registered");
         }
         expect(
+          // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
           yield* task.execute({ repository: "swamp-club/swamp" }, context)
         ).toBe("loaded/swamp-club/swamp");
         expect(application.registry.workflows.has("local/flow")).toBe(true);
@@ -149,19 +150,20 @@ test("a generated facade preserves emitted types, exposes canonical services and
             },
           },
         };
-        yield* Effect.promise(() =>
-          writeFile(
-            path.join(repository, "effectory.ts"),
-            consumer.replaceAll("Tools", "CandidateTools")
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeFile(
+              path.join(repository, "effectory.ts"),
+              consumer.replaceAll("Tools", "CandidateTools")
+            )
         );
         const candidate = yield* catalog.prepare(candidateLock);
         // Candidate imports resolve against an overlay, while the live facade stays intact.
         verifyBindings(repository, lock);
         expect(catalog.active).toBe(application.revision);
-        yield* catalog.activate(candidate, () =>
-          writeBindings(repository, candidateLock)
-        );
+        yield* catalog.activate(candidate, () => {
+          writeBindings(repository, candidateLock);
+        });
         verifyBindings(repository, candidateLock);
         expect(catalog.active).toBe(candidate.revision);
         const retained = yield* catalog.get(application.revision);

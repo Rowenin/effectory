@@ -11,11 +11,11 @@ import { Runner } from "../../src/runner.ts";
 import { writeReady } from "./ready.ts";
 
 const [directory, mode, readyFile] = process.argv.slice(2);
-if (!(directory && mode && readyFile)) {
+if (directory === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Missing fixture arguments");
 }
 const audit = new Database(path.join(directory, "audit.sqlite"));
-audit.exec("CREATE TABLE IF NOT EXISTS calls (attempt INTEGER, key TEXT)");
+audit.run("CREATE TABLE IF NOT EXISTS calls (attempt INTEGER, key TEXT)");
 const RetryError = Schema.TaggedStruct("RetryLater", {});
 const task = Task.make(
   {
@@ -77,28 +77,30 @@ try {
         const events = yield* store.events(run.runId);
         const retry = events.find((event) => event.tag === "RetryScheduled");
         if (mode === "start" && retry && current.status === "Waiting") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                result: retry.payload,
-                runId: run.runId,
-                status: current.status,
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  result: retry.payload,
+                  runId: run.runId,
+                  status: current.status,
+                })
+              )
           );
           return yield* Effect.never;
         }
         if (current.status === "Succeeded") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                result: retry?.payload,
-                runId: run.runId,
-                status: current.status,
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  result: retry?.payload,
+                  runId: run.runId,
+                  status: current.status,
+                })
+              )
           );
           return;
         }

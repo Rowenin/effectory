@@ -10,6 +10,8 @@ import { Effect, Schema } from "effect";
 
 import type { createPagination } from "./pagination.ts";
 
+const parseJson = (text: string): unknown => JSON.parse(text);
+
 const maximumWork = 10_000;
 const batchWork = 500;
 const maximumMetadata = 16_777_216;
@@ -32,7 +34,7 @@ const date = (value: string | undefined) => {
 function normalize(value: typeof ReportSearchRequest.Type) {
   let input: typeof ReportSearchRequest.Type;
   try {
-    input = Schema.decodeUnknownSync(ReportSearchRequest)(value, {
+    input = Schema.decodeSync(ReportSearchRequest)(value, {
       onExcessProperty: "error",
     });
   } catch {
@@ -226,10 +228,10 @@ function projection(
       root: {
         acceptedAt: row.rootAcceptedAt,
         kind: row.rootKind,
-        tags: JSON.parse(row.tagsJson),
+        tags: parseJson(row.tagsJson),
         targetId: row.rootTargetId,
       },
-      source: JSON.parse(row.sourceJson),
+      source: parseJson(row.sourceJson),
     });
     const created = Date.parse(item.createdAt);
     const matches =

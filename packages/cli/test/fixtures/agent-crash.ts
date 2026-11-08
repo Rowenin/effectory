@@ -12,7 +12,7 @@ function checkpoint() {
     process.kill(process.pid, "SIGKILL");
   }
 }
-mock.module("node:fs", () => ({
+await mock.module("node:fs", () => ({
   ...real,
   fsyncSync: (fd: number) => {
     real.fsyncSync(fd);

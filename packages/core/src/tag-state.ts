@@ -5,7 +5,7 @@ import { RunTags } from "./run-tags.ts";
 
 export interface TagSchema {
   readonly key: string;
-  readonly codec: Schema.Codec<unknown, string, never, never>;
+  readonly codec: Schema.Codec<unknown, string>;
 }
 export const definitions = new WeakMap<object, TagSchema>();
 export const bindings = new WeakMap<
@@ -59,12 +59,15 @@ export function snapshot(input: unknown): typeof RunTags.Type {
   }
 }
 
+const isArray = (value: unknown): value is readonly unknown[] =>
+  Array.isArray(value);
+
 export function normalize(
   input: unknown,
   publication = false
 ): Readonly<Record<string, string>> {
   let raw: unknown = input;
-  if (Array.isArray(input)) {
+  if (isArray(input)) {
     const entries: [string, string][] = [];
     const keys = new Set<string>();
     for (const item of input) {
@@ -96,7 +99,7 @@ export function normalize(
 
 export function declarations(input: unknown) {
   const schemas: Record<string, TagSchema["codec"]> = {};
-  if (!Array.isArray(input)) {
+  if (!isArray(input)) {
     return { tagSchemas: Object.freeze(schemas), tags: snapshot(input) };
   }
   const values: [string, string][] = [];

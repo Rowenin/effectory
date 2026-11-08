@@ -35,14 +35,12 @@ test("artifact retention captures immutable normalized Effect durations", () => 
     "1 month",
     Duration.infinity,
   ]) {
-    expect(() =>
-      Artifact.make({
-        id: "bad",
-        retention: { maxAge: maxAge as Duration.Input },
-        schema: Schema.Int,
-        version: 1,
-      })
-    ).toThrow();
+    // Untyped callers can pass any retention shape.
+    expect(() => {
+      Reflect.apply(Artifact.make, undefined, [
+        { id: "bad", retention: { maxAge }, schema: Schema.Int, version: 1 },
+      ]);
+    }).toThrow();
   }
   for (const maxVersions of [0, -1, 1.5, 2 ** 53]) {
     expect(() =>

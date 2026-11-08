@@ -50,7 +50,7 @@ const conflict = () =>
     "Conflict",
     "Installed extension registry changed; inspect current revisions and submit a new request key"
   );
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   json: string
 ) =>
@@ -72,7 +72,7 @@ export function createExtensionJournal(
   lease: Lease
 ) {
   lease.assertActive();
-  database.exec(`
+  database.run(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = FULL;
     CREATE TABLE IF NOT EXISTS extension_registry (singleton INTEGER PRIMARY KEY CHECK(singleton = 1), revision TEXT NOT NULL, lockJson TEXT NOT NULL);
@@ -97,7 +97,7 @@ export function createExtensionJournal(
         "SELECT revision, lockJson FROM extension_registry WHERE singleton = 1"
       )
       .get();
-    if (!row) {
+    if (row === null) {
       throw error("Unavailable", "Extension registry has not been reconciled");
     }
     const value = Schema.decodeUnknownSync(RegistryRow)(row);
@@ -120,7 +120,7 @@ export function createExtensionJournal(
         "SELECT snapshotJson, requestJson, resolutionsJson, candidateJson FROM extension_operations WHERE operationId = ? AND actor = ?"
       )
       .get(id, actor);
-    if (!raw) {
+    if (raw === null) {
       throw error("NotFound", "Extension operation was not found");
     }
     const row = Schema.decodeUnknownSync(Row)(raw);
@@ -221,7 +221,7 @@ export function createExtensionJournal(
       accepting = true
     ) =>
       transaction(() => {
-        const request = Schema.decodeUnknownSync(ExtensionChange)(value, {
+        const request = Schema.decodeSync(ExtensionChange)(value, {
           onExcessProperty: "error",
         });
         const fingerprint = canonical(encode(ExtensionChange, request));
@@ -230,7 +230,7 @@ export function createExtensionJournal(
             "SELECT operationId, fingerprint FROM extension_operations WHERE actor = ? AND requestKey = ?"
           )
           .get(actor, request.requestKey);
-        if (previous) {
+        if (previous !== null) {
           const receipt = Schema.decodeUnknownSync(
             Schema.Struct({
               fingerprint: Schema.String,
@@ -286,7 +286,7 @@ export function createExtensionJournal(
           status: "Queued",
           updatedAt: now,
         };
-        Schema.decodeUnknownSync(ExtensionOperation)(snapshot);
+        Schema.decodeSync(ExtensionOperation)(snapshot);
         // No operation deletion in v0, so total + 1 is the durable sequence.
         database
           .query(
@@ -322,7 +322,7 @@ export function createExtensionJournal(
           throw conflict();
         }
         assertWritableBindings(repository);
-        Schema.decodeUnknownSync(Digest)(applicationRevision);
+        Schema.decodeSync(Digest)(applicationRevision);
         database
           .query(
             "INSERT INTO extension_activation(singleton, operationId, beforeJson, afterJson, applicationRevision) VALUES(1, ?, ?, ?, ?)"
@@ -369,9 +369,7 @@ export function createExtensionJournal(
             "UPDATE extension_operations SET resolutionsJson = ? WHERE operationId = ?"
           )
           .run(
-            JSON.stringify(
-              Schema.decodeUnknownSync(ResolutionSnapshot)(resolutions)
-            ),
+            JSON.stringify(Schema.decodeSync(ResolutionSnapshot)(resolutions)),
             id
           );
       }),
@@ -429,7 +427,7 @@ export function createExtensionJournal(
           "SELECT operationId, actor FROM extension_operations WHERE status IN ('Queued', 'Running') ORDER BY sequence LIMIT 1"
         )
         .get();
-      if (!row) {
+      if (row === null) {
         return null;
       }
       const selected = Schema.decodeUnknownSync(

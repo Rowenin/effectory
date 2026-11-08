@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { hostVersions } from "../src/host-runtime.ts";
 import {
@@ -40,8 +40,11 @@ async function install(directory: string, name: string, installed: string) {
     JSON.stringify({ name, version: installed })
   );
 }
+const decodeJsonObject = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+);
 const readJson = async (filename: string) =>
-  JSON.parse(await readFile(filename, "utf-8")) as Record<string, unknown>;
+  decodeJsonObject(await readFile(filename, "utf-8"));
 
 test("status compares the recorded version and nearest installed SDK with the host", async () => {
   await withDirectory(async (directory) => {

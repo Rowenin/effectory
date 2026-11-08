@@ -41,6 +41,16 @@ import * as Tag from "./tag.ts";
 import { decodeTestOccurrence } from "./test-occurrence.ts";
 import * as VaultTracker from "./vault-tracker.ts";
 
+/** Publication options detached from caller-owned objects by a JSON round trip. */
+const OwnedPublication = Schema.Struct({
+  key: Schema.String,
+  tags: Schema.Record(Schema.String, Schema.String),
+});
+const OwnedJsonPublication = Schema.Struct({
+  ...OwnedPublication.fields,
+  value: Schema.Json,
+});
+
 export interface Spec {
   readonly id: string;
   readonly version: number;
@@ -56,7 +66,8 @@ export type OutputsOf<S extends Spec> = S extends {
   readonly outputs: infer O extends Artifact.Outputs;
 }
   ? O
-  : Record<never, never>;
+  : // oxlint-disable-next-line typescript/no-generated-empty-object-type -- a {} default keeps keyof inference in the public API
+    Record<never, never>;
 
 export interface PublicationOptions {
   readonly key: string;
@@ -269,11 +280,9 @@ function contextFor(
           value: encoded,
         });
         yield* VaultTracker.checkSerialized(serialized);
-        const owned = JSON.parse(serialized) as {
-          value: Schema.Json;
-          key: string;
-          tags: Readonly<Record<string, string>>;
-        };
+        const owned = yield* Schema.decodeUnknownEffect(OwnedJsonPublication)(
+          JSON.parse(serialized)
+        ).pipe(Effect.orDie);
         const reference = yield* runtime.publish(name, artifact, owned.value, {
           key: owned.key,
           tags: owned.tags,
@@ -348,17 +357,18 @@ function storageFor(
           // Runtime discrimination narrows the artifact, but TypeScript cannot
           // narrow the conditional value. These casts retain the source E/R.
           const source = Stream.isStream(value)
-            ? (value as Stream.Stream<Uint8Array, E, R>)
-            : Stream.succeed(value as Uint8Array);
+            ? // oxlint-disable-next-line effecttsgo/unsafe-effect-type-assertion, typescript/no-unsafe-type-assertion -- user code loaded at runtime has an unknown error type; the checker cannot relate this erased generic
+              (value as Stream.Stream<Uint8Array, E, R>)
+            : // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
+              Stream.succeed(value as Uint8Array);
           return Effect.gen(function* () {
             yield* boundary(() => identifier(options.key));
             const tags = yield* publicationTags(runtime.tags, options);
             const serialized = JSON.stringify({ key: options.key, tags });
             yield* VaultTracker.checkSerialized(serialized);
-            const owned = JSON.parse(serialized) as {
-              key: string;
-              tags: Readonly<Record<string, string>>;
-            };
+            const owned = yield* Schema.decodeUnknownEffect(OwnedPublication)(
+              JSON.parse(serialized)
+            ).pipe(Effect.orDie);
             const reference = yield* publish(name, artifact, source, owned);
             return yield* boundary(() => decode(artifact.refSchema, reference));
           });
@@ -498,6 +508,7 @@ function definition<S extends Spec, R>(
         );
       }),
     provide: <ROut, E, RIn>(layer: Layer.Layer<ROut, E, RIn>) =>
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
       definition(
         spec,
         (input, context, invocation) =>
@@ -553,6 +564,7 @@ export function make<const S extends Spec, R>(
 > {
   // This assertion relates the conditional output type to the optional field;
   // publication still checks the actual output table and codec at runtime.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
   const outputs = (spec.outputs ?? {}) as OutputsOf<S>;
   return definition(spec, (encodedInput, runtime, invocation) =>
     Effect.gen(function* () {
@@ -742,8 +754,8 @@ export function test<S extends Spec, R>(
             bytes.set(chunk, offset);
             offset += chunk.byteLength;
           }
-          const digest = yield* Effect.promise(() =>
-            crypto.subtle.digest("SHA-256", bytes)
+          const digest = yield* Effect.promise(
+            async () => await crypto.subtle.digest("SHA-256", bytes)
           );
           const sha256 = [...new Uint8Array(digest)]
             .map((byte) => byte.toString(16).padStart(2, "0"))

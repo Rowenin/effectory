@@ -25,7 +25,7 @@ export function operationHistory(
   value: typeof OperationListRequest.Type,
   actor: string
 ) {
-  const { cursor, afterSequence, ...query } = Schema.decodeUnknownSync(
+  const { cursor, afterSequence, ...query } = Schema.decodeSync(
     OperationListRequest
   )(value, { onExcessProperty: "error" });
   if (cursor !== undefined && afterSequence !== undefined) {

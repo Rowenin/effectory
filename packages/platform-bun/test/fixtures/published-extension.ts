@@ -101,7 +101,9 @@ export async function publishedExtension(
     target: "bun",
   });
   if (!output.success) {
-    throw new Error(`Fixture bundle failed: ${output.logs.join("\n")}`);
+    throw new Error(
+      `Fixture bundle failed: ${output.logs.map((log) => log.message).join("\n")}`
+    );
   }
   const filenames = await readdir(path.join(directory, "dist"));
   const files = Object.fromEntries(

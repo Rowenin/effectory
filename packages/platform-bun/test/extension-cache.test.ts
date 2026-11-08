@@ -81,12 +81,12 @@ function snapshot(
     },
   };
 }
-function restore(
+async function restore(
   repository: string,
   lock: typeof ExtensionLock.Type,
   download: (typeof ExtensionSource.Service)["download"]
 ) {
-  return Effect.runPromise(
+  return await Effect.runPromise(
     restoreCache(repository, lock).pipe(
       Effect.provide(
         Layer.merge(

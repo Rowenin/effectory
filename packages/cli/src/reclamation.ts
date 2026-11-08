@@ -17,7 +17,9 @@ const invalid = (message: string) =>
 function selectionInput(flags: Flags) {
   let millis: number | undefined;
   if (flags.olderThan !== undefined) {
-    const parsed = Duration.fromInput(flags.olderThan as Duration.Input);
+    const parsed = Schema.decodeOption(Schema.DurationFromString)(
+      flags.olderThan
+    );
     millis = Option.isSome(parsed)
       ? Math.floor(Duration.toMillis(parsed.value))
       : Number.NaN;
@@ -96,7 +98,7 @@ export function parseReclamation(flags: Flags): ReclamationRequest {
 
 export function retentionFor<E, R>(client: {
   readonly SystemStatus: (
-    request: Record<never, never>
+    request: Record<string, never>
   ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
 }) {
   return Effect.gen(function* () {
@@ -113,7 +115,7 @@ export function retentionFor<E, R>(client: {
 
 export function automaticRetentionFor<E, R>(client: {
   readonly SystemStatus: (
-    request: Record<never, never>
+    request: Record<string, never>
   ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
 }) {
   return Effect.gen(function* () {

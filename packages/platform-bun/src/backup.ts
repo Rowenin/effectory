@@ -360,8 +360,13 @@ export function repositorySnapshot(
       return yield* Effect.tryPromise({
         catch: (cause) =>
           storageError(cause, "Snapshot copy or verification failed"),
-        try: () =>
-          copySnapshot(locations.root, locations.target, restoring, lease),
+        try: async () =>
+          await copySnapshot(
+            locations.root,
+            locations.target,
+            restoring,
+            lease
+          ),
       });
     }).pipe(
       // Keep ownership until in-flight file operations finish, including on Ctrl-C.

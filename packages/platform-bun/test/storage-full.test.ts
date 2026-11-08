@@ -40,11 +40,11 @@ test("SQLite exhaustion rejects new work and publication atomically while retain
         } as const;
         const accepted = yield* store.submit(submission, "revision", "owner");
         yield* store.admitAttempt(accepted.runId, "task", 1, "idempotent");
-        const { page_count: pages } = Schema.decodeUnknownSync(
+        const { page_count: pages } = yield* Schema.decodeUnknownEffect(
           Schema.Struct({ page_count: Schema.Int })
         )(database.query("PRAGMA page_count").get());
         // Limit only this temporary database, without consuming the host volume.
-        database.exec(`PRAGMA max_page_count = ${pages}`);
+        database.run(`PRAGMA max_page_count = ${pages}`);
         const failure = yield* Effect.result(
           store.submit(
             {
@@ -103,13 +103,14 @@ test("SQLite exhaustion rejects new work and publication atomically while retain
           )
         ).toBe(false);
         expect(
-          Schema.decodeUnknownSync(Schema.Struct({ count: Schema.Int }))(
-            database.query("SELECT COUNT(*) AS count FROM lake_records").get()
-          ).count
+          (yield* Schema.decodeUnknownEffect(
+            Schema.Struct({ count: Schema.Int })
+          )(database.query("SELECT COUNT(*) AS count FROM lake_records").get()))
+            .count
         ).toBe(0);
         expect(store.storageFailures).toBe(1);
         // Once space is available, original admission and publication keys can be retried.
-        database.exec(`PRAGMA max_page_count = ${pages + 100}`);
+        database.run(`PRAGMA max_page_count = ${pages + 100}`);
         const reference = yield* lake.publish(
           identity,
           "value",

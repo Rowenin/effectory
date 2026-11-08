@@ -217,7 +217,7 @@ test("schedule CLI/RPC recovers an occurrence after kill, exposes blockers, and 
     expect(code).toBe(3);
     expect(stderr).toContain("delivery is uncertain");
     const key = /--request-key (?<key>[a-f\d-]{36})/u.exec(stderr)?.groups?.key;
-    if (!key) {
+    if (key === undefined) {
       throw new Error("No retry key printed");
     }
     await writeFile(endpointPath, endpointText);
@@ -264,7 +264,7 @@ test("schedule CLI/RPC recovers an occurrence after kill, exposes blockers, and 
         child.kill("SIGKILL");
       }
     }
-    await Promise.all(processes.map((child) => child.exited));
+    await Promise.all(processes.map(async (child) => await child.exited));
     await rm(repository, { force: true, recursive: true });
   }
 }, 120_000);

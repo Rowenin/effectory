@@ -18,10 +18,9 @@ export function lakeVersions(
   value: typeof VersionListRequest.Type,
   principal: string
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(VersionListRequest)(
-    value,
-    { onExcessProperty: "error" }
-  );
+  const { cursor, ...query } = Schema.decodeSync(VersionListRequest)(value, {
+    onExcessProperty: "error",
+  });
   const limit = query.limit ?? 50;
   const scope = {
     kind: "lake-versions",
@@ -30,11 +29,11 @@ export function lakeVersions(
   };
   // Authorize against historical identity before inspecting another actor's cursor.
   if (
-    !database
+    database
       .query(
         "SELECT 1 FROM lake_records WHERE principal = ? AND artifactId = ? LIMIT 1"
       )
-      .get(principal, query.artifactId)
+      .get(principal, query.artifactId) === null
   ) {
     throw new OperationError({
       code: "NotFound",
@@ -46,7 +45,8 @@ export function lakeVersions(
   const previousSnapshot = token
     ? cursorSnapshot(token.snapshot, epoch, "version")
     : undefined;
-  const retained = query.includeReclaimed ? "" : "AND reclaimedAt IS NULL";
+  const retained =
+    query.includeReclaimed === true ? "" : "AND reclaimedAt IS NULL";
   const latest = Schema.decodeUnknownSync(
     Schema.Struct({ value: Schema.NullOr(Schema.Int) })
   )(

@@ -7,7 +7,11 @@ import { reclaimRevisionFiles } from "../../src/revision-reclaim-executor.ts";
 import { makeReclaimJournal } from "../../src/revision-reclaim-journal.ts";
 
 const [repository, planId, boundary] = process.argv.slice(2);
-if (!repository || !planId || !boundary) {
+if (
+  repository === undefined ||
+  planId === undefined ||
+  boundary === undefined
+) {
   throw new Error("Missing reclamation fixture arguments");
 }
 const step = (name: string) =>

@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { ContentPlane } from "@effectory/runtime/content-rpc";
 import type { DownloadFrame } from "@effectory/runtime/lake-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Exit, Layer, Scope, Stream } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { RpcClient } from "effect/rpc";
 
@@ -88,18 +88,19 @@ test("content RPC emits individual bounded frames and round-trips Uint8Array", a
           Effect.sync(() =>
             Bun.serve({
               fetch: async (incoming) =>
-                handler(await contentRequest(incoming)),
+                await handler(await contentRequest(incoming)),
               hostname: "127.0.0.1",
               port: 0,
             })
           ),
-          (running) => Effect.promise(() => running.stop(true))
+          (running) => Effect.promise(async () => await running.stop(true))
         );
         const url = `http://127.0.0.1:${server.port}/rpc/content`;
-        const raw = yield* Effect.promise(() =>
-          fetch(url, { body: requestBody(), method: "POST" }).then((response) =>
-            response.text()
-          )
+        const raw = yield* Effect.promise(
+          async () =>
+            await fetch(url, { body: requestBody(), method: "POST" }).then(
+              async (response) => await response.text()
+            )
         );
         for (const line of raw.trim().split("\n")) {
           expect(Buffer.byteLength(line)).toBeLessThan(131_072);
@@ -161,54 +162,55 @@ test("four active producers reject the fifth with typed error and release on dis
         const server = yield* Effect.acquireRelease(
           Effect.sync(() =>
             Bun.serve({
-              fetch: (incoming) => handler(incoming),
+              fetch: async (incoming) => await handler(incoming),
               hostname: "127.0.0.1",
               idleTimeout: 0,
               port: 0,
             })
           ),
-          (running) => Effect.promise(() => running.stop(true))
+          (running) => Effect.promise(async () => await running.stop(true))
         );
         const url = `http://127.0.0.1:${server.port}/rpc/content`;
-        const controllers: AbortController[] = [];
+        // Child scope owns the client signals; closing it aborts these requests.
+        const connections = yield* Scope.fork(yield* Effect.scope);
         for (let index = 0; index < 4; index += 1) {
-          const controller = new AbortController();
-          controllers.push(controller);
-          const response = yield* Effect.promise(() =>
-            fetch(url, {
-              body: requestBody(),
-              method: "POST",
-              signal: controller.signal,
-            })
+          const signal = yield* Effect.abortSignal.pipe(
+            Scope.provide(connections)
+          );
+          const response = yield* Effect.promise(
+            async () =>
+              await fetch(url, {
+                body: requestBody(),
+                method: "POST",
+                signal,
+              })
           );
           expect(response.status).toBe(200);
           const reader = readerFor(response);
-          yield* Effect.promise(() => reader.read());
+          yield* Effect.promise(async () => await reader.read());
         }
         expect(opened).toBe(4);
-        const refused = yield* Effect.promise(() =>
-          fetch(url, { body: requestBody(), method: "POST" }).then((response) =>
-            response.text()
-          )
+        const refused = yield* Effect.promise(
+          async () =>
+            await fetch(url, { body: requestBody(), method: "POST" }).then(
+              async (response) => await response.text()
+            )
         );
         expect(refused).toContain("LimitExceeded");
         expect(refused).toContain("4 downloads active");
-        for (const controller of controllers) {
-          controller.abort();
-        }
+        yield* Scope.close(connections, Exit.void);
         yield* Effect.repeat(Effect.yieldNow, {
           until: () => closed === 4,
         }).pipe(Effect.timeout("2 seconds"));
         expect(closed).toBe(4);
-        const controller = new AbortController();
-        const response = yield* Effect.promise(() =>
-          fetch(url, {
-            body: requestBody(),
-            method: "POST",
-            signal: controller.signal,
-          })
+        const response = yield* Effect.promise(
+          async () =>
+            await fetch(url, {
+              body: requestBody(),
+              method: "POST",
+            })
         );
-        yield* Effect.promise(() => readerFor(response).read());
+        yield* Effect.promise(async () => await readerFor(response).read());
         expect(opened).toBe(5);
         // Keep this producer active: server shutdown must close it before the outer lake scope.
       })
@@ -226,8 +228,11 @@ test("content RPC preserves typed lake errors", async () => {
             new OperationError({ code: "NotFound", message: "reclaimed" })
           )
         );
-        const response = yield* Effect.promise(() =>
-          handler(request(requestBody())).then((result) => result.text())
+        const response = yield* Effect.promise(
+          async () =>
+            await handler(request(requestBody())).then(
+              async (result) => await result.text()
+            )
         );
         expect(response).toContain("NotFound");
         expect(response).toContain("reclaimed");

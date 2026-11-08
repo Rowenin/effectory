@@ -93,7 +93,7 @@ const binding = (
 
 test.each(["approve", "reject"] as const)(
   "a selected replacement runs only after every patch barrier: %s",
-  (operation) => {
+  async (operation) => {
     const calls: string[] = [];
     const Input = Schema.Struct({ name: Schema.String });
     const Base = Task.make(
@@ -200,7 +200,7 @@ test.each(["approve", "reject"] as const)(
       tasks: [Base],
       workflows: [Flow],
     });
-    return withHost(
+    return await withHost(
       app,
       Effect.gen(function* () {
         const runner = yield* Runner;
@@ -272,7 +272,7 @@ test.each(["approve", "reject"] as const)(
   15_000
 );
 
-test("patches in inactive branches stay closed and item patches have stable independent paths", () => {
+test("patches in inactive branches stay closed and item patches have stable independent paths", async () => {
   const calls: string[] = [];
   const Target = Task.make(
     {
@@ -365,7 +365,7 @@ test("patches in inactive branches stay closed and item patches have stable inde
     tasks: [Target],
     workflows: [Flow],
   });
-  return withHost(
+  return await withHost(
     app,
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -392,30 +392,17 @@ test("patches in inactive branches stay closed and item patches have stable inde
         "owner"
       );
       const reviews = yield* waits(active.runId, 2);
-      expect(reviews.map((wait) => JSON.parse(wait.nodeId)).toSorted()).toEqual(
-        [
-          [
-            "mode",
-            "true",
-            "items",
-            "a",
-            "target",
-            "$patch",
-            "review",
-            "review",
-          ],
-          [
-            "mode",
-            "true",
-            "items",
-            "b",
-            "target",
-            "$patch",
-            "review",
-            "review",
-          ],
-        ]
+      const nodePaths = yield* Effect.forEach(
+        reviews.map((wait) => wait.nodeId).toSorted(),
+        (nodeId) =>
+          Schema.decodeEffect(
+            Schema.fromJsonString(Schema.Array(Schema.String))
+          )(nodeId)
       );
+      expect(nodePaths).toEqual([
+        ["mode", "true", "items", "a", "target", "$patch", "review", "review"],
+        ["mode", "true", "items", "b", "target", "$patch", "review", "review"],
+      ]);
       expect(calls).toEqual([]);
       yield* Effect.forEach(reviews, (wait) =>
         runner.settle(

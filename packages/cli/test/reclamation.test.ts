@@ -39,7 +39,7 @@ test("reclamation flags map to strict policy, selection and explicit version req
     expect(() => parseReclamation(flags)).toThrow();
   }
   expect(() =>
-    Schema.decodeUnknownSync(ReclamationRequest)({
+    Schema.decodeSync(ReclamationRequest)({
       _tag: "Selection",
       olderThanMillis: 2 ** 53,
       schemaId: "report",

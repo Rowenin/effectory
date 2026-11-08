@@ -73,7 +73,7 @@ test("ordered index intersection traverses disjoint and residual-heavy histories
           );
         }
       }
-      db.exec("UPDATE host_report_groups SET latestGeneration=3501");
+      db.run("UPDATE host_report_groups SET latestGeneration=3501");
     })();
     store = createStore(db, lease);
     const reference = Schema.decodeUnknownSync(Schema.Array(Ref))(
@@ -102,14 +102,17 @@ test("ordered index intersection traverses disjoint and residual-heavy histories
       const expected = reference
         .filter(
           (row) =>
-            (query.history || latest.get(row.groupId) === row.sequence) &&
+            (query.history === true ||
+              latest.get(row.groupId) === row.sequence) &&
             (!query.statuses ||
               query.statuses.some((status) => status === row.status)) &&
-            (!query.reporterId || query.reporterId === row.reporterId) &&
-            (!query.attachmentId || query.attachmentId === row.attachmentId) &&
-            (!query.createdBefore ||
+            (query.reporterId === undefined ||
+              query.reporterId === row.reporterId) &&
+            (query.attachmentId === undefined ||
+              query.attachmentId === row.attachmentId) &&
+            (query.createdBefore === undefined ||
               Date.parse(row.createdAt) <= Date.parse(query.createdBefore)) &&
-            (!query.query ||
+            (query.query === undefined ||
               [row.attachmentId, row.reporterId, "source"].some((id) =>
                 id.toLowerCase().includes(query.query?.toLowerCase() ?? "")
               ))
@@ -121,7 +124,7 @@ test("ordered index intersection traverses disjoint and residual-heavy histories
       do {
         const page: typeof ReportSearchPage.Type = await Effect.runPromise(
           store.reportSearch(
-            { ...query, ...(cursor ? { cursor } : {}) },
+            { ...query, ...(cursor === null ? {} : { cursor }) },
             "owner"
           )
         );
@@ -165,7 +168,7 @@ test("ordered index intersection traverses disjoint and residual-heavy histories
     const first = await Effect.runPromise(
       store.reportSearch({ limit: 1 }, "owner")
     );
-    if (!first.cursor) {
+    if (first.cursor === null) {
       throw new Error("Missing cursor");
     }
     const [encoded] = first.cursor.split(".");

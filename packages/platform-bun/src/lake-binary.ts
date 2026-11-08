@@ -64,7 +64,7 @@ const writeBlock = (fd: number, buffer: Uint8Array, position: number) =>
     const result = await writeAsync(fd, buffer, 0, buffer.byteLength, position);
     return result.bytesWritten;
   });
-const syncFile = (fd: number) => io(() => syncAsync(fd));
+const syncFile = (fd: number) => io(async () => await syncAsync(fd));
 export function syncDirectory(directory: string) {
   const fd = openSync(directory, "r");
   try {
@@ -103,16 +103,16 @@ export function initializeBinaryStorage(database: Database, directory: string) {
   )(database.query("PRAGMA table_info(lake_schemas)").all());
   database.transaction(() => {
     if (!columns.some((column) => column.name === "kind")) {
-      database.exec(
+      database.run(
         "ALTER TABLE lake_schemas ADD COLUMN kind TEXT NOT NULL DEFAULT 'json'"
       );
     }
     if (!columns.some((column) => column.name === "contentType")) {
-      database.exec(
+      database.run(
         "ALTER TABLE lake_schemas ADD COLUMN contentType TEXT NOT NULL DEFAULT 'application/json'"
       );
     }
-    database.exec(
+    database.run(
       "CREATE TABLE IF NOT EXISTS lake_binary_installs(stage TEXT PRIMARY KEY, digest TEXT NOT NULL, bytes INTEGER NOT NULL)"
     );
   })();
@@ -133,7 +133,7 @@ function cleanup(database: Database, directory: string, stage: string) {
   if (stagingStat && !stagingStat.isFile()) {
     throw fail("Unavailable", "Binary staging contains a non-regular file");
   }
-  if (raw) {
+  if (raw !== null) {
     const intent = Schema.decodeUnknownSync(Intent)(raw);
     if (!Digest.test(intent.digest) || !stagingStat) {
       throw fail(
@@ -150,8 +150,9 @@ function cleanup(database: Database, directory: string, stage: string) {
       .get(intent.digest);
     // Only current hard-link identity proves ownership; persisted inode numbers do not.
     if (
-      !retained &&
-      installed?.isFile() &&
+      retained === null &&
+      installed !== undefined &&
+      installed.isFile() &&
       installed.dev === stagingStat.dev &&
       installed.ino === stagingStat.ino &&
       installed.nlink >= 2 &&
@@ -240,7 +241,10 @@ export function createBinaryStorage(
       yield* Effect.yieldNow;
     }
     yield* fileEffect(() => {
-      if (database.query("SELECT 1 FROM lake_binary_installs LIMIT 1").get()) {
+      if (
+        database.query("SELECT 1 FROM lake_binary_installs LIMIT 1").get() !==
+        null
+      ) {
         throw fail(
           "Unavailable",
           "Binary installation intent has no staging file"

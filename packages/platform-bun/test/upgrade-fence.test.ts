@@ -115,8 +115,8 @@ test("partial-fence comparison detects intervening deletion and abort never resu
         return image;
       })
     );
-    const check = () =>
-      f.run(
+    const check = async () =>
+      await f.run(
         Effect.gen(function* () {
           const manifest = yield* verifyUpgradeRecoveryCopy(
             copy.destination,
@@ -136,7 +136,7 @@ test("partial-fence comparison detects intervening deletion and abort never resu
     expect(await check()).toBe(true);
     // Simulate the old writer's logical deletion while its entry point is still unfenced.
     const old = new Database(path.join(f.state, "vaults.sqlite"));
-    old.exec("DELETE FROM vault_values");
+    old.run("DELETE FROM vault_values");
     old.close();
     expect(await check()).toBe(false);
     await f.run(vaultFence(f.repository, f.owner, "Abort", true));

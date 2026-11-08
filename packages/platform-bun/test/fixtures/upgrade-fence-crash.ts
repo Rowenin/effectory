@@ -9,7 +9,12 @@ import { vaultFence } from "../../src/upgrade-vault-fence.ts";
 
 const [repository, planId, targetBuild, original, stage] =
   process.argv.slice(2);
-if (!repository || !planId || !targetBuild || !stage) {
+if (
+  repository === undefined ||
+  planId === undefined ||
+  targetBuild === undefined ||
+  stage === undefined
+) {
   throw new Error("Missing crash fixture arguments");
 }
 const checkpoint = (name: string) => {
@@ -34,9 +39,7 @@ const action = stage.startsWith("file-")
       checkpoint
     );
 await Effect.runPromise(
-  Effect.gen(function* () {
-    yield* action;
-  }).pipe(
+  action.pipe(
     Effect.provide(
       ownershipLayer(`${repository}/.effectory/state.sqlite.owner`)
     )

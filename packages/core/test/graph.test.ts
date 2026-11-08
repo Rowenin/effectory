@@ -112,9 +112,9 @@ test("references escaping a branch are rejected even when their TypeScript types
       return yield* graph.task("leaked", echo, escaped);
     })
   );
-  expect(
-    Exit.isFailure(await Effect.runPromise(Effect.exit(workflow.build)))
-  ).toBe(true);
+  expect(Exit.isFailure(await Effect.runPromiseExit(workflow.build))).toBe(
+    true
+  );
 });
 
 test("linked workflows are discovered and noncanonical task providers inside branches are rejected", async () => {
@@ -158,12 +158,10 @@ test("linked workflows are discovered and noncanonical task providers inside bra
   );
   expect(
     Exit.isFailure(
-      await Effect.runPromise(
-        Effect.exit(
-          Application.Registry.pipe(
-            Effect.provide(
-              Application.make({ tasks: [], workflows: [missing] }).layer
-            )
+      await Effect.runPromiseExit(
+        Application.Registry.pipe(
+          Effect.provide(
+            Application.make({ tasks: [], workflows: [missing] }).layer
           )
         )
       )

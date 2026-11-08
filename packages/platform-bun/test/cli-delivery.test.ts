@@ -9,7 +9,7 @@ import { Schema } from "effect";
 import { Endpoint } from "../src/daemon.ts";
 import { approval, cli, effectory, start } from "./fixtures/cli.ts";
 
-function invoke(repository: string, args: string[], stdin?: string) {
+async function invoke(repository: string, args: string[], stdin?: string) {
   const child = Bun.spawn(
     [...effectory, ...args, "--repository", repository, "--json"],
     {
@@ -18,7 +18,7 @@ function invoke(repository: string, args: string[], stdin?: string) {
       stdout: "pipe",
     }
   );
-  return Promise.all([
+  return await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
     child.exited,
@@ -111,7 +111,7 @@ test("CLI bounds file/stdin input and recovers the original receipt after a comm
     );
     const key = /--request-key (?<key>[a-f\d-]{36})/u.exec(stderr)?.groups?.key;
     expect(key).toBeDefined();
-    if (!key) {
+    if (key === undefined) {
       throw new Error("Missing retry key");
     }
     await writeFile(endpointPath, endpointText);

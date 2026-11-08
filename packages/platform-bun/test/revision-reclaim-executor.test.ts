@@ -59,8 +59,8 @@ async function fixture() {
   };
   const selected = [add(1), add(2)];
   const protectedRevision = add(3);
-  const run = <A, E>(effect: Effect.Effect<A, E, Lease>) =>
-    Effect.runPromise(
+  const run = async <A, E>(effect: Effect.Effect<A, E, Lease>) =>
+    await Effect.runPromise(
       effect.pipe(
         Effect.provide(ownershipLayer(path.join(state, "state.sqlite.owner")))
       )
@@ -291,11 +291,8 @@ test("changed quarantined content refuses before any unlink", async () => {
     );
     const interrupted = await f.run(
       Effect.exit(
-        reclaimRevisionFiles(
-          f.repository,
-          f.value.plan.planId,
-          build,
-          (name) => (name === "Quarantined" ? Effect.die("stop") : Effect.void)
+        reclaimRevisionFiles(f.repository, f.value.plan.planId, build, (name) =>
+          name === "Quarantined" ? Effect.die("stop") : Effect.void
         )
       )
     );
@@ -340,14 +337,10 @@ test("an offline copy preserves accepted recovery and resumes independently on t
     );
     const interrupted = await f.run(
       Effect.exit(
-        reclaimRevisionFiles(
-          f.repository,
-          f.value.plan.planId,
-          build,
-          (name) =>
-            name === "bundle-unlinked"
-              ? Effect.die("stop before journal")
-              : Effect.void
+        reclaimRevisionFiles(f.repository, f.value.plan.planId, build, (name) =>
+          name === "bundle-unlinked"
+            ? Effect.die("stop before journal")
+            : Effect.void
         )
       )
     );

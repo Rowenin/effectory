@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import type { RunWatchFrame } from "@effectory/runtime/history-protocol";
 import type { Schema } from "effect";
 
-import { formatProgress } from "../src/progress-format.ts";
+import { codePointLength, formatProgress } from "../src/progress-format.ts";
 
 const at = "2026-11-05T16:00:00.000Z";
 const event = (
@@ -196,15 +196,15 @@ test("every printed string is escaped after JSON formatting, including tags, pat
 test("long lines stay bounded without splitting Unicode code points or escape tokens", () => {
   const prefix = `#7 ${at} `;
   const exact = formatProgress(event("x".repeat(2048 - prefix.length))) ?? "";
-  expect([...exact]).toHaveLength(2048);
+  expect(codePointLength(exact)).toBe(2048);
   expect(exact).not.toContain("[truncated]");
   const long = formatProgress(event("😀".repeat(4000))) ?? "";
-  expect([...long]).toHaveLength(2048);
+  expect(codePointLength(long)).toBe(2048);
   expect(long.endsWith("… [truncated]")).toBe(true);
   expect(long.isWellFormed()).toBe(true);
   for (const token of ["\u202E", "\\u202e", "\\n", "\u{E0001}"]) {
     const output = formatProgress(event(token.repeat(4000))) ?? "";
-    expect([...output].length).toBeLessThanOrEqual(2048);
+    expect(codePointLength(output)).toBeLessThanOrEqual(2048);
     expect(output).not.toMatch(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}]/u);
     const content = output.slice(prefix.length, -"… [truncated]".length);
     expect(content).toMatch(/^(?:\\u(?:[\da-f]{4}|\{[\da-f]+\})|\\n)*$/u);

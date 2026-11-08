@@ -11,8 +11,8 @@ export const RevisionReclaimId = Schema.String.check(
   Schema.isPattern(/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/u)
 );
 export const RevisionReclaimSelector = Schema.Union([
-  Schema.Struct({ _tag: Schema.Literal("Unreferenced") }),
-  Schema.Struct({ _tag: Schema.Literal("Revision"), revision: Digest }),
+  Schema.TaggedStruct("Unreferenced", {}),
+  Schema.TaggedStruct("Revision", { revision: Digest }),
 ]);
 export const RevisionProtection = Schema.Struct({
   examplesTruncated: Schema.Boolean,

@@ -2,7 +2,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 import { canonical } from "@offtree/effectory-sdk/internal/boundary";
-import { Effect, Schema } from "effect";
+import { Effect, Exit, Schema } from "effect";
 
 import { hostAbi } from "./host-runtime.ts";
 import { ownershipLayer } from "./ownership.ts";
@@ -38,11 +38,11 @@ function location(repository: string, action: RevisionReclaimAction) {
       ),
     try: () => {
       if (action.kind === "Plan") {
-        try {
-          Schema.decodeUnknownSync(RevisionReclaimSelector)(action.selector, {
-            onExcessProperty: "error",
-          });
-        } catch {
+        const selector = Schema.decodeExit(RevisionReclaimSelector)(
+          action.selector,
+          { onExcessProperty: "error" }
+        );
+        if (Exit.isFailure(selector)) {
           throw revisionReclaimError(
             "InvalidInput",
             "Select --unreferenced or one valid --revision digest"

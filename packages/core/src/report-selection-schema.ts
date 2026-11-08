@@ -50,11 +50,11 @@ export function normalizeSelection(
   const onlyTags = input.onlyTags ?? {};
   const skipTags = input.skipTags ?? {};
   if (
-    input.skipAll &&
-    (only.length ||
-      skip.length ||
-      Object.keys(onlyTags).length ||
-      Object.keys(skipTags).length)
+    input.skipAll === true &&
+    (only.length > 0 ||
+      skip.length > 0 ||
+      Object.keys(onlyTags).length > 0 ||
+      Object.keys(skipTags).length > 0)
   ) {
     throw new Error("skipAll cannot be combined with other report selectors");
   }
@@ -64,7 +64,7 @@ export function normalizeSelection(
       ? { onlyTags: Object.freeze(onlyTags) }
       : {}),
     ...(skip.length ? { skip: Object.freeze(skip) } : {}),
-    ...(input.skipAll ? { skipAll: true } : {}),
+    ...(input.skipAll === true ? { skipAll: true } : {}),
     ...(Object.keys(skipTags).length
       ? { skipTags: Object.freeze(skipTags) }
       : {}),

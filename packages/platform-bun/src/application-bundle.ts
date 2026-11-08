@@ -46,8 +46,8 @@ export function buildApplication(
     let total = 0;
     const output = yield* Effect.tryPromise({
       catch: revisionUnavailable,
-      try: () =>
-        Bun.build({
+      try: async () =>
+        await Bun.build({
           entrypoints: [path.join(root, "effectory.ts")],
           external: [
             "effect",
@@ -128,7 +128,7 @@ export function buildApplication(
     if (!output.success || !bundle || output.outputs.length !== 1) {
       return yield* revisionUnavailable();
     }
-    const source = yield* Effect.promise(() => bundle.text());
+    const source = yield* Effect.promise(async () => await bundle.text());
     if (Buffer.byteLength(source) > 16_777_216) {
       return yield* new OperationError({
         code: "LimitExceeded",

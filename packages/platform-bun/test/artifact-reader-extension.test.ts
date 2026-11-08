@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { digest } from "../src/extension-archive.ts";
 import { cli, operation, start } from "./fixtures/cli.ts";
 import {
@@ -19,6 +21,9 @@ import {
   fixtureManifest,
 } from "./fixtures/extension-archive.ts";
 import { typescript, workspace } from "./fixtures/published-extension.ts";
+
+const OperationAccepted = Schema.Struct({ operationId: Schema.String });
+const TaskResult = Schema.Struct({ result: Schema.Unknown });
 
 test("installed extensions share reader service and query schemas with application and host", async () => {
   const base = await mkdtemp(
@@ -116,14 +121,16 @@ export const contracts={id:"fixture/reader",version:"1.0.0",tasks:{},workflows:{
     );
     const initial = await start(repository, environment);
     children.push(initial);
-    const added = (await cli(repository, [
-      "extension",
-      "add",
-      "github:fixture/reader@v1",
-      "--as",
-      "Reads",
-      "--trust",
-    ])) as { operationId: string };
+    const added = Schema.decodeUnknownSync(OperationAccepted)(
+      await cli(repository, [
+        "extension",
+        "add",
+        "github:fixture/reader@v1",
+        "--as",
+        "Reads",
+        "--trust",
+      ])
+    );
     expect((await operation(repository, added.operationId)).status).toBe(
       "Succeeded"
     );
@@ -148,13 +155,9 @@ export default Application.make({tasks:[RoundTrip],extensions:[Extension.use(Rea
     initial.kill("SIGKILL");
     await initial.exited;
     children.push(await start(repository, environment));
-    const result = (await cli(repository, [
-      "task",
-      "run",
-      "round-trip",
-      "--input",
-      "null",
-    ])) as { result: unknown };
+    const result = Schema.decodeUnknownSync(TaskResult)(
+      await cli(repository, ["task", "run", "round-trip", "--input", "null"])
+    );
     expect(result.result).toBe(42);
   } finally {
     await Promise.all(

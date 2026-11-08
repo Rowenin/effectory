@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { unsupportedUpgradeWork, upgradeScanner } from "./upgrade-scan.ts";
 
@@ -22,7 +22,9 @@ const columns = {
   ],
   vault_values: ["vault", "key", "version", "value"],
 } as const;
-const names = Object.keys(columns) as (keyof typeof columns)[];
+const isTable = (name: string): name is keyof typeof columns =>
+  Object.hasOwn(columns, name);
+const names = Object.keys(columns).filter(isTable);
 const indexes = new Set([
   "sqlite_autoindex_vault_identities_1",
   "sqlite_autoindex_vault_receipts_1",
@@ -86,19 +88,20 @@ export function inspectUpgradeVaultIdentity(database: Database) {
         }
         const tables = new Set<string>();
         for (const raw of rows) {
-          const row = Schema.decodeUnknownSync(CatalogRow)(raw);
+          const decoded = Schema.decodeUnknownExit(CatalogRow)(raw);
+          if (Exit.isFailure(decoded)) {
+            throw Cause.squash(decoded.cause);
+          }
+          const row = decoded.value;
           if (Buffer.byteLength(JSON.stringify(row)) > 65_536) {
             throw new Error("Oversized schema");
           }
-          if (
-            row.type === "table" &&
-            names.includes(row.name as keyof typeof columns)
-          ) {
+          if (row.type === "table" && isTable(row.name)) {
             tables.add(row.name);
           } else if (
             row.type !== "index" ||
             !indexes.has(row.name) ||
-            !names.includes(row.tbl_name as keyof typeof columns)
+            !isTable(row.tbl_name)
           ) {
             throw new Error("Unknown schema object");
           }

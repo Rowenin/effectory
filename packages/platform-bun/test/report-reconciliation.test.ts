@@ -81,7 +81,7 @@ const reporter = Task.make(
   () => Effect.succeed({ data: null, markdown: "summary" })
 );
 
-test("a successful invocation becomes reportable while its root waits for approval", () => {
+test("a successful invocation becomes reportable while its root waits for approval", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -128,7 +128,7 @@ test("a successful invocation becomes reportable while its root waits for approv
       })
     ),
   ];
-  return withHost(
+  return await withHost(
     Application.make({ reports, tasks: [task, reporter], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -178,7 +178,7 @@ test("a successful invocation becomes reportable while its root waits for approv
 
 test.each(["reject", "cancel", "expire"] as const)(
   "%s maps interrupted task sources consistently with run outputs",
-  (operation) => {
+  async (operation) => {
     let active = false;
     const task = Task.make(
       {
@@ -218,7 +218,7 @@ test.each(["reject", "cancel", "expire"] as const)(
         return yield* graph.task("work", task, null);
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({
         reports: [
           Report.make({
@@ -281,7 +281,7 @@ test.each(["reject", "cancel", "expire"] as const)(
   10_000
 );
 
-test("a terminal source without native execution is never dispatched to manufacture a report outcome", () => {
+test("a terminal source without native execution is never dispatched to manufacture a report outcome", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -298,7 +298,7 @@ test("a terminal source without native execution is never dispatched to manufact
         return null;
       })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -339,7 +339,7 @@ test("a terminal source without native execution is never dispatched to manufact
 
 test.each(["Domain", "Host"] as const)(
   "root reports retain the %s category instead of guessing from error JSON",
-  (category) => {
+  async (category) => {
     const Error = Schema.TaggedStruct("DomainError", {
       message: Schema.String,
     });
@@ -357,7 +357,7 @@ test.each(["Domain", "Host"] as const)(
           ? Effect.fail({ _tag: "DomainError" as const, message: "failed" })
           : Effect.succeed("x".repeat(1_048_576))
     );
-    return withHost(
+    return await withHost(
       Application.make({
         reports: [
           Report.make({
@@ -389,7 +389,7 @@ test.each(["Domain", "Host"] as const)(
   10_000
 );
 
-test("domain retries settle one logical report source after the final attempt", () => {
+test("domain retries settle one logical report source after the final attempt", async () => {
   let calls = 0;
   const Transient = Schema.TaggedStruct("Transient", {});
   const task = Task.make(
@@ -424,7 +424,7 @@ test("domain retries settle one logical report source after the final attempt", 
       });
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -454,7 +454,7 @@ test("domain retries settle one logical report source after the final attempt", 
         (values) => values.length === 1
       );
       const [source] = ready;
-      if (!source?.invocationId) {
+      if (source === undefined || source.invocationId === null) {
         return yield* Effect.die("Missing settled invocation");
       }
       expect(source.source.status).toBe("Succeeded");
@@ -467,7 +467,7 @@ test("domain retries settle one logical report source after the final attempt", 
   );
 }, 10_000);
 
-test("a deadline before the first admitted attempt records NotStarted without invoking a handler", () => {
+test("a deadline before the first admitted attempt records NotStarted without invoking a handler", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -498,7 +498,7 @@ test("a deadline before the first admitted attempt records NotStarted without in
       return yield* graph.task("work", task, null);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({

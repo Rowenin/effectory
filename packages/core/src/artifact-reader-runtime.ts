@@ -162,7 +162,7 @@ export function readerRuntime(backend: ReaderBackend, owner: BinaryOwner) {
           const value = yield* backend.json(record);
           return yield* run(
             Effect.suspend(() =>
-              Schema.decodeUnknownEffect(artifact.schema)(value, {
+              Schema.decodeEffect(artifact.schema)(value, {
                 onExcessProperty: "error",
               })
             ),

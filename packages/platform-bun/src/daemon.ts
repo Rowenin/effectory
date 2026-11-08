@@ -99,9 +99,7 @@ export function serve(
 ) {
   let shutdownTimer: ReturnType<typeof setTimeout> | undefined;
   const armShutdown = () => {
-    if (shutdownTimer === undefined) {
-      shutdownTimer = setTimeout(options.onShutdownTimeout, 2000);
-    }
+    shutdownTimer ??= setTimeout(options.onShutdownTimeout, 2000);
   };
   const directory = path.join(repository, ".effectory");
   const database = path.join(directory, "state.sqlite");
@@ -256,7 +254,7 @@ export function serve(
           port: 0,
         });
       }),
-      (running) => Effect.promise(() => running.stop(true))
+      (running) => Effect.promise(async () => await running.stop(true))
     );
     yield* Effect.acquireRelease(
       Effect.sync(() => {

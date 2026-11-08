@@ -17,7 +17,7 @@ import {
   makeQueryEvaluator,
 } from "./artifact-query-evaluator.ts";
 import { Query } from "./artifact-query-schema.ts";
-import { readFailure } from "./artifact-read-errors.ts";
+import { ArtifactReadError, readFailure } from "./artifact-read-errors.ts";
 import {
   checkReference,
   referenceFor,
@@ -29,6 +29,7 @@ import type * as Artifact from "./artifact.ts";
 import { binaryOwner, binaryPool } from "./binary-admission.ts";
 import { canonical } from "./boundary.ts";
 
+const StoredDescriptions = Schema.Struct({ descriptions: FieldDescriptions });
 interface Stored {
   fixture: Fixture;
   data: FixtureData;
@@ -205,9 +206,7 @@ export function artifactTestStore(seeds: readonly Fixture[] = []) {
   const safe = <A>(body: () => A) =>
     Effect.try({
       catch: (error) =>
-        error instanceof Error && "reason" in error
-          ? (error as ReturnType<typeof readFailure>)
-          : readFailure("Corrupt"),
+        error instanceof ArtifactReadError ? error : readFailure("Corrupt"),
       try: body,
     });
   const backend: ReaderBackend = {
@@ -269,9 +268,9 @@ export function artifactTestStore(seeds: readonly Fixture[] = []) {
         const descriptions =
           schemaDescription === undefined
             ? []
-            : Schema.decodeUnknownSync(FieldDescriptions)(
-                JSON.parse(schemaDescription).descriptions
-              );
+            : Schema.decodeUnknownSync(StoredDescriptions)(
+                JSON.parse(schemaDescription)
+              ).descriptions;
         evaluate.validate(query, descriptions);
         const snapshotRows = rows.filter(
           (row) => row.record.sequence <= snapshot

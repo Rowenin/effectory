@@ -11,6 +11,7 @@ import { Effect, Schema } from "effect";
 
 import { connectionConfig } from "../src/connection-config.ts";
 import { cli, effectory, start } from "./fixtures/cli.ts";
+import { arrayContaining, objectContaining } from "./fixtures/matchers.ts";
 
 const app = (includeCost = true) => `
 import {Application,Report,Task,Tag,Workflow} from "@offtree/effectory-sdk";
@@ -170,21 +171,19 @@ test("CLI selects report attachments, preserves source outcome and receipts acro
     expect(conflict.code).toBe(5);
     const description = await cli(repository, ["workflow", "describe", "flow"]);
     expect(description).toMatchObject({
-      reports: expect.arrayContaining([
-        expect.objectContaining({
+      reports: arrayContaining([
+        objectContaining({
           attachmentId: "audit",
           required: true,
           tags: { category: "audit" },
         }),
-        expect.objectContaining({ attachmentId: "step" }),
+        objectContaining({ attachmentId: "step" }),
       ]),
     });
     expect(
       await cli(repository, ["workflow", "plan", "flow", "--input", "null"])
     ).toMatchObject({
-      reports: expect.arrayContaining([
-        expect.objectContaining({ attachmentId: "cost" }),
-      ]),
+      reports: arrayContaining([objectContaining({ attachmentId: "cost" })]),
     });
     await cli(repository, ["daemon", "stop"]);
     await daemon.exited;

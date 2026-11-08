@@ -20,7 +20,7 @@ import type { HttpClient } from "effect/http";
 import type { CapturedOptions, SecretReference } from "./options.ts";
 
 type ReadError = Vault.VaultFailure | Vault.VaultUnavailable;
-type Value = Option.Option<Redacted.Redacted<string>>;
+type Value = Option.Option<Redacted.Redacted>;
 
 // Each case is a structured upstream error tag; never inspect error messages.
 // oxlint-disable-next-line complexity
@@ -31,11 +31,11 @@ function classify(vault: string, error: unknown): ReadError {
   ) {
     return error;
   }
-  const originalTag =
+  const originalTag: unknown =
     typeof error === "object" && error !== null
       ? Reflect.get(error, "_tag")
       : undefined;
-  const tag =
+  const tag: unknown =
     originalTag === "UnknownAwsError" &&
     typeof error === "object" &&
     error !== null
@@ -135,7 +135,7 @@ function value(
           new Vault.VaultFailure({ reason: "LimitExceeded", vault })
         );
       }
-      return Effect.succeed(Option.some(Redacted.make(raw)));
+      return Effect.succeedSome(Redacted.make(raw));
     })
   );
 }
@@ -168,7 +168,7 @@ export function makeBackend(
       ConfigProvider.fromUnknown({ AWS_REGION: options.region }),
       ConfigProvider.fromEnv()
     );
-    const region = Effect.succeed(options.region as Region.RegionName);
+    const region = Effect.succeed(options.region);
     return Object.freeze({
       providerId: "offtree/aws-vault",
       read: (key: string): Effect.Effect<Value, ReadError> =>
@@ -195,19 +195,20 @@ export function makeBackend(
           ).pipe(
             Retry.none,
             Effect.flatMap((response) => value(spec.id, response)),
-            Effect.catchTag("ResourceNotFoundException", () =>
-              Effect.succeed(Option.none())
+            Effect.catchTag(
+              "ResourceNotFoundException",
+              () => Effect.succeedNone
             ),
             Effect.timeoutOption(options.timeoutMillis),
             Effect.flatMap((result) =>
-              Option.isSome(result)
-                ? Effect.succeed(result.value)
-                : Effect.fail(
-                    new Vault.VaultUnavailable({
-                      reason: "Unreachable",
-                      vault: spec.id,
-                    })
-                  )
+              Effect.fromOption(
+                result,
+                () =>
+                  new Vault.VaultUnavailable({
+                    reason: "Unreachable",
+                    vault: spec.id,
+                  })
+              )
             ),
             Effect.provideContext(services),
             Effect.provideService(Region.Region, region),

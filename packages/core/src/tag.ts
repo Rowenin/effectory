@@ -20,7 +20,9 @@ export class Values extends Context.Service<
 export interface Definition<Key extends string, S extends Boundary> {
   (value: S["Type"]): Binding<Key>;
   readonly key: Key;
-  readonly codec: Schema.Codec<S["Type"], string, never, never>;
+  readonly codec: Schema.Codec<S["Type"], string>;
+  // Public API: `yield* Team.value()` is the chosen syntax (docs/run-tags-contract.md).
+  // @effect-diagnostics-next-line lazyEffect:off
   readonly value: () => Effect.Effect<
     Option.Option<S["Type"]>,
     TaskRuntimeError,
@@ -44,18 +46,15 @@ export function make<const Key extends string, S extends Boundary>(
     if (typeof key !== "string") {
       throw new DefinitionError({ message: "A tag key must be a string" });
     }
-    Schema.decodeUnknownSync(RunTags)({ [key]: "" });
+    Schema.decodeSync(RunTags)({ [key]: "" });
     const codec = Schema.String.pipe(
       Schema.decodeTo(Schema.toCodecStringTree(schema))
     );
     const equivalent = Schema.toEquivalence(schema);
     const bind = (value: S["Type"]): Binding<Key> => {
       const encoded = synchronous(key, Schema.encodeUnknownExit(codec)(value));
-      synchronous(key, Schema.decodeUnknownExit(RunTags)({ [key]: encoded }));
-      const decoded = synchronous(
-        key,
-        Schema.decodeUnknownExit(codec)(encoded)
-      );
+      synchronous(key, Schema.decodeExit(RunTags)({ [key]: encoded }));
+      const decoded = synchronous(key, Schema.decodeExit(codec)(encoded));
       if (!equivalent(value, decoded)) {
         throw new DefinitionError({
           message: `Tag \`${key}\` does not round-trip without changing its value`,

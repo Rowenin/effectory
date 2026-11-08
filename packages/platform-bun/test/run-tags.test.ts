@@ -123,7 +123,7 @@ test("legacy tag-column migration backfills empty labels and keeps receipts", as
     const run = await Effect.runPromise(
       original.submit(submit("legacy"), "revision", "owner")
     );
-    database.exec("ALTER TABLE host_runs DROP COLUMN tagsJson");
+    database.run("ALTER TABLE host_runs DROP COLUMN tagsJson");
     const upgraded = createStore(database, lease);
     expect((await Effect.runPromise(upgraded.getRun(run.runId))).tags).toEqual(
       {}

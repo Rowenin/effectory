@@ -23,7 +23,7 @@ export const AutomaticState = Schema.Struct({
 export function initializeAutomaticRetention(database: Database) {
   database
     .transaction(() => {
-      database.exec(`
+      database.run(`
       CREATE TABLE IF NOT EXISTS lake_automatic_state (
         id INTEGER PRIMARY KEY CHECK(id=1), enabled INTEGER NOT NULL DEFAULT 0, generation INTEGER NOT NULL DEFAULT 0,
         nextAt REAL NOT NULL DEFAULT 0, changedAt TEXT, startedAt TEXT, completedAt TEXT, checkpoint TEXT, lastPlanId TEXT, lastBatchAt TEXT,

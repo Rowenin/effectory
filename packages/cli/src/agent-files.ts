@@ -36,6 +36,8 @@ import {
 import type { FileAction, Harness } from "./agent-plan.ts";
 
 const journalPath = ".effectory/agent-setup/journal.json";
+const isSdkPackage = (key: string): key is SdkPackage =>
+  Object.hasOwn(hostVersions, key);
 const preparePath = ".effectory/agent-setup/journal.prepare";
 const lockPath = ".effectory/agent-setup/lock.sqlite";
 const Journal = Schema.Struct({
@@ -188,7 +190,7 @@ function replace(
   );
   // A recorded transaction owns this private staging name, including partial
   // bytes left by process death. Destination bytes are always checked separately.
-  if (stage) {
+  if (stage !== undefined && stage !== "") {
     clearStage(root, stage);
   }
   const fd = openSync(
@@ -343,9 +345,9 @@ function project(root: string, version: string) {
   const declared = { ...value.dependencies, ...value.devDependencies };
   if (
     value.effectory.version !== version ||
-    (Object.keys(hostVersions) as SdkPackage[]).some(
-      (key) => declared[key] !== sdkSpecifier(key)
-    )
+    Object.keys(hostVersions)
+      .filter(isSdkPackage)
+      .some((key) => declared[key] !== sdkSpecifier(key))
   ) {
     return fail(
       "Conflict",

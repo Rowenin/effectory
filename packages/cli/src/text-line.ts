@@ -13,8 +13,8 @@ export class ProgressSinkError extends Data.TaggedError("ProgressSinkError")<{
 export function writeTextLine(text: string, output: Writable = process.stderr) {
   return Effect.tryPromise({
     catch: (cause) => new ProgressSinkError({ cause }),
-    try: () =>
-      new Promise<void>((resolve, reject) => {
+    try: async () =>
+      await new Promise<void>((resolve, reject) => {
         const failed = (error: Error) => reject(error);
         output.once("error", failed);
         try {
@@ -29,7 +29,7 @@ export function writeTextLine(text: string, output: Writable = process.stderr) {
           });
         } catch (error) {
           output.removeListener("error", failed);
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       }),
   });

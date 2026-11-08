@@ -31,13 +31,13 @@ async function fixture(body: (root: string) => Promise<void>) {
     rmSync(root, { force: true, recursive: true });
   }
 }
-const setup = (root: string, dry = false) =>
-  Effect.runPromise(
+const setup = async (root: string, dry = false) =>
+  await Effect.runPromise(
     agentMutation(root, "0.1.0", "setup", ["codex", "claude-code"], dry)
   );
 
-test("real setup is offline, dry-run is nonmutating, clones update and removals preserve user content", () =>
-  fixture(async (root) => {
+test("real setup is offline, dry-run is nonmutating, clones update and removals preserve user content", async () =>
+  await fixture(async (root) => {
     writeFileSync(path.join(root, "AGENTS.md"), "personal\r\n");
     const before = readdirSync(root).toSorted();
     await setup(root, true);
@@ -78,8 +78,8 @@ test("real setup is offline, dry-run is nonmutating, clones update and removals 
     }
   }));
 
-test("edits, symlinks and hardlinks refuse mutation and preserve original content", () =>
-  fixture(async (root) => {
+test("edits, symlinks and hardlinks refuse mutation and preserve original content", async () =>
+  await fixture(async (root) => {
     await setup(root);
     const skill = path.join(root, ".agents/skills/effectory-build/SKILL.md");
     writeFileSync(skill, "edited");
@@ -96,8 +96,8 @@ test("edits, symlinks and hardlinks refuse mutation and preserve original conten
     expect(readFileSync(outside, "utf-8")).toBe("untouched");
   }));
 
-test("recorded operation recovers after a partial write and refuses conflicting intervening edits", () =>
-  fixture(async (root) => {
+test("recorded operation recovers after a partial write and refuses conflicting intervening edits", async () =>
+  await fixture(async (root) => {
     const plan = planSetup({
       hostVersion: "0.1.0",
       mode: "setup",
@@ -121,7 +121,11 @@ test("recorded operation recovers after a partial write and refuses conflicting 
       JSON.stringify(journal)
     );
     const [first] = plan.actions;
-    if (!first?.after) {
+    if (
+      first?.after === undefined ||
+      first.after === null ||
+      first.after === ""
+    ) {
       throw new Error("Missing first action");
     }
     mkdirSync(path.dirname(path.join(root, first.path)), { recursive: true });
@@ -139,11 +143,11 @@ test("recorded operation recovers after a partial write and refuses conflicting 
     expect(status.healthy).toBe(true);
   }));
 
-test("only selected harness paths matter, overrides migrate, and status isolates modified files", () =>
-  fixture(async (root) => {
+test("only selected harness paths matter, overrides migrate, and status isolates modified files", async () =>
+  await fixture(async (root) => {
     symlinkSync("/does-not-exist", path.join(root, ".claude"));
-    const codex = () =>
-      Effect.runPromise(
+    const codex = async () =>
+      await Effect.runPromise(
         agentMutation(root, "0.1.0", "setup", ["codex"], false)
       );
     writeFileSync(path.join(root, "AGENTS.md"), "\uFEFFpersonal\r\n");
@@ -172,8 +176,8 @@ test("only selected harness paths matter, overrides migrate, and status isolates
     expect(repaired.healthy).toBe(true);
   }));
 
-test("invalid manifests, encodings, pins and linked roots fail without replacing content", () =>
-  fixture(async (root) => {
+test("invalid manifests, encodings, pins and linked roots fail without replacing content", async () =>
+  await fixture(async (root) => {
     const link = `${root}-link`;
     symlinkSync(root, link);
     try {
@@ -198,23 +202,26 @@ test("invalid manifests, encodings, pins and linked roots fail without replacing
     rmSync(path.join(root, manifestPath));
     const filename = path.join(root, "package.json");
     const saved = readFileSync(filename, "utf-8");
-    writeFileSync(filename, saved.replace('"4.0.5"', '"4.0.4"'));
+    writeFileSync(
+      filename,
+      saved.replace(`"${hostVersions.effect}"`, '"4.0.0"')
+    );
     await expect(setup(root)).rejects.toThrow("pins differ");
     writeFileSync(filename, "{}");
     await expect(setup(root)).rejects.toThrow("Initialize");
   }));
 
-test("a live project lock refuses a second writer and unlocks after release", () =>
-  fixture(async (root) => {
+test("a live project lock refuses a second writer and unlocks after release", async () =>
+  await fixture(async (root) => {
     const directory = path.join(root, ".effectory/agent-setup");
     mkdirSync(directory, { recursive: true });
     const lock = new Database(path.join(directory, "lock.sqlite"));
     try {
-      lock.exec("BEGIN EXCLUSIVE");
+      lock.run("BEGIN EXCLUSIVE");
       await expect(setup(root)).rejects.toThrow("owns the project");
       expect(existsSync(path.join(root, manifestPath))).toBe(false);
     } finally {
-      lock.exec("ROLLBACK");
+      lock.run("ROLLBACK");
       lock.close();
     }
     await setup(root);

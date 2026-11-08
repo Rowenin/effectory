@@ -112,10 +112,19 @@ test("missing assets repair, matching assets adopt, unrelated files never enter 
 
 test("manifest data cannot introduce arbitrary destinations or foreign block ownership", () => {
   const installed = apply({}, plan({}));
-  const manifest = JSON.parse(installed[manifestPath] ?? "{}");
-  manifest.files["../../outside"] = { digest: "0".repeat(64), kind: "file" };
+  const manifest = decodeManifest(installed[manifestPath] ?? null);
+  if (manifest === null) {
+    throw new Error("Missing installed manifest");
+  }
+  const tampered = {
+    ...manifest,
+    files: {
+      ...manifest.files,
+      "../../outside": { digest: "0".repeat(64), kind: "file" },
+    },
+  };
   expect(() =>
-    plan({ ...installed, [manifestPath]: JSON.stringify(manifest) })
+    plan({ ...installed, [manifestPath]: JSON.stringify(tampered) })
   ).toThrow("unsupported path");
   expect(() => plan({ [manifestPath]: "broken" })).toThrow(
     "Invalid agent manifest"

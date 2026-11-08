@@ -95,8 +95,8 @@ test("admitted history and run provenance share the canonical occurrence constra
   ).toThrow();
 });
 
-test("malformed stored occurrence fails run get, history and watch snapshots without dropping rows", () =>
-  withStore((store, database) =>
+test("malformed stored occurrence fails run get, history and watch snapshots without dropping rows", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "revision", initial);
       yield* store.scheduleTick("daily", initial + minute, false);
@@ -127,15 +127,15 @@ test("malformed stored occurrence fails run get, history and watch snapshots wit
     })
   ));
 
-test("scheduled admission is atomic, owner-visible and isolated from manual request keys", () =>
-  withStore((store, database) =>
+test("scheduled admission is atomic, owner-visible and isolated from manual request keys", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(
         definitions(make()),
         "revision-one",
         initial
       );
-      database.exec(
+      database.run(
         "CREATE TRIGGER fail_occurrence BEFORE INSERT ON host_schedule_history BEGIN SELECT RAISE(ABORT, 'injected crash before occurrence'); END"
       );
       expect(
@@ -147,7 +147,7 @@ test("scheduled admission is atomic, owner-visible and isolated from manual requ
       ).toBe(true);
       expect(yield* store.listRuns()).toHaveLength(0);
       expect(yield* store.outbox()).toHaveLength(0);
-      database.exec("DROP TRIGGER fail_occurrence");
+      database.run("DROP TRIGGER fail_occurrence");
       yield* store.scheduleTick("daily", initial + minute, true);
       const [scheduled] = yield* store.listRuns();
       if (!scheduled) {
@@ -200,8 +200,8 @@ test("scheduled admission is atomic, owner-visible and isolated from manual requ
     })
   ));
 
-test("pause receipts survive edits/removal/re-addition; resume excludes its exact instant", () =>
-  withStore((store) =>
+test("pause receipts survive edits/removal/re-addition; resume excludes its exact instant", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const schedule = make();
       yield* store.scheduleReconcile(definitions(schedule), "v1", initial);
@@ -267,8 +267,8 @@ test("pause receipts survive edits/removal/re-addition; resume excludes its exac
     })
   ));
 
-test("unfinished runs block across generations but manual runs and other schedules are independent", () =>
-  withStore((store) =>
+test("unfinished runs block across generations but manual runs and other schedules are independent", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "v1", initial);
       yield* store.scheduleTick("daily", initial + minute, false);
@@ -309,8 +309,8 @@ test("unfinished runs block across generations but manual runs and other schedul
     })
   ));
 
-test("unchanged revisions preserve progress; late restart admits only the latest eligible occurrence", () =>
-  withStore((store) =>
+test("unchanged revisions preserve progress; late restart admits only the latest eligible occurrence", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       const specs = definitions(
         make({ catchUp: { latestWithin: "1 hour" }, cron: "0 * * * *" }),
@@ -368,8 +368,8 @@ test("unchanged revisions preserve progress; late restart admits only the latest
     })
   ));
 
-test("bounded receipts evict old keys without disabling pause; history cursors detect coalescing", () =>
-  withStore((store, database) =>
+test("bounded receipts evict old keys without disabling pause; history cursors detect coalescing", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "v1", initial);
       for (let index = 0; index < 258; index += 1) {
@@ -427,8 +427,8 @@ test("bounded receipts evict old keys without disabling pause; history cursors d
     })
   ));
 
-test("history retains 1000 entries; pruned cursor expires and run dedup survives pruning", () =>
-  withStore((store, database) =>
+test("history retains 1000 entries; pruned cursor expires and run dedup survives pruning", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "v1", initial);
       yield* store.scheduleTick("daily", initial + minute, false);
@@ -526,8 +526,8 @@ test("scheduler uses Effect Clock, observes activation, and closes with its scop
   }
 });
 
-test("temporary capacity failure retries the same occurrence and supersedes only one pending candidate", () =>
-  withStore((store, database) =>
+test("temporary capacity failure retries the same occurrence and supersedes only one pending candidate", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "v1", initial);
       const template = yield* store.submit(
@@ -561,7 +561,7 @@ test("temporary capacity failure retries the same occurrence and supersedes only
       expect(
         (yield* store.scheduleGet("daily", "owner", initial)).lastMissed
       ).toMatchObject({ count: 1, reason: "AdmissionFailed" });
-      database.exec("DELETE FROM host_runs WHERE runId LIKE 'filler-%'");
+      database.run("DELETE FROM host_runs WHERE runId LIKE 'filler-%'");
       yield* store.project(template.runId, "Succeeded", {});
       yield* store.scheduleTick("daily", initial + 2 * minute + 1000, false);
       yield* store.scheduleTick("daily", initial + 2 * minute + 2000, true);
@@ -579,8 +579,8 @@ test("temporary capacity failure retries the same occurrence and supersedes only
     })
   ));
 
-test("tombstones evict the oldest eligible removal, preserve protected identities, and never reuse generations", () =>
-  withStore((store, database) =>
+test("tombstones evict the oldest eligible removal, preserve protected identities, and never reuse generations", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "v1", initial);
       yield* store.scheduleReconcile(definitions(), "v2", initial + minute);
@@ -667,15 +667,15 @@ test("tombstones evict the oldest eligible removal, preserve protected identitie
     })
   ));
 
-test("tag-only schedule edits preserve pending catch-up and keep admitted metadata immutable", () =>
-  withStore((store, database) =>
+test("tag-only schedule edits preserve pending catch-up and keep admitted metadata immutable", async () =>
+  await withStore((store, database) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(
         definitions(make({ tags: { team: "old" } })),
         "v1",
         initial
       );
-      database.exec(
+      database.run(
         "CREATE TRIGGER fail_tag_admission BEFORE INSERT ON host_runs BEGIN SELECT RAISE(ABORT, 'temporary unavailable'); END"
       );
       yield* Effect.exit(store.scheduleTick("daily", initial + minute, false));
@@ -696,7 +696,7 @@ test("tag-only schedule edits preserve pending catch-up and keep admitted metada
           )
           .get()
       ).toEqual(before);
-      database.exec("DROP TRIGGER fail_tag_admission");
+      database.run("DROP TRIGGER fail_tag_admission");
       yield* store.scheduleTick("daily", initial + minute + 2000, true);
       const run = required((yield* store.listRuns())[0]);
       expect(run.tags).toEqual({ team: "new" });
@@ -710,8 +710,8 @@ test("tag-only schedule edits preserve pending catch-up and keep admitted metada
     })
   ));
 
-test("check thresholds preserve default identity and nondefault changes create a generation inherited at admission", () =>
-  withStore((store) =>
+test("check thresholds preserve default identity and nondefault changes create a generation inherited at admission", async () =>
+  await withStore((store) =>
     Effect.gen(function* () {
       yield* store.scheduleReconcile(definitions(make()), "checks-v1", initial);
       const before = yield* store.scheduleGet("daily", "owner", initial);

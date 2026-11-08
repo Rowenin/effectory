@@ -23,7 +23,7 @@ const receipt = (row: typeof Row.Type) =>
       });
 
 export function createLifecycle(database: Database) {
-  database.exec(`CREATE TABLE IF NOT EXISTS host_daemons (
+  database.run(`CREATE TABLE IF NOT EXISTS host_daemons (
     instanceId TEXT PRIMARY KEY, startedAt TEXT NOT NULL, requestKey TEXT, gracePeriodMs INTEGER, deadline REAL
   )`);
   let current: string | null = null;
@@ -59,7 +59,7 @@ export function createLifecycle(database: Database) {
       accepting = true;
     },
     drain: (value: typeof DrainRequest.Type) => {
-      const request = Schema.decodeUnknownSync(DrainRequest)(value, {
+      const request = Schema.decodeSync(DrainRequest)(value, {
         onExcessProperty: "error",
       });
       const result = database.transaction(() => {

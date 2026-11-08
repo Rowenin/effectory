@@ -1,0 +1,305 @@
+{
+  "status": "Certified: v0.1.0 release executables to Effect 4.1.2 on Darwin ARM64 and Linux x64",
+  "source": {
+    "release": "v0.1.0",
+    "build": "a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9",
+    "effect": "4.0.5",
+    "storage": 1
+  },
+  "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+  "targetContract": "effectory.execution/v1",
+  "targetEffect": "4.1.2",
+  "targetStorage": 3,
+  "sourceCommit": "881727ac90f587be271fdd4d71926dda52afe1ba",
+  "command": "bun scripts/verify-runtime-upgrade.ts --previous PREVIOUS --target TARGET --output EVIDENCE",
+  "scopeLimits": [
+    "Only fresh v0.1.0 repositories (storage 1); storage-3 repositories that v0.1.0 upgraded from development builds are not certified.",
+    "The optional breaking fixture was not run; it does not establish a shipping edge.",
+    "Release executables differ from these targets only in the embedded package version; the build ABI covers the same sources."
+  ],
+  "platforms": {
+    "darwin-arm64": {
+      "architecture": "arm64",
+      "bun": "1.4.4",
+      "platform": "darwin",
+      "predecessor": {
+        "filename": "effectory-darwin-arm64 (GitHub release v0.1.0)",
+        "sha256": "56e37d0aa51edf257094f44d780b585f112fcd8f84505364971a88ed1824c69d"
+      },
+      "target": {
+        "filename": "effectory-darwin-arm64 (bun scripts/build-binary.ts)",
+        "sha256": "f552c367b16249d87a9c0efcd537ef44178136dbc95bfdc5a792e55e48afc83a"
+      },
+      "results": {
+        "wait-rollback": {
+          "digest": "8603fb89966a1f154eda89654a0cd4c15138b93821b9debaae61eedc3c912bf1",
+          "result": {
+            "completedManualHandlerExecutions": 1,
+            "copyDigest": "d6a4c2eaeab051ed95f9796bb6cce5625f199607d95c41ddafb6f6969c01b6c5",
+            "copyEntries": 13,
+            "kind": "actual-old-new-upgrade-and-original-host-rollback",
+            "legacySeed": null,
+            "limitations": [
+              "Waiting-run and rollback proof; lifecycle and offline-writer cases are recorded separately"
+            ],
+            "predecessorSha256": "56e37d0aa51edf257094f44d780b585f112fcd8f84505364971a88ed1824c69d",
+            "preserved": [
+              "accepted run identity",
+              "pinned revision",
+              "completed manual activity result",
+              "pending approval identity",
+              "submission request-key receipt"
+            ],
+            "result": "already-completed-continued",
+            "revision": "98411ebd6831a35da7f54ec4165c589842932c2caa5c933be2e890965166e48f",
+            "runId": "073f0946-9eef-4c51-bd87-88d9887233a0",
+            "sourceStorage": 1,
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "f552c367b16249d87a9c0efcd537ef44178136dbc95bfdc5a792e55e48afc83a"
+          }
+        },
+        "lifecycle": {
+          "digest": "9f4a88f0e79a692c825b71d742219db77c76862b2f680beb2ee26219e0ffbc6d",
+          "result": {
+            "kind": "actual-old-new-lifecycle",
+            "legacySeed": null,
+            "manualEntries": 2,
+            "partial": null,
+            "planId": "4e02791f-852d-4b10-8c37-e99d197c359a",
+            "preserved": [
+              "sleep",
+              "retry backoff",
+              "manual hold and authorization",
+              "report obligation/run identity",
+              "reader pins",
+              "report-source protection",
+              "schedule generation and watermark",
+              "encrypted vault and external key",
+              "request-key receipts"
+            ],
+            "reportCompletions": 1,
+            "retryAttempts": [1, 2],
+            "root": "/tmp/effectory-upgrade-lifecycle-NFyGjG",
+            "sourceBuild": "a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9",
+            "sourceStorage": 1,
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "f552c367b16249d87a9c0efcd537ef44178136dbc95bfdc5a792e55e48afc83a"
+          }
+        },
+        "writers": {
+          "digest": "51119f3d080d0f51b44cb08704039652346105cb0cfac6c553e2e0f7579c9ddb",
+          "result": {
+            "externalKeyAbsence": "typed failure, no silent replacement; original key still decrypts",
+            "kind": "actual-predecessor-writers-after-real-migration",
+            "limitations": [
+              "SQLite shared-memory bytes may change on an old read-only open; logical data and all other source bytes were unchanged"
+            ],
+            "predecessorSha256": "56e37d0aa51edf257094f44d780b585f112fcd8f84505364971a88ed1824c69d",
+            "results": [
+              {
+                "args": ["daemon", "serve"],
+                "error": "Runtime storage was accepted by host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use offline upgrade plan/apply with a certified host before execution\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "run",
+                  "reclaim",
+                  "plan",
+                  "--completed-before",
+                  "2027-01-01T00:00:00Z"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "run",
+                  "reclaim",
+                  "inspect",
+                  "03cc2f2c-0e04-456e-b2b3-0de6e2ce9ff4"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": ["vault", "reset", "credentials", "--discard"],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "vault",
+                  "key",
+                  "import",
+                  "credentials",
+                  "--file",
+                  "/tmp/effectory-upgrade-lifecycle-NFyGjG/escrow.json"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": ["extension", "restore"],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              }
+            ],
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "f552c367b16249d87a9c0efcd537ef44178136dbc95bfdc5a792e55e48afc83a"
+          }
+        }
+      }
+    },
+    "linux-x64": {
+      "architecture": "x64",
+      "bun": "1.4.4",
+      "platform": "linux",
+      "predecessor": {
+        "filename": "effectory-linux-x64 (GitHub release v0.1.0)",
+        "sha256": "d74c310dc1b38ff8c48510ea1f96d067092b1aa1979d59916d157cfe1a00f681"
+      },
+      "target": {
+        "filename": "effectory-linux-x64 (bun scripts/build-binary.ts)",
+        "sha256": "fc09fa78b8032d1b122c14e415891e1e7eab9de0b262711c31984e702e18f4b5"
+      },
+      "results": {
+        "wait-rollback": {
+          "digest": "03ae707160d618aa61d8778e42b85d9bd74d96184e0cf35877cd122efce10da1",
+          "result": {
+            "completedManualHandlerExecutions": 1,
+            "copyDigest": "dc5d095a21d25cc5d56c96b7e5b319b0b84a6935deda65d8c2670bf9028cf4e0",
+            "copyEntries": 12,
+            "kind": "actual-old-new-upgrade-and-original-host-rollback",
+            "legacySeed": null,
+            "limitations": [
+              "Waiting-run and rollback proof; lifecycle and offline-writer cases are recorded separately"
+            ],
+            "predecessorSha256": "d74c310dc1b38ff8c48510ea1f96d067092b1aa1979d59916d157cfe1a00f681",
+            "preserved": [
+              "accepted run identity",
+              "pinned revision",
+              "completed manual activity result",
+              "pending approval identity",
+              "submission request-key receipt"
+            ],
+            "result": "already-completed-continued",
+            "revision": "98411ebd6831a35da7f54ec4165c589842932c2caa5c933be2e890965166e48f",
+            "runId": "d4e4994f-508d-47a9-86d0-9bffa0add460",
+            "sourceStorage": 1,
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "fc09fa78b8032d1b122c14e415891e1e7eab9de0b262711c31984e702e18f4b5"
+          }
+        },
+        "lifecycle": {
+          "digest": "9f81e2a54e98850fc6a0ecff8135c6c9b7054d57ee6b0e4c233b7eef7619b82e",
+          "result": {
+            "kind": "actual-old-new-lifecycle",
+            "legacySeed": null,
+            "manualEntries": 2,
+            "partial": null,
+            "planId": "ab056f10-0712-43fc-adb1-174e097c94b1",
+            "preserved": [
+              "sleep",
+              "retry backoff",
+              "manual hold and authorization",
+              "report obligation/run identity",
+              "reader pins",
+              "report-source protection",
+              "schedule generation and watermark",
+              "encrypted vault and external key",
+              "request-key receipts"
+            ],
+            "reportCompletions": 1,
+            "retryAttempts": [1, 2],
+            "root": "/tmp/effectory-upgrade-lifecycle-NmzNfK",
+            "sourceBuild": "a8fa9264e18ea79615f9d7934ec510b8110d39ff305a9a2d8980aa1840baa7c9",
+            "sourceStorage": 1,
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "fc09fa78b8032d1b122c14e415891e1e7eab9de0b262711c31984e702e18f4b5"
+          }
+        },
+        "writers": {
+          "digest": "4ba6835c641851e35271470d2ae0b2bb377902a970345afd829b76c205e9559a",
+          "result": {
+            "externalKeyAbsence": "typed failure, no silent replacement; original key still decrypts",
+            "kind": "actual-predecessor-writers-after-real-migration",
+            "limitations": [
+              "SQLite shared-memory bytes may change on an old read-only open; logical data and all other source bytes were unchanged"
+            ],
+            "predecessorSha256": "d74c310dc1b38ff8c48510ea1f96d067092b1aa1979d59916d157cfe1a00f681",
+            "results": [
+              {
+                "args": ["daemon", "serve"],
+                "error": "Runtime storage was accepted by host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use offline upgrade plan/apply with a certified host before execution\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "run",
+                  "reclaim",
+                  "plan",
+                  "--completed-before",
+                  "2027-01-01T00:00:00Z"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "run",
+                  "reclaim",
+                  "inspect",
+                  "8ad15894-731b-4cd4-a0c8-866b585e3c78"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": ["vault", "reset", "credentials", "--discard"],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": [
+                  "vault",
+                  "key",
+                  "import",
+                  "credentials",
+                  "--file",
+                  "/tmp/effectory-upgrade-lifecycle-NmzNfK/escrow.json"
+                ],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              },
+              {
+                "args": ["extension", "restore"],
+                "error": "Runtime storage belongs to host build 1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8; use that host or complete a certified offline upgrade before maintenance\n",
+                "exit": 5
+              }
+            ],
+            "targetBuild": "1d84112ffa3cf9cbd335ee1ac8853f528f5af37b8b1d74939c4d8c300692fdc8",
+            "targetSha256": "fc09fa78b8032d1b122c14e415891e1e7eab9de0b262711c31984e702e18f4b5"
+          }
+        }
+      }
+    }
+  },
+  "verification": [
+    {
+      "stage": "typecheck",
+      "exit": 0
+    },
+    {
+      "stage": "check",
+      "exit": 0
+    },
+    {
+      "stage": "full-tests",
+      "exit": 0,
+      "tests": 859,
+      "failures": 0,
+      "platform": "darwin-arm64"
+    }
+  ]
+}

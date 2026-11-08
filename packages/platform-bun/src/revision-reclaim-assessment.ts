@@ -53,7 +53,7 @@ function sourceDependencies(repository: string, budget: InspectionBudget) {
       let bytes = 0;
       while (pending.length > 0) {
         const directory = pending.pop();
-        if (!directory) {
+        if (directory === undefined || directory === "") {
           break;
         }
         yield* Effect.scoped(

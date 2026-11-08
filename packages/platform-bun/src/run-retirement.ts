@@ -49,7 +49,7 @@ export const retiredHint = (id: string) =>
 
 /** Also initialized by standalone lake fixtures; contains no foreign keys to host state. */
 export function initializeRetiredRuns(db: Database) {
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS host_retired_runs (
       runId TEXT PRIMARY KEY, sourceRunId TEXT NOT NULL, principal TEXT NOT NULL,
       admissionLane TEXT NOT NULL, requestKey TEXT NOT NULL, fingerprint TEXT NOT NULL,
@@ -66,7 +66,7 @@ export function initializeRetiredRuns(db: Database) {
 }
 export function initializeRunRetirement(db: Database) {
   initializeRetiredRuns(db);
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS host_run_completions (runId TEXT PRIMARY KEY, completedAt TEXT NOT NULL);
     CREATE TRIGGER IF NOT EXISTS host_run_completed AFTER UPDATE OF status ON host_runs
     WHEN NEW.status IN (${terminalSql}) AND OLD.status NOT IN (${terminalSql}) BEGIN

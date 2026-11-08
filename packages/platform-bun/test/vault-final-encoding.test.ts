@@ -4,7 +4,13 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { effectory, start } from "./fixtures/cli.ts";
+
+const decodeJsonObject = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+);
 
 test("the interpreter guards second encoding and retained-revision vault administration", async () => {
   const base = await mkdtemp(
@@ -28,9 +34,7 @@ test("the interpreter guards second encoding and retained-revision vault adminis
       code,
       stderr,
       stdout,
-      value: stdout.trim()
-        ? (JSON.parse(stdout) as Record<string, unknown>)
-        : undefined,
+      value: stdout.trim() ? decodeJsonObject(stdout) : undefined,
     };
   };
   try {

@@ -5,7 +5,7 @@ import type {
   LockedPackage,
 } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
-import { Effect, Layer } from "effect";
+import { Effect } from "effect";
 
 import { lockRevision } from "../src/extension-cache.ts";
 import { GhCommand } from "../src/extension-source.ts";
@@ -74,33 +74,31 @@ test("update discovery pages one registry snapshot without downloading or mutati
       ]);
       expect(JSON.stringify(lock)).toBe(before);
     }).pipe(
-      Effect.provide(
-        Layer.succeed(GhCommand, {
-          run: (args) =>
-            Effect.suspend(() => {
-              const endpoint = args.at(3) ?? "";
-              seen.push(endpoint);
-              if (endpoint === "repos/acme/two/releases/latest") {
-                return Effect.fail(
-                  new OperationError({
-                    code: "Unavailable",
-                    message: "Private repository is unavailable",
-                  })
-                );
-              }
-              return Effect.succeed(
-                new TextEncoder().encode(
-                  JSON.stringify({
-                    assets: [{ id: 2, name: "effectory.tgz", size: 100 }],
-                    draft: false,
-                    id: 2,
-                    tag_name: "v2",
-                  })
-                )
+      Effect.provideService(GhCommand, {
+        run: (args) =>
+          Effect.suspend(() => {
+            const endpoint = args.at(3) ?? "";
+            seen.push(endpoint);
+            if (endpoint === "repos/acme/two/releases/latest") {
+              return Effect.fail(
+                new OperationError({
+                  code: "Unavailable",
+                  message: "Private repository is unavailable",
+                })
               );
-            }),
-        })
-      )
+            }
+            return Effect.succeed(
+              new TextEncoder().encode(
+                JSON.stringify({
+                  assets: [{ id: 2, name: "effectory.tgz", size: 100 }],
+                  draft: false,
+                  id: 2,
+                  tag_name: "v2",
+                })
+              )
+            );
+          }),
+      })
     )
   );
 });

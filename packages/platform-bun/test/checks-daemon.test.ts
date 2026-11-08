@@ -207,7 +207,7 @@ test("real CLI thresholds, completed XML, restart recovery and manual authorizat
     const pausedId = /Run (?<id>[a-f0-9-]+) was accepted/u.exec(
       pausedResult.stderr
     )?.groups?.id;
-    if (!pausedId) {
+    if (pausedId === undefined) {
       throw new Error(pausedResult.stderr);
     }
     await cli(repository, ["run", "cancel", pausedId]);
@@ -341,7 +341,7 @@ test("real CLI thresholds, completed XML, restart recovery and manual authorizat
     const assessment = Schema.decodeUnknownSync(RecoveryAssessment)(
       await cli(repository, ["run", "recover", manual.runId])
     );
-    if (!assessment.token) {
+    if (assessment.token === null) {
       throw new Error("Missing recovery token");
     }
     await writeFile(path.join(repository, "manual"), "open");

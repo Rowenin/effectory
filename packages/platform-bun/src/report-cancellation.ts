@@ -23,7 +23,7 @@ const Batch = Schema.Struct({
 
 /** A sequence fence fixes membership without copying up to 160,000 report IDs. */
 export function createReportCancellation(database: Database) {
-  database.exec(`CREATE TABLE IF NOT EXISTS host_report_cancellations (
+  database.run(`CREATE TABLE IF NOT EXISTS host_report_cancellations (
     batchId TEXT PRIMARY KEY, sourceRunId TEXT NOT NULL REFERENCES host_runs(runId),
     actor TEXT NOT NULL, requestKey TEXT NOT NULL, reason TEXT, maximum INTEGER NOT NULL,
     position INTEGER NOT NULL DEFAULT 0, receiptJson TEXT NOT NULL,
@@ -40,10 +40,9 @@ export function createReportCancellation(database: Database) {
             message: "Invalid report cancellation request",
           });
         }
-        const request = Schema.decodeUnknownSync(ReportCancelSourceRequest)(
-          value,
-          { onExcessProperty: "error" }
-        );
+        const request = Schema.decodeSync(ReportCancelSourceRequest)(value, {
+          onExcessProperty: "error",
+        });
         authorizeRun(database, request.sourceRunId, actor);
         const reason = request.reason ?? null;
         const prior = database
@@ -51,7 +50,7 @@ export function createReportCancellation(database: Database) {
             "SELECT reason, receiptJson FROM host_report_cancellations WHERE sourceRunId = ? AND actor = ? AND requestKey = ?"
           )
           .get(request.sourceRunId, actor, request.requestKey);
-        if (prior) {
+        if (prior !== null) {
           const row = Schema.decodeUnknownSync(
             Schema.Struct({
               reason: Schema.NullOr(Schema.String),
@@ -127,7 +126,7 @@ export function createReportCancellation(database: Database) {
             "SELECT * FROM host_report_cancellations WHERE position < maximum ORDER BY batchId LIMIT 1"
           )
           .get();
-        if (!raw) {
+        if (raw === null) {
           return 0;
         }
         const batch = Schema.decodeUnknownSync(Batch)(raw);

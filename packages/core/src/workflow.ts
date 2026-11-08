@@ -256,9 +256,7 @@ export class Builder extends Context.Service<Builder, GraphBuilder>()(
 
 export interface Definition<S extends Spec = Spec> {
   readonly tags: Readonly<Record<string, string>>;
-  readonly tagSchemas: Readonly<
-    Record<string, Schema.Codec<unknown, string, never, never>>
-  >;
+  readonly tagSchemas: Readonly<Record<string, Schema.Codec<unknown, string>>>;
   readonly kind: "Workflow";
   readonly id: S["id"];
   readonly spec: S;
@@ -296,7 +294,7 @@ function buildScope(
     >();
     const allowed = new Map(parent?.allowed);
     const known = new Set<string>(parent ? [] : ["$input"]);
-    if (special) {
+    if (special !== undefined && special !== "") {
       known.add(special);
     }
     allowed.set(scope, known);
@@ -306,7 +304,7 @@ function buildScope(
     ) => {
       const refs = [...Ref.references(input), ...after];
       for (const ref of refs) {
-        if (!allowed.get(ref.scope)?.has(ref.nodeId)) {
+        if (allowed.get(ref.scope)?.has(ref.nodeId) !== true) {
           throw new DefinitionError({
             message: `Reference outside graph or unavailable node: ${ref.nodeId}`,
           });
@@ -413,7 +411,7 @@ function buildScope(
               graph,
               id,
               items,
-              key: (value) => options.key(value as typeof options.item.Type),
+              key: (value) => options.key(value),
               kind: "ForEach",
               ...references([items, ...graph.captures]),
             })
@@ -432,6 +430,7 @@ function buildScope(
         attempt(() =>
           register({
             // The public generic relates the compute input to its reference. The IR erases it.
+            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the checker cannot relate this erased generic
             compute: (value) => compute(value as typeof mapSpec.input.Type),
             ...references(mapSpec.input),
             id,

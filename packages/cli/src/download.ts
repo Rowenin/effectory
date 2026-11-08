@@ -13,7 +13,7 @@ import { OperationError } from "@effectory/runtime/protocol";
 import { Effect, Schema, Stream } from "effect";
 
 function fileError(cause: unknown): OperationError {
-  const code =
+  const code: unknown =
     typeof cause === "object" && cause !== null
       ? Reflect.get(cause, "code")
       : undefined;
@@ -58,17 +58,18 @@ export function downloadToFile<E, R>(
       const file = yield* Effect.acquireRelease(
         Effect.tryPromise({
           catch: fileError,
-          try: () => open(temporary, "wx", 0o600),
+          try: async () => await open(temporary, "wx", 0o600),
         }),
         (handle) =>
           Effect.tryPromise({
             catch: fileError,
             try: async () => {
-              let closeError: unknown;
+              let closeError: Error | undefined;
               try {
                 await handle.close();
               } catch (error) {
-                closeError = error;
+                closeError =
+                  error instanceof Error ? error : new Error(String(error));
               }
               try {
                 unlinkSync(temporary);
@@ -97,7 +98,7 @@ export function downloadToFile<E, R>(
               if (metadata !== undefined) {
                 return yield* invalid("Download repeated its metadata frame");
               }
-              metadata = yield* Schema.decodeUnknownEffect(DownloadMetadata)(
+              metadata = yield* Schema.decodeEffect(DownloadMetadata)(
                 frame.metadata
               ).pipe(
                 Effect.mapError(() => invalid("Invalid download metadata"))
@@ -157,7 +158,7 @@ export function downloadToFile<E, R>(
       }
       yield* Effect.tryPromise({
         catch: fileError,
-        try: () => file.sync(),
+        try: async () => await file.sync(),
       }).pipe(Effect.uninterruptible);
       let installed = false;
       yield* Effect.try({
@@ -195,7 +196,7 @@ export const download = (
 ) =>
   Effect.scoped(
     Effect.gen(function* () {
-      const request = yield* Schema.decodeUnknownEffect(DownloadRequest)({
+      const request = yield* Schema.decodeEffect(DownloadRequest)({
         artifactId,
         version,
       }).pipe(

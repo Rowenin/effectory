@@ -1,4 +1,5 @@
 import { Effect, Layer, Schema } from "effect";
+import { absurd } from "effect/Function";
 
 import type * as Artifact from "./artifact.ts";
 import { decode } from "./boundary.ts";
@@ -120,8 +121,12 @@ export function test<S extends Task.Spec, R>(
             ({ status } = value);
             break;
           }
-          default: {
+          case "Failure": {
             checkJsonBudget(value.detail);
+            break;
+          }
+          default: {
+            absurd(value);
           }
         }
         if (status !== source.status) {
@@ -160,8 +165,20 @@ export function test<S extends Task.Spec, R>(
           }
           return body();
         });
-      const outcomeRead = (target?: Target) =>
-        read("outcome target or codec", () => {
+      // Runtime canonical-target checks and codec decoding establish the
+      // overloads' dependent result.
+      function outcomeRead(): Effect.Effect<
+        Outcome<Schema.Json, Schema.Json>,
+        TaskRuntimeError
+      >;
+      function outcomeRead<T extends Target>(
+        target: T
+      ): Effect.Effect<
+        Outcome<T["successSchema"]["Type"], T["errorSchema"]["Type"]>,
+        TaskRuntimeError
+      >;
+      function outcomeRead(target?: Target) {
+        return read("outcome target or codec", () => {
           if (!target) {
             return structuredClone(outcome);
           }
@@ -192,6 +209,7 @@ export function test<S extends Task.Spec, R>(
           }
           return structuredClone(outcome);
         });
+      }
       const history: HistoryService = {
         events: (options = {}) =>
           read("events request", () => {
@@ -213,8 +231,7 @@ export function test<S extends Task.Spec, R>(
               2_097_152
             )
           ),
-        // Runtime canonical-target checks and codec decoding establish the overload's dependent result.
-        outcome: outcomeRead as HistoryService["outcome"],
+        outcome: outcomeRead,
       };
       return yield* Task.test(task.provide(Layer.succeed(History, history)), {
         input: fixtures.source,

@@ -55,7 +55,7 @@ const InstallRow = Schema.Struct({
   position: Schema.Int,
   stage: Schema.String.check(Schema.isPattern(/^[a-f0-9-]{36}\.stage$/u)),
 });
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   value: unknown
 ) => Schema.decodeUnknownSync(schema)(value, { onExcessProperty: "error" });
@@ -96,9 +96,7 @@ export function inspectUpgradeMaintenance(
       "extension_activation",
     ].filter((name) => present.has(name)).length;
     if (extensionCount !== 0 && extensionCount !== 3) {
-      return yield* Effect.fail(
-        unsupportedUpgradeWork("partial extension journals")
-      );
+      return yield* unsupportedUpgradeWork("partial extension journals");
     }
     if (extensionCount === 3) {
       yield* scanner.scan(

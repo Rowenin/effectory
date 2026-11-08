@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Schema } from "effect";
 import { DefinitionError } from "./errors.ts";
 
 /** Boundaries cannot depend on services during encoding or decoding. */
-export type Boundary = Schema.Codec<unknown, unknown, never, never>;
+export type Boundary = Schema.Codec<unknown, unknown>;
 
 /** Validate/map every typed failure without discarding accompanying cleanup causes. */
 export function mapFailureCause<E, E2, R>(

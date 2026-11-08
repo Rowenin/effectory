@@ -55,7 +55,7 @@ const readSource = (raw: unknown) => {
 
 /** All mutation hooks run in the caller's host-store transaction and use its connection. */
 export function createReportSources(database: Database) {
-  database.exec(`
+  database.run(`
     CREATE TABLE IF NOT EXISTS host_workflow_invocations (
       invocationId TEXT PRIMARY KEY, runId TEXT NOT NULL REFERENCES host_runs(runId),
       path TEXT NOT NULL, targetId TEXT NOT NULL, entered INTEGER NOT NULL DEFAULT 0,
@@ -89,11 +89,11 @@ export function createReportSources(database: Database) {
     const row = database
       .query("SELECT planJson FROM host_report_plans WHERE runId = ?")
       .get(runId);
-    return row
-      ? Schema.decodeUnknownSync(ReportPlan)(
+    return row === null
+      ? []
+      : Schema.decodeUnknownSync(ReportPlan)(
           JSON.parse(Schema.decodeUnknownSync(PlanRow)(row).planJson)
-        )
-      : [];
+        );
   };
   const arm = (
     run: Run,
@@ -127,7 +127,7 @@ export function createReportSources(database: Database) {
         .run(position);
     },
     capture: (run: Run, input: EncodedReportPlan) => {
-      const entries = Schema.decodeUnknownSync(ReportPlan)(input, {
+      const entries = Schema.decodeSync(ReportPlan)(input, {
         onExcessProperty: "error",
       });
       if (entries.length === 0) {
@@ -188,7 +188,7 @@ export function createReportSources(database: Database) {
             "SELECT * FROM host_report_sources WHERE sourceId = ? AND phase = 'Ready'"
           )
           .get(sourceId);
-        if (!raw) {
+        if (raw === null) {
           return;
         }
         const row = readSource(raw);
@@ -247,7 +247,7 @@ export function createReportSources(database: Database) {
     },
     settle: (
       sourceId: string,
-      status: (typeof SourceIdentity.Type)["status"],
+      status: SourceIdentity["status"],
       category: FailureCategory | null,
       ineligibleReason: typeof IneligibleReason.Type | null
     ) => {

@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { OperationError } from "@effectory/runtime/protocol";
 import { canonical } from "@offtree/effectory-sdk/internal/boundary";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { RepositoryLease } from "./ownership.ts";
 import type { RuntimeStorage } from "./runtime-storage-format.ts";
@@ -47,14 +47,17 @@ export function publishRuntimeStorage(
           path.join(state, "upgrades/active.json"),
           65_536
         );
-        if (
-          active === null ||
-          canonical(
-            Schema.decodeUnknownSync(UpgradeAcceptance)(JSON.parse(active), {
-              onExcessProperty: "error",
-            })
-          ) !== canonical(acceptance)
-        ) {
+        if (active === null) {
+          throw invalid();
+        }
+        const current = Schema.decodeUnknownExit(UpgradeAcceptance)(
+          JSON.parse(active),
+          { onExcessProperty: "error" }
+        );
+        if (Exit.isFailure(current)) {
+          throw Cause.squash(current.cause);
+        }
+        if (canonical(current.value) !== canonical(acceptance)) {
           throw invalid();
         }
         const value: typeof RuntimeStorage.Type = {

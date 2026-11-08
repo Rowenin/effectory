@@ -63,7 +63,7 @@ test("a lake query exceeding its scan budget fails without a partial successful 
         );
         // Populate valid metadata fixtures directly to isolate query work from
         // 10000 blob fsyncs and task admissions.
-        database.exec(`WITH RECURSIVE numbers(n) AS (
+        database.run(`WITH RECURSIVE numbers(n) AS (
           VALUES(0) UNION ALL SELECT n + 1 FROM numbers WHERE n < 9999
         ), seed AS MATERIALIZED (
           SELECT principal, schemaId, schemaVersion, fingerprint, metadataJson, fieldsJson

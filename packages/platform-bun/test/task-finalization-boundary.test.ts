@@ -128,7 +128,7 @@ test("Layer errors and secrets first read at finalization never reach persisted 
     const entries = await readdir(directory);
     const files = entries.filter((name) => name.startsWith("state.sqlite"));
     const contents = await Promise.all(
-      files.map((name) => readFile(path.join(directory, name)))
+      files.map(async (name) => await readFile(path.join(directory, name)))
     );
     expect(contents.length).toBeGreaterThan(0);
     for (const content of contents) {

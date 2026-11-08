@@ -32,14 +32,16 @@ export function publicationLifetime(
         return Effect.asVoid(Deferred.await(finished));
       }
       closed = true;
-      return closeReads
-        .pipe(Effect.andThen(Fiber.interruptAll([...children])))
-        .pipe(Effect.ensuring(Deferred.succeed(finished, true)));
+      return closeReads.pipe(
+        Effect.andThen(Fiber.interruptAll([...children])),
+        Effect.ensuring(Deferred.succeed(finished, true))
+      );
     })
   );
 
   const base = Layer.makeMemoMapUnsafe();
   // Inherit Effect's private brand; decorate only its public MemoMap methods.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- inherits Effect's unexported MemoMap brand
   const memoMap = Object.create(base) as Layer.MemoMap;
   const methods: Pick<Layer.MemoMap, "get" | "getOrElseMemoize"> = {
     get: (layer, scope) => base.get(layer, scope),

@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { Digest } from "@effectory/runtime/extension-protocol";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import { RepositoryLease } from "./ownership.ts";
 import { invalidReclaimRecord } from "./revision-reclaim-journal-record.ts";
@@ -48,13 +48,16 @@ export function reclaimedRevisionError(repository: string, revision: string) {
         if (text === null) {
           return null;
         }
-        const value = Schema.decodeUnknownSync(Locator)(JSON.parse(text), {
+        const decoded = Schema.decodeUnknownExit(Locator)(JSON.parse(text), {
           onExcessProperty: "error",
         });
-        if (value.revision !== revision) {
+        if (Exit.isFailure(decoded)) {
+          throw Cause.squash(decoded.cause);
+        }
+        if (decoded.value.revision !== revision) {
           throw invalidReclaimRecord();
         }
-        return value;
+        return decoded.value;
       },
     });
     if (locator === null) {
@@ -65,7 +68,7 @@ export function reclaimedRevisionError(repository: string, revision: string) {
     if (
       saved._tag !== "Accepted" ||
       saved.transition.phase !== "Complete" ||
-      !saved.transition.receipt?.revisions.includes(revision)
+      saved.transition.receipt?.revisions.includes(revision) !== true
     ) {
       return yield* invalidReclaimRecord();
     }

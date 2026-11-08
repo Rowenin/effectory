@@ -56,7 +56,7 @@ function validateCron(cron: string, zone: string | undefined) {
     )
     .match(/[L W#?]/giu)
     ?.filter((value) => value !== " ");
-  if (modifiers?.length) {
+  if (modifiers !== undefined && modifiers.length > 0) {
     throw new Error(`Unsupported cron modifier: ${modifiers[0]}`);
   }
   const timeZone = zone ?? "UTC";
@@ -134,7 +134,7 @@ export function make<const S extends Workflow.Spec>(spec: {
     checkJsonBudget(encoded);
     const json = Schema.decodeUnknownSync(Schema.Json)(encoded);
     decode(spec.workflow.inputSchema, json);
-    const copied = Schema.decodeUnknownSync(Schema.Json)(structuredClone(json));
+    const copied = Schema.decodeSync(Schema.Json)(structuredClone(json));
     return Object.freeze({
       catchUp: catchUp === "skip" ? catchUp : Object.freeze({ ...catchUp }),
       checks,

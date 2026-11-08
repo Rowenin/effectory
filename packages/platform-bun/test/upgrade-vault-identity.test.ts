@@ -22,8 +22,8 @@ test("vault logical identity ignores only the format fence and catches interveni
     assertActive() {},
     token: "test",
   });
-  const read = () =>
-    Effect.runPromise(
+  const read = async () =>
+    await Effect.runPromise(
       withUpgradeInspection(filename, ({ database }) =>
         inspectUpgradeVaultIdentity(database)
       ).pipe(
@@ -48,14 +48,14 @@ test("vault logical identity ignores only the format fence and catches interveni
     const initial = await read();
     const db = new Database(filename);
     try {
-      db.exec("PRAGMA user_version=2; PRAGMA wal_checkpoint(TRUNCATE)");
+      db.run("PRAGMA user_version=2; PRAGMA wal_checkpoint(TRUNCATE)");
     } finally {
       db.close();
     }
     expect(await read()).toEqual(initial);
     const reset = new Database(filename);
     try {
-      reset.exec(
+      reset.run(
         "PRAGMA user_version=1; DELETE FROM vault_values; DELETE FROM vault_receipts; UPDATE vault_meta SET counter=counter+1,absence=counter+1; PRAGMA wal_checkpoint(TRUNCATE)"
       );
     } finally {
@@ -76,25 +76,26 @@ test("vault logical identity ignores only the format fence and catches interveni
 
 test("vault identity distinguishes NUL text, exact large integers, blobs, and unknown columns", async () => {
   const db = new Database(":memory:");
-  db.exec(`CREATE TABLE vault_meta(singleton INTEGER PRIMARY KEY,counter INTEGER,absence INTEGER);
+  db.run(`CREATE TABLE vault_meta(singleton INTEGER PRIMARY KEY,counter INTEGER,absence INTEGER);
     CREATE TABLE vault_identities(id TEXT PRIMARY KEY,key_id TEXT,state TEXT,check_mac TEXT);
     CREATE TABLE vault_values(vault TEXT,key TEXT,version INTEGER,value BLOB,PRIMARY KEY(vault,key));
     CREATE TABLE vault_receipts(serial INTEGER PRIMARY KEY AUTOINCREMENT,vault TEXT,key TEXT,request_key TEXT,mac TEXT,version INTEGER,operation TEXT,UNIQUE(vault,key,request_key));
     INSERT INTO vault_meta VALUES(1,9007199254740992,0);
     INSERT INTO vault_values VALUES('vault','key',1,x'610062');`);
-  const read = () => Effect.runPromise(inspectUpgradeVaultIdentity(db));
+  const read = async () =>
+    await Effect.runPromise(inspectUpgradeVaultIdentity(db));
   try {
     const first = await read();
-    db.exec("UPDATE vault_meta SET counter=9007199254740993");
+    db.run("UPDATE vault_meta SET counter=9007199254740993");
     const second = await read();
     expect(second.digest).not.toBe(first.digest);
-    db.exec("UPDATE vault_values SET value=CAST(x'610062' AS TEXT)");
+    db.run("UPDATE vault_values SET value=CAST(x'610062' AS TEXT)");
     const third = await read();
     expect(third.digest).not.toBe(second.digest);
-    db.exec("UPDATE vault_values SET value=CAST(x'610063' AS TEXT)");
+    db.run("UPDATE vault_values SET value=CAST(x'610063' AS TEXT)");
     const fourth = await read();
     expect(fourth.digest).not.toBe(third.digest);
-    db.exec("ALTER TABLE vault_values ADD COLUMN unsupported TEXT");
+    db.run("ALTER TABLE vault_values ADD COLUMN unsupported TEXT");
     await expect(read()).rejects.toMatchObject({ code: "RevisionUnavailable" });
   } finally {
     db.close();

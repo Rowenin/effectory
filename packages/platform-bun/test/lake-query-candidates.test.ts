@@ -37,9 +37,7 @@ interface Fixture {
   readonly lake: ReturnType<typeof createLake>;
   readonly store: ReturnType<typeof createStore>;
 }
-async function withLake(
-  body: (fixture: Fixture) => Effect.Effect<void, unknown>
-) {
+async function withLake<E>(body: (fixture: Fixture) => Effect.Effect<void, E>) {
   const directory = await mkdtemp(
     path.join(tmpdir(), "effectory-query-candidates-")
   );
@@ -105,8 +103,8 @@ const eq = (field: Field, value: string): Expression => ({
 
 test(
   "run, task, identity and conjunctive tag queries exclude 100000 unrelated rows before the budget",
-  () =>
-    withLake((f) =>
+  async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         const seed = yield* publish(f, "seed", "seed", {
           deployment: "wanted",
@@ -114,10 +112,10 @@ test(
         });
         // Avoid thrashing the default tiny page cache while building the
         // synthetic corpus. Query semantics and production budgets are unchanged.
-        f.database.exec("PRAGMA cache_size = -65536");
+        f.database.run("PRAGMA cache_size = -65536");
         // Populate valid metadata directly to isolate query work from publication
         // fsyncs. Each unrelated row matches at most one of the two tag filters.
-        f.database.exec(`WITH RECURSIVE numbers(n) AS (
+        f.database.run(`WITH RECURSIVE numbers(n) AS (
           VALUES(0) UNION ALL SELECT n + 1 FROM numbers WHERE n < 99999
         ), seed AS MATERIALIZED (
           SELECT principal,schemaId,schemaVersion,fingerprint,metadataJson,fieldsJson FROM lake_records WHERE sequence = 1
@@ -169,7 +167,7 @@ test(
             // Inspect the real query: identity must constrain the index seek,
             // rather than filtering every row under the schema index.
             expect(sql).toBeDefined();
-            const plan = Schema.decodeUnknownSync(
+            const plan = yield* Schema.decodeUnknownEffect(
               Schema.Array(Schema.Struct({ detail: Schema.String }))
             )(
               f.database
@@ -199,8 +197,8 @@ test(
   30_000
 );
 
-test("candidate narrowing agrees with the full evaluator for compound predicates, literal keys and Unicode", () =>
-  withLake((f) =>
+test("candidate narrowing agrees with the full evaluator for compound predicates, literal keys and Unicode", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const alpha = yield* publish(
         f,
@@ -287,8 +285,8 @@ test("candidate narrowing agrees with the full evaluator for compound predicates
     })
   ));
 
-test("latest ranking ignores pushed filters and cursors keep their original publication snapshot", () =>
-  withLake((f) =>
+test("latest ranking ignores pushed filters and cursors keep their original publication snapshot", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const alpha = yield* publish(f, "alpha", "alpha", { team: "old" });
       const beta = yield* publish(f, "beta", "beta", { team: "old" });
@@ -345,14 +343,14 @@ test("latest ranking ignores pushed filters and cursors keep their original publ
     })
   ));
 
-test("query tag indexes backfill existing records and track metadata changes and reclamation atomically", () =>
-  withLake((f) =>
+test("query tag indexes backfill existing records and track metadata changes and reclamation atomically", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const first = yield* publish(f, "first", "first", { "team/name": "old" });
       const second = yield* publish(f, "second", "second", {
         "team/name": "old",
       });
-      f.database.exec(`DROP TRIGGER lake_query_tags_insert;
+      f.database.run(`DROP TRIGGER lake_query_tags_insert;
       DROP TRIGGER lake_query_tags_update;
       DROP TABLE lake_query_tags`);
       initializeQueryIndexes(f.database);

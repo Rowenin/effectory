@@ -44,7 +44,7 @@ export function createCheckStore(
   ) => boolean,
   event: (runId: string, key: string, tag: string, payload: Schema.Json) => void
 ) {
-  db.exec(`CREATE TABLE IF NOT EXISTS host_checks (
+  db.run(`CREATE TABLE IF NOT EXISTS host_checks (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT, invocationPosition INTEGER NOT NULL, runId TEXT NOT NULL, nodeId TEXT NOT NULL, taskId TEXT NOT NULL,
     attempt INTEGER NOT NULL, entry INTEGER NOT NULL, id TEXT NOT NULL, severity TEXT NOT NULL, message TEXT NOT NULL,
     status TEXT NOT NULL, startedAt TEXT NOT NULL, finishedAt TEXT, durationMillis REAL, owner TEXT NOT NULL,
@@ -56,7 +56,7 @@ export function createCheckStore(
   let after = 0;
   const identityCurrent = (identity: CheckIdentity) =>
     live(identity.runId, identity.nodeId, identity.attempt, identity.entry) &&
-    !!db
+    db
       .query(
         `SELECT 1 FROM host_attempts WHERE runId=? AND nodeId=? AND activityAttempt=? AND entries=? AND owner=?`
       )
@@ -66,7 +66,7 @@ export function createCheckStore(
         identity.attempt,
         identity.entry,
         lease.token
-      );
+      ) !== null;
   const finishedEvent = (record: CheckRecord, status: string) =>
     event(
       record.runId,
@@ -122,14 +122,14 @@ export function createCheckStore(
           lease.assertActive();
           if (
             !identityCurrent(identity) ||
-            !db
+            db
               .query(
                 "SELECT 1 FROM host_runs WHERE runId=? AND status IN ('Queued','Running','Waiting','Retrying','NeedsAttention')"
               )
-              .get(identity.runId) ||
+              .get(identity.runId) === null ||
             db
               .query("SELECT 1 FROM host_fences WHERE runId=?")
-              .get(identity.runId)
+              .get(identity.runId) !== null
           ) {
             fail("Conflict", "Check entry is closed or superseded");
           }
@@ -144,7 +144,7 @@ export function createCheckStore(
               identity.attempt,
               identity.entry
             );
-          if (!raw) {
+          if (raw === null) {
             fail("Conflict", "Check observation is no longer running");
           }
           const record = Schema.decodeUnknownSync(CheckRecord)(raw);
@@ -164,13 +164,13 @@ export function createCheckStore(
       db
         .transaction(() => {
           lease.assertActive();
-          const request = Schema.decodeUnknownSync(CheckListRequest)(value, {
+          const request = Schema.decodeSync(CheckListRequest)(value, {
             onExcessProperty: "error",
           });
           if (
-            !db
+            db
               .query("SELECT 1 FROM host_runs WHERE runId=? AND principal=?")
-              .get(request.runId, principal)
+              .get(request.runId, principal) === null
           ) {
             refuseRetired(db, "run", request.runId, principal);
             fail("NotFound", "Run was not found");
@@ -251,14 +251,14 @@ export function createCheckStore(
           lease.assertActive();
           if (
             !identityCurrent(identity) ||
-            !db
+            db
               .query(
                 "SELECT 1 FROM host_runs WHERE runId=? AND status IN ('Queued','Running','Waiting','Retrying','NeedsAttention')"
               )
-              .get(identity.runId) ||
+              .get(identity.runId) === null ||
             db
               .query("SELECT 1 FROM host_fences WHERE runId=?")
-              .get(identity.runId)
+              .get(identity.runId) !== null
           ) {
             fail("Conflict", "Check entry is closed or superseded");
           }
@@ -273,7 +273,7 @@ export function createCheckStore(
                 identity.attempt,
                 identity.entry,
                 input.id
-              )
+              ) !== null
           ) {
             fail("InvalidInput", "Duplicate check id in this entry");
           }

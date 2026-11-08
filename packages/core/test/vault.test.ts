@@ -37,7 +37,7 @@ const spec = {
   version: 1,
 };
 const run = <S extends Task.Spec, R>(task: Task.Definition<S, R>) =>
-  Task.test(task, { input: {} as S["input"]["Type"] });
+  Task.test(task, { input: {} });
 
 const failure = async <A, E>(program: Effect.Effect<A, E>) => {
   const exit = await Effect.runPromiseExit(program);
@@ -58,7 +58,7 @@ describe("vault contracts", () => {
           Redacted.value(a),
           Redacted.value(b),
           yield* A.getOption("token"),
-        ];
+        ] as const;
       }).pipe(
         Effect.provide(
           Layer.mergeAll(
@@ -70,7 +70,7 @@ describe("vault contracts", () => {
     );
     expect(values[0]).toBe(42);
     expect(values[1]).toBe("remote-token");
-    expect(Option.isNone(values[2] as Option.Option<unknown>)).toBe(true);
+    expect(Option.isNone(values[2])).toBe(true);
   });
   test("test harness refuses secret results and artifact metadata", async () => {
     const task = Task.make(spec, () =>
@@ -139,10 +139,9 @@ describe("vault contracts", () => {
         const handle = yield* A;
         const services = yield* Effect.context();
         return {
-          read: handle.get("token").pipe(
-            Effect.map(() => "safe"),
-            Effect.provideContext(services)
-          ),
+          read: handle
+            .get("token")
+            .pipe(Effect.as("safe"), Effect.provideContext(services)),
         };
       })
     ).pipe(Layer.provideMerge(provider));
@@ -160,6 +159,7 @@ describe("vault contracts", () => {
             throw new Error("Missing registered task");
           }
           return yield* protect(() =>
+            // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
             runtime.execute(
               {},
               {
@@ -183,8 +183,13 @@ describe("vault contracts", () => {
     const escaped = Task.make(spec, () =>
       Effect.gen(function* () {
         const handle = yield* A;
-        return yield* Effect.promise(() =>
-          Effect.runPromise(Effect.map(handle.get("token"), Redacted.value))
+        // The escape under test is a fresh root without the task's context.
+        return yield* Effect.promise(
+          async () =>
+            // @effect-diagnostics-next-line runEffectInsideEffect:off
+            await Effect.runPromise(
+              Effect.map(handle.get("token"), Redacted.value)
+            )
         );
       })
     ).provide(provider);
@@ -227,7 +232,7 @@ void missing;
 // @ts-expect-error hand-written handles are not branded
 Layer.succeed(A, {
   get: () => Effect.succeed(Redacted.make("fake")),
-  getOption: () => Effect.succeed(Option.none()),
+  getOption: () => Effect.succeedNone,
 });
 
 test("task-local Layer failures retain declared vault errors; finalizers may read", async () => {

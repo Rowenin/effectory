@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
@@ -15,6 +14,7 @@ import {
   selfCommand,
   sourceAbi,
 } from "../src/host-runtime.ts";
+import { importModule } from "./fixtures/import-module.ts";
 
 const workspace = path.resolve(import.meta.dir, "../../..");
 
@@ -58,12 +58,17 @@ test("modules loaded from outside any node_modules share the host's instances", 
     );
     installHostModules();
     installHostModules();
-    const loaded = (await import(pathToFileURL(filename).href)) as {
+    const loaded = await importModule<{
       Direct: { succeed: unknown };
       Effect: { succeed: unknown };
       Schema: { String: unknown };
       Task: { make: unknown };
-    };
+    }>(filename, {
+      Direct: "object",
+      Effect: "object",
+      Schema: "object",
+      Task: "object",
+    });
     expect(loaded.Effect.succeed).toBe(Effect.succeed);
     expect(loaded.Direct.succeed).toBe(Effect.succeed);
     expect(loaded.Schema.String).toBe(Schema.String);

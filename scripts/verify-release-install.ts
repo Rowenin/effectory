@@ -20,7 +20,13 @@ import {
 import { OperationError, Run } from "../packages/runtime/src/protocol.ts";
 
 const [source, asset, trust] = process.argv.slice(2);
-if (!source || !asset || trust !== "--trust-fixture") {
+if (
+  source === undefined ||
+  source === "" ||
+  asset === undefined ||
+  asset === "" ||
+  trust !== "--trust-fixture"
+) {
   throw new Error(
     "Usage: bun scripts/verify-release-install.ts github:owner/repository@tag effectory.tgz --trust-fixture (executes the published fixture/tools extension)"
   );

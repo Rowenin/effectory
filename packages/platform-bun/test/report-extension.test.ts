@@ -12,6 +12,8 @@ import {
 import os from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { digest } from "../src/extension-archive.ts";
 import { cli, operation, start } from "./fixtures/cli.ts";
 import {
@@ -19,6 +21,17 @@ import {
   fixtureManifest,
 } from "./fixtures/extension-archive.ts";
 import { typescript, workspace } from "./fixtures/published-extension.ts";
+
+const OperationAccepted = Schema.Struct({ operationId: Schema.String });
+const RunAccepted = Schema.Struct({ runId: Schema.String });
+const ReportPage = Schema.Struct({
+  items: Schema.Array(
+    Schema.Struct({ attachmentId: Schema.String, reportId: Schema.String })
+  ),
+});
+const ReportRetried = Schema.Struct({
+  record: Schema.Struct({ reportId: Schema.String }),
+});
 
 test("installed typed and generic reporters preserve canonical contracts across the facade and daemon restart", async () => {
   const base = await mkdtemp(
@@ -130,14 +143,16 @@ Generic:Task.make(Generic.spec,()=>Effect.gen(function*(){const history=yield* R
     );
     const initial = await start(repository, environment);
     children.push(initial);
-    const add = (await cli(repository, [
-      "extension",
-      "add",
-      "github:fixture/reports@v1",
-      "--as",
-      "Reports",
-      "--trust",
-    ])) as { operationId: string };
+    const add = Schema.decodeUnknownSync(OperationAccepted)(
+      await cli(repository, [
+        "extension",
+        "add",
+        "github:fixture/reports@v1",
+        "--as",
+        "Reports",
+        "--trust",
+      ])
+    );
     expect((await operation(repository, add.operationId)).status).toBe(
       "Succeeded"
     );
@@ -163,19 +178,21 @@ Report.make({id:"workflow",target:Reports.workflows.Child,task:Reports.tasks.Gen
     await initial.exited;
     const first = await start(repository, environment);
     children.push(first);
-    const source = (await cli(repository, [
-      "task",
-      "run",
-      "fixture/reports/source",
-      "--input",
-      "41",
-    ])) as { runId: string };
+    const source = Schema.decodeUnknownSync(RunAccepted)(
+      await cli(repository, [
+        "task",
+        "run",
+        "fixture/reports/source",
+        "--input",
+        "41",
+      ])
+    );
     expect(
       await cli(repository, ["report", "wait", source.runId])
     ).toMatchObject({ Succeeded: 2 });
-    const page = (await cli(repository, ["report", "list", source.runId])) as {
-      items: { attachmentId: string; reportId: string }[];
-    };
+    const page = Schema.decodeUnknownSync(ReportPage)(
+      await cli(repository, ["report", "list", source.runId])
+    );
     for (const record of page.items) {
       expect(
         await cli(repository, ["report", "get", record.reportId])
@@ -183,31 +200,28 @@ Report.make({id:"workflow",target:Reports.workflows.Child,task:Reports.tasks.Gen
         content: { data: record.attachmentId === "typed" ? "42" : "Succeeded" },
       });
     }
-    const workflow = (await cli(repository, [
-      "workflow",
-      "run",
-      "fixture/reports/child",
-      "--input",
-      "41",
-    ])) as { runId: string };
+    const workflow = Schema.decodeUnknownSync(RunAccepted)(
+      await cli(repository, [
+        "workflow",
+        "run",
+        "fixture/reports/child",
+        "--input",
+        "41",
+      ])
+    );
     expect(
       await cli(repository, ["report", "wait", workflow.runId])
     ).toMatchObject({ Succeeded: 1 });
-    const workflowPage = (await cli(repository, [
-      "report",
-      "list",
-      workflow.runId,
-    ])) as { items: { attachmentId: string; reportId: string }[] };
-    page.items.push(...workflowPage.items);
+    const workflowPage = Schema.decodeUnknownSync(ReportPage)(
+      await cli(repository, ["report", "list", workflow.runId])
+    );
     first.kill("SIGKILL");
     await first.exited;
     children.push(await start(repository, environment));
-    for (const record of page.items) {
-      const retry = (await cli(repository, [
-        "report",
-        "retry",
-        record.reportId,
-      ])) as { record: { reportId: string } };
+    for (const record of [...page.items, ...workflowPage.items]) {
+      const retry = Schema.decodeUnknownSync(ReportRetried)(
+        await cli(repository, ["report", "retry", record.reportId])
+      );
       expect(
         await cli(repository, [
           "report",

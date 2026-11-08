@@ -47,7 +47,7 @@ import type { createPagination } from "./pagination.ts";
 
 const sha256 = (value: string | Uint8Array) =>
   createHash("sha256").update(value).digest("hex");
-const codeOf = (error: unknown) =>
+const codeOf = (error: unknown): unknown =>
   typeof error === "object" && error !== null
     ? Reflect.get(error, "code")
     : undefined;
@@ -165,7 +165,7 @@ export function createReader(
         attemptEntry(identity) ?? null,
         attemptEntry(identity) ?? null
       );
-    if (!raw) {
+    if (raw === null) {
       throw readFailure("Closed");
     }
     return Schema.decodeUnknownSync(
@@ -188,7 +188,7 @@ export function createReader(
         "SELECT metadataJson,reclaimedAt FROM lake_records WHERE principal=? AND artifactId=? AND version=?"
       )
       .get(principal, ref.artifactId, ref.version);
-    if (!raw) {
+    if (raw === null) {
       throw readFailure("NotFound", ref);
     }
     const row = Schema.decodeUnknownSync(
@@ -217,7 +217,7 @@ export function createReader(
       database
         .query(`SELECT 1 FROM host_reports r JOIN host_report_groups g ON g.groupId=r.groupId
       WHERE r.reportRunId=? AND g.sourceRunId=? AND r.status IN (${unsettledReports})`)
-        .get(identity.runId, record.runId) &&
+        .get(identity.runId, record.runId) !== null &&
       reportHolds(database, record.runId)
     ) {
       return;
@@ -227,7 +227,7 @@ export function createReader(
         .query(
           "SELECT 1 FROM lake_consumer_pins WHERE consumerRunId=? AND sequence=?"
         )
-        .get(identity.runId, record.sequence)
+        .get(identity.runId, record.sequence) !== null
     ) {
       return;
     }
@@ -303,15 +303,18 @@ export function createReader(
                 "SELECT version FROM lake_records WHERE principal=? AND artifactId=? AND reclaimedAt IS NULL ORDER BY version DESC LIMIT 1"
               )
               .get(principal, artifactId);
-            if (!row) {
+            if (row === null) {
               const historical = database
                 .query(
                   "SELECT 1 FROM lake_records WHERE principal=? AND artifactId=? LIMIT 1"
                 )
                 .get(principal, artifactId);
-              throw readFailure(historical ? "Reclaimed" : "NotFound", {
-                artifactId,
-              });
+              throw readFailure(
+                historical === null ? "NotFound" : "Reclaimed",
+                {
+                  artifactId,
+                }
+              );
             }
             const { version } = Schema.decodeUnknownSync(
               Schema.Struct({ version: Schema.Int })

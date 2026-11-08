@@ -61,7 +61,11 @@ function fixture() {
   const list = (attempts: "latest" | "all" = "latest", cursor?: string) =>
     Effect.runSync(
       store.checkList(
-        { attempts, runId: run.runId, ...(cursor ? { cursor } : {}) },
+        {
+          attempts,
+          runId: run.runId,
+          ...(cursor === undefined ? {} : { cursor }),
+        },
         "owner"
       )
     );
@@ -291,7 +295,7 @@ test("a failed completion transaction retains Running for reconciliation and emi
     const sequence = Effect.runSync(
       f.store.checkStart(entry.identity, input("transaction"))
     );
-    f.database.exec(
+    f.database.run(
       "CREATE TRIGGER fail_check_finish BEFORE UPDATE ON host_checks WHEN NEW.status='Passed' BEGIN SELECT RAISE(ABORT,'injected completion fault'); END"
     );
     expect(code(f.store.checkFinish(entry.identity, sequence, success))).toBe(

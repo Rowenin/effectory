@@ -202,7 +202,7 @@ test("CLI/RPC daemon retains a waiting revision and queries its artifact after r
     for (const child of processes) {
       child.kill();
     }
-    await Promise.all(processes.map((child) => child.exited));
+    await Promise.all(processes.map(async (child) => await child.exited));
     await rm(repository, { force: true, recursive: true });
   }
 }, 60_000);
@@ -309,7 +309,7 @@ test("waiting runs retain separately bundled extension contracts, services, prov
     for (const child of processes) {
       child.kill();
     }
-    await Promise.all(processes.map((child) => child.exited));
+    await Promise.all(processes.map(async (child) => await child.exited));
     await rm(repository, { force: true, recursive: true });
   }
 }, 120_000);

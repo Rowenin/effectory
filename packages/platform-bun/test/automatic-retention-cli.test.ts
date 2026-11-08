@@ -33,7 +33,7 @@ test("automatic CLI is opt-in, survives SIGKILL and offline restore, and exposes
   const sql = (query: string) => {
     const db = new Database(path.join(repository, ".effectory/state.sqlite"));
     try {
-      db.exec(query);
+      db.run(query);
     } finally {
       db.close();
     }

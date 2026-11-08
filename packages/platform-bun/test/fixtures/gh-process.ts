@@ -4,11 +4,13 @@ if (mode === "ok") {
   process.stdout.write(process.argv[3] ?? "ok");
 } else if (mode === "hang") {
   const filename = process.argv.at(3);
-  if (!filename) {
+  if (filename === undefined) {
     throw new Error("Missing PID filename");
   }
   await Bun.write(filename, String(process.pid));
-  setInterval(Date.now, 1000);
+  setInterval(() => {
+    Date.now();
+  }, 1000);
 } else if (mode === "large") {
   process.stdout.write("x".repeat(1000));
 } else {

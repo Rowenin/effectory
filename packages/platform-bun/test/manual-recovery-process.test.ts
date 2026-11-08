@@ -124,7 +124,7 @@ test("real interpreter recovery survives repeated kills and a durable acceptance
         child.kill("SIGKILL");
       }
     }
-    await Promise.all(children.map((child) => child.exited));
+    await Promise.all(children.map(async (child) => await child.exited));
     await rm(directory, { force: true, recursive: true });
   }
 }, 90_000);

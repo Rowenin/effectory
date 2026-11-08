@@ -35,10 +35,10 @@ class Resource extends Context.Service<Resource, boolean>()(
   "checks/Resource"
 ) {}
 // oxlint-disable-next-line unicorn/throw-new-error -- Schema factory, not a constructor.
-class DomainError extends Schema.TaggedError<DomainError>()(
-  "DomainError",
-  {}
-) {}
+class DomainError extends Schema.TaggedError<
+  DomainError,
+  { readonly brand: unique symbol }
+>()("DomainError", {}) {}
 function failure<E, A>(exit: Exit.Exit<A, E>): E | undefined {
   return Exit.isFailure(exit)
     ? Option.getOrUndefined(Cause.findErrorOption(exit.cause))
@@ -108,13 +108,13 @@ test("evaluation errors retain their types; defects and runtime nonbooleans cann
       const checks = yield* Checks;
       yield* checks
         .assert("defect", Effect.die("PRIVATE-CAUSE"), { message: "safe" })
-        .pipe(Effect.catchCause(() => Effect.void));
+        .pipe(Effect.ignoreCause);
       // JavaScript callers must not be able to record truthy values as Passed.
       // @ts-expect-error a predicate must return a boolean
       const nonboolean: Effect.Effect<boolean> = Effect.succeed(1);
       yield* checks
         .assert("nonboolean", nonboolean, { message: "safe" })
-        .pipe(Effect.catchCause(() => Effect.void));
+        .pipe(Effect.ignoreCause);
       return true;
     })
   );
@@ -204,10 +204,7 @@ test("caller interruption awaits predicate cleanup and records Incomplete before
           ),
           { message: "slow" }
         )
-        .pipe(
-          Effect.timeout("10 millis"),
-          Effect.catchCause(() => Effect.void)
-        );
+        .pipe(Effect.timeout("10 millis"), Effect.ignoreCause);
       order.push("continued");
       return true;
     })

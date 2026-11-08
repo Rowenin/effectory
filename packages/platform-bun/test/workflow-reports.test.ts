@@ -85,17 +85,17 @@ const awaitReports = (runId: string, count: number) =>
 
 const artifact = Artifact.make({
   id: "child-value",
-  schema: Schema.Number,
+  schema: Schema.Finite,
   version: 1,
 });
 const leaf = Task.make(
   {
     error: Schema.Never,
     id: "child-leaf",
-    input: Schema.Number,
+    input: Schema.Finite,
     outputs: { value: artifact },
     replay: "idempotent",
-    success: Schema.Number,
+    success: Schema.Finite,
     version: 1,
   },
   (value) =>
@@ -111,13 +111,13 @@ const child = Workflow.make(
     error: Schema.Never,
     execution: { timeout: "30 seconds" },
     id: "child",
-    input: Schema.Number,
-    success: Schema.Number,
+    input: Schema.Finite,
+    success: Schema.Finite,
     version: 1,
   },
   Effect.gen(function* () {
     const g = yield* Workflow.Builder;
-    return yield* g.task("leaf", leaf, yield* g.input(Schema.Number), {
+    return yield* g.task("leaf", leaf, yield* g.input(Schema.Finite), {
       timeout: "30 seconds",
     });
   })
@@ -140,36 +140,36 @@ const reporter = Task.make(
       do {
         const page: Report.InvocationPage = yield* h.invocations({
           limit: 1,
-          ...(cursor ? { cursor } : {}),
+          ...(cursor === null ? {} : { cursor }),
         });
         tasks.push(...page.items.map((row) => row.pathPreview.text));
         ({ cursor } = page);
-      } while (cursor);
+      } while (cursor !== null);
       const events = [];
       cursor = null;
       do {
         const page: Report.EventPage = yield* h.events({
           limit: 2,
-          ...(cursor ? { cursor } : {}),
+          ...(cursor === null ? {} : { cursor }),
         });
         events.push(
           ...page.items.map((row) => ({ payload: row.payload, tag: row.tag }))
         );
         ({ cursor } = page);
-      } while (cursor);
+      } while (cursor !== null);
       return { data: { events, outcome, tasks }, markdown: "Child summary" };
     })
 );
 const attach = (target: Workflow.Definition, id = "child-summary-attachment") =>
   Report.make({ id, scope: "invocation", target, task: reporter });
 
-test("child reports finish independently with subtree history, publications and source-workflow search", () => {
+test("child reports finish independently with subtree history, publications and source-workflow search", async () => {
   const parent = Workflow.make(
     {
       error: Schema.Never,
       id: "parent",
       input: Schema.Null,
-      success: Schema.Number,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.gen(function* () {
@@ -184,7 +184,7 @@ test("child reports finish independently with subtree history, publications and 
       return first;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [attach(child)],
       tasks: [leaf, reporter],
@@ -217,11 +217,11 @@ test("child reports finish independently with subtree history, publications and 
       );
       for (const record of records) {
         expect(record.status).toBe("Succeeded");
-        if (!record.reportRunId) {
+        if (record.reportRunId === null) {
           return yield* Effect.die("No report run");
         }
         const run = yield* store.getRun(record.reportRunId);
-        const result = Schema.decodeUnknownSync(
+        const result = yield* Schema.decodeUnknownEffect(
           Schema.Struct({
             data: Schema.Struct({
               events: Schema.Array(
@@ -274,21 +274,21 @@ test("child reports finish independently with subtree history, publications and 
   );
 }, 20_000);
 
-test("direct workflow matches both scopes, including an empty workflow with no task attempts", () => {
+test("direct workflow matches both scopes, including an empty workflow with no task attempts", async () => {
   const empty = Workflow.make(
     {
       error: Schema.Never,
       id: "empty",
-      input: Schema.Number,
-      success: Schema.Number,
+      input: Schema.Finite,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.gen(function* () {
       const g = yield* Workflow.Builder;
-      return yield* g.input(Schema.Number);
+      return yield* g.input(Schema.Finite);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         attach(empty),
@@ -311,7 +311,7 @@ test("direct workflow matches both scopes, including an empty workflow with no t
       ]);
       for (const record of records) {
         expect(record.status).toBe("Succeeded");
-        if (!record.reportRunId) {
+        if (record.reportRunId === null) {
           return yield* Effect.die("No report");
         }
         const result = yield* store.getRun(record.reportRunId);
@@ -323,7 +323,7 @@ test("direct workflow matches both scopes, including an empty workflow with no t
   );
 }, 20_000);
 
-test("entered cancelled child reports Cancelled; an activated dependency-blocked child is NotApplicable", () => {
+test("entered cancelled child reports Cancelled; an activated dependency-blocked child is NotApplicable", async () => {
   const sleeping = Workflow.make(
     {
       error: Schema.Never,
@@ -353,7 +353,7 @@ test("entered cancelled child reports Cancelled; an activated dependency-blocked
       return null;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [attach(sleeping)],
       tasks: [reporter],
@@ -396,7 +396,7 @@ test("entered cancelled child reports Cancelled; an activated dependency-blocked
   );
 }, 20_000);
 
-test("child domain failure remains its own typed outcome", () => {
+test("child domain failure remains its own typed outcome", async () => {
   const failure = Schema.TaggedStruct("ChildFailure", {
     message: Schema.String,
   });
@@ -459,7 +459,7 @@ test("child domain failure remains its own typed outcome", () => {
         };
       })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [
         Report.make({
@@ -486,7 +486,7 @@ test("child domain failure remains its own typed outcome", () => {
       );
       const [record] = yield* awaitReports(run.runId, 1);
       expect(record?.source.status).toBe("Failed");
-      if (!record?.source.invocationId) {
+      if (record === undefined || record.source.invocationId === null) {
         return yield* Effect.die("Missing child source");
       }
       const childDetails = yield* store.reportWorkflowDetails(
@@ -529,7 +529,7 @@ test("child domain failure remains its own typed outcome", () => {
       });
 
       expect(record?.status).toBe("Succeeded");
-      if (!record?.reportRunId) {
+      if (record === undefined || record.reportRunId === null) {
         return yield* Effect.die("Missing report");
       }
       expect((yield* store.getRun(record.reportRunId)).result).toEqual({
@@ -540,7 +540,7 @@ test("child domain failure remains its own typed outcome", () => {
   );
 }, 20_000);
 
-test("keyed fan-out activates one workflow report per child; inactive branches create none", () => {
+test("keyed fan-out activates one workflow report per child; inactive branches create none", async () => {
   const empty = Workflow.make(
     {
       error: Schema.Never,
@@ -601,7 +601,7 @@ test("keyed fan-out activates one workflow report per child; inactive branches c
       return null;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [attach(empty)],
       tasks: [reporter],
@@ -625,24 +625,24 @@ test("keyed fan-out activates one workflow report per child; inactive branches c
         3
       );
       expect(
-        records.every((row) => !row.pathPreview?.text.includes("never"))
+        records.every((row) => row.pathPreview?.text.includes("never") !== true)
       ).toBe(true);
     })
   );
 }, 20_000);
 
 for (const scenario of ["deadline", "rejection", "invalid-input"] as const) {
-  test(`workflow invocation reports ${scenario} at the child boundary`, () => {
+  test(`workflow invocation reports ${scenario} at the child boundary`, async () => {
     const input =
       scenario === "invalid-input"
-        ? Schema.Number.check(Schema.isGreaterThanOrEqualTo(0))
-        : Schema.Number;
+        ? Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
+        : Schema.Finite;
     const target = Workflow.make(
       {
         error: Schema.Never,
         id: "controlled-child",
         input,
-        success: Schema.Number,
+        success: Schema.Finite,
         version: 1,
         ...(scenario === "deadline"
           ? { execution: { timeout: "30 millis" } }
@@ -668,14 +668,14 @@ for (const scenario of ["deadline", "rejection", "invalid-input"] as const) {
         error: Schema.Never,
         id: "controlled-parent",
         input: Schema.Null,
-        success: Schema.Number,
+        success: Schema.Finite,
         version: 1,
       },
       Effect.gen(function* () {
         return yield* (yield* Workflow.Builder).workflow("child", target, -1);
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({
         reports: [attach(target)],
         tasks: [reporter],
@@ -730,7 +730,7 @@ for (const scenario of ["deadline", "rejection", "invalid-input"] as const) {
   }, 20_000);
 }
 
-test("concurrent child failures preserve their own category while the root keeps its first fence", () => {
+test("concurrent child failures preserve their own category while the root keeps its first fence", async () => {
   const A = Schema.TaggedStruct("FailureA", {});
   const B = Schema.TaggedStruct("FailureB", {});
   const a = Task.make(
@@ -801,7 +801,7 @@ test("concurrent child failures preserve their own category while the root keeps
       return null;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({
       reports: [attach(childA, "a-summary"), attach(childB, "b-summary")],
       tasks: [a, b, reporter],
@@ -821,22 +821,22 @@ test("concurrent child failures preserve their own category while the root keeps
       );
       const records = yield* awaitReports(run.runId, 2);
       const root = yield* store.getRun(run.runId);
-      const fence = Schema.decodeUnknownSync(
+      const fence = yield* Schema.decodeUnknownEffect(
         Schema.Struct({ detail: Schema.Json })
       )(yield* store.fenceReason(run.runId));
       expect(root.error).toEqual(fence.detail);
       expect(["FailureA", "FailureB"]).toContain(
-        Schema.decodeUnknownSync(Schema.Struct({ _tag: Schema.String }))(
-          root.error
-        )._tag
+        (yield* Schema.decodeUnknownEffect(
+          Schema.Struct({ _tag: Schema.String })
+        )(root.error))._tag
       );
       for (const record of records) {
         expect(record.status).toBe("Succeeded");
-        if (!record.reportRunId) {
+        if (record.reportRunId === null) {
           return yield* Effect.die("No report");
         }
         const { result } = yield* store.getRun(record.reportRunId);
-        const { data } = Schema.decodeUnknownSync(
+        const { data } = yield* Schema.decodeUnknownEffect(
           Schema.Struct({ data: Schema.Struct({ outcome: Report.Outcome }) })
         )(result);
         if (data.outcome._tag === "DomainFailure") {
@@ -856,14 +856,14 @@ test("concurrent child failures preserve their own category while the root keeps
   );
 }, 20_000);
 
-test("a workflow activated by a selected before-step patch has its own report", () => {
+test("a workflow activated by a selected before-step patch has its own report", async () => {
   const base = Task.make(
     {
       error: Schema.Never,
       id: "base",
-      input: Schema.Number,
+      input: Schema.Finite,
       replay: "idempotent",
-      success: Schema.Number,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.succeed
@@ -876,26 +876,26 @@ test("a workflow activated by a selected before-step patch has its own report", 
     {
       error: Schema.Never,
       id: "fixture/child/workflow",
-      input: Schema.Number,
-      success: Schema.Number,
+      input: Schema.Finite,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.gen(function* () {
       const g = yield* Workflow.Builder;
-      return yield* g.task("check", check, yield* g.input(Schema.Number));
+      return yield* g.task("check", check, yield* g.input(Schema.Finite));
     })
   );
   const parent = Workflow.make(
     {
       error: Schema.Never,
       id: "patched",
-      input: Schema.Number,
-      success: Schema.Number,
+      input: Schema.Finite,
+      success: Schema.Finite,
       version: 1,
     },
     Effect.gen(function* () {
       const g = yield* Workflow.Builder;
-      return yield* g.task("base", base, yield* g.input(Schema.Number));
+      return yield* g.task("base", base, yield* g.input(Schema.Finite));
     })
   );
   const patch = WorkflowPatch.make(
@@ -929,7 +929,7 @@ test("a workflow activated by a selected before-step patch has its own report", 
     tasks: [base, reporter],
     workflows: [parent],
   });
-  return withHost(
+  return await withHost(
     app,
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -946,7 +946,7 @@ test("a workflow activated by a selected before-step patch has its own report", 
       const [record] = yield* awaitReports(run.runId, 1);
       expect(record?.status).toBe("Succeeded");
       expect(record?.pathPreview?.text).toContain("patch-child");
-      if (!record?.reportRunId) {
+      if (record === undefined || record.reportRunId === null) {
         return yield* Effect.die("Missing report");
       }
       expect((yield* store.getRun(record.reportRunId)).result).toMatchObject({

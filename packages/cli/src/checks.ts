@@ -5,7 +5,7 @@ import { Effect, Option } from "effect";
 
 export function checksPreflight<E, R>(client: {
   readonly SystemStatus: (
-    request: Record<never, never>
+    request: Record<string, never>
   ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
 }) {
   return client.SystemStatus({}).pipe(

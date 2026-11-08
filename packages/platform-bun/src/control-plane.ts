@@ -349,9 +349,7 @@ export const controlPlaneLayer = ControlPlane.toLayer(
           const run = yield* store.getRun(request.runId, "owner");
           const available = yield* catalog
             .get(run.revision)
-            .pipe(
-              Effect.match({ onFailure: () => false, onSuccess: () => true })
-            );
+            .pipe(Effect.isSuccess);
           return yield* store.recover(request, "owner", available);
         }),
       RunRecoveryGet: (request) =>
@@ -359,9 +357,7 @@ export const controlPlaneLayer = ControlPlane.toLayer(
           const run = yield* store.getRun(request.runId, "owner");
           const available = yield* catalog
             .get(run.revision)
-            .pipe(
-              Effect.match({ onFailure: () => false, onSuccess: () => true })
-            );
+            .pipe(Effect.isSuccess);
           return yield* store.recoveryGet(request, "owner", available);
         }),
       RunReports: (request) => store.reportList(request, "owner"),

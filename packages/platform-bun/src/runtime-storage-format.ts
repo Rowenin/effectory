@@ -35,7 +35,7 @@ const invalid = () =>
     message:
       "Runtime storage is unsupported or has no completed matching upgrade receipt; preserve the repository and use its accepting host",
   });
-const decode = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decode = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   text: string
 ): S["Type"] => {

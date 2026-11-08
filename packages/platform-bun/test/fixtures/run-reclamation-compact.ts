@@ -5,7 +5,11 @@ import { Effect } from "effect";
 import { reclaimRuns } from "../../src/run-reclamation.ts";
 
 const [repository, ready, completed] = process.argv.slice(2);
-if (!repository || !ready || !completed) {
+if (
+  repository === undefined ||
+  ready === undefined ||
+  completed === undefined
+) {
   throw new Error("Missing compaction fixture arguments");
 }
 await Effect.runPromise(

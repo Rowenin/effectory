@@ -12,6 +12,7 @@ import path from "node:path";
 import { Effect } from "effect";
 import type { Scope } from "effect";
 
+import { effectVersion } from "../../src/host-modules.generated.ts";
 import { ownershipLayer } from "../../src/ownership.ts";
 import type { Lease } from "../../src/ownership.ts";
 import { makeUpgradeJournal } from "../../src/upgrade-journal.ts";
@@ -32,12 +33,12 @@ export function fenceFixture(build = "b".repeat(64)) {
     ' { "token": "CANARY-fence-fixture", "repositoryId": "fixture" }\n';
   writeFileSync(path.join(state, "credentials.json"), credentials);
   const database = new Database(path.join(state, "state.sqlite"));
-  database.exec("CREATE TABLE component_fixture(value TEXT)");
+  database.run("CREATE TABLE component_fixture(value TEXT)");
   database.close();
   const owner = { planId: crypto.randomUUID(), targetBuild: build };
   const own = ownershipLayer(path.join(state, "state.sqlite.owner"));
-  const run = <A, E>(effect: Effect.Effect<A, E, Lease | Scope.Scope>) =>
-    Effect.runPromise(effect.pipe(Effect.scoped, Effect.provide(own)));
+  const run = async <A, E>(effect: Effect.Effect<A, E, Lease | Scope.Scope>) =>
+    await Effect.runPromise(effect.pipe(Effect.scoped, Effect.provide(own)));
   const plan: typeof UpgradePlan.Type = {
     blockers: [],
     createdAt: 1,
@@ -58,14 +59,14 @@ export function fenceFixture(build = "b".repeat(64)) {
     target: {
       build: owner.targetBuild,
       contract: "fixture/v1",
-      effect: "4.0.5",
+      effect: effectVersion,
       storage: 2,
     },
     work: {},
     workByRevision: [],
   };
-  const accept = () =>
-    run(
+  const accept = async () =>
+    await run(
       Effect.gen(function* () {
         const journal = yield* makeUpgradeJournal(repository);
         const saved = yield* journal.savePlan(plan);
@@ -82,8 +83,8 @@ export function fenceFixture(build = "b".repeat(64)) {
         );
       })
     );
-  const finishAbort = () =>
-    run(
+  const finishAbort = async () =>
+    await run(
       Effect.gen(function* () {
         const journal = yield* makeUpgradeJournal(repository);
         yield* journal.checkpoint(

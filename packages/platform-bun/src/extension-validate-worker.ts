@@ -14,7 +14,12 @@ async function main(
   repository: string | undefined,
   filename: string | undefined
 ) {
-  if (!repository || !filename) {
+  if (
+    repository === undefined ||
+    repository === "" ||
+    filename === undefined ||
+    filename === ""
+  ) {
     throw new Error("Validation input is missing");
   }
   const stat = lstatSync(filename);

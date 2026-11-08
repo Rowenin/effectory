@@ -183,7 +183,9 @@ function withInspection<A, E, R>(
           mkdtempSync(path.join(tmpdir(), "effectory-upgrade-inspection-"))
         ),
         (directory) =>
-          Effect.promise(() => rm(directory, { force: true, recursive: true }))
+          Effect.promise(
+            async () => await rm(directory, { force: true, recursive: true })
+          )
       );
       const captured = path.join(temporary, "captured", "database.sqlite");
       const recovered = path.join(temporary, "inspection", "database.sqlite");
@@ -268,7 +270,11 @@ function withInspection<A, E, R>(
             });
           }
           const result = db.query("PRAGMA wal_checkpoint(TRUNCATE)").get();
-          if (result && Reflect.get(result, "busy") !== 0) {
+          if (
+            typeof result === "object" &&
+            result !== null &&
+            Reflect.get(result, "busy") !== 0
+          ) {
             throw new OperationError({
               code: "Unavailable",
               message: "Private upgrade checkpoint could not finish",

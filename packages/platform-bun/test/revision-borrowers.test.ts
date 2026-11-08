@@ -27,8 +27,8 @@ export default Application.make({}).provide(resource);
 interface Fixture {
   readonly filename: string;
   readonly marker: string;
-  readonly records: Effect.Effect<string[], unknown>;
-  readonly change: (label: string) => Effect.Effect<void, unknown>;
+  readonly records: Effect.Effect<string[]>;
+  readonly change: (label: string) => Effect.Effect<void>;
 }
 async function withCatalog<E>(
   body: (fixture: Fixture) => Effect.Effect<void, E, Catalog | Scope.Scope>
@@ -43,12 +43,14 @@ async function withCatalog<E>(
     await Effect.runPromise(
       body({
         change: (label) =>
-          Effect.promise(() => writeFile(filename, application(label, marker))),
+          Effect.promise(
+            async () => await writeFile(filename, application(label, marker))
+          ),
         filename,
         marker,
-        records: Effect.promise(() => readFile(marker, "utf-8")).pipe(
-          Effect.map((text) => text.trim().split("\n"))
-        ),
+        records: Effect.promise(
+          async () => await readFile(marker, "utf-8")
+        ).pipe(Effect.map((text) => text.trim().split("\n"))),
       }).pipe(
         Effect.timeout("10 seconds"),
         Effect.scoped,
@@ -68,8 +70,8 @@ const switchTo = (catalog: typeof Catalog.Service) =>
     yield* catalog.activate(yield* catalog.prepare());
   }).pipe(Effect.scoped);
 
-test("concurrent revision borrowers survive activation; last release unloads and later access reacquires", () =>
-  withCatalog(({ change, records }) =>
+test("concurrent revision borrowers survive activation; last release unloads and later access reacquires", async () =>
+  await withCatalog(({ change, records }) =>
     Effect.gen(function* () {
       const catalog = yield* Catalog;
       const old = catalog.active;
@@ -119,8 +121,8 @@ test("concurrent revision borrowers survive activation; last release unloads and
     })
   ));
 
-test("a candidate cannot activate after its owner closes and failed publication releases its temporary pin", () =>
-  withCatalog(({ change, records }) =>
+test("a candidate cannot activate after its owner closes and failed publication releases its temporary pin", async () =>
+  await withCatalog(({ change, records }) =>
     Effect.gen(function* () {
       const catalog = yield* Catalog;
       const { active } = catalog;
@@ -155,15 +157,15 @@ test("a candidate cannot activate after its owner closes and failed publication 
     })
   ));
 
-test("failed application acquisition closes its resource and can be retried", () =>
-  withCatalog(({ filename, marker, records }) =>
+test("failed application acquisition closes its resource and can be retried", async () =>
+  await withCatalog(({ filename, marker, records }) =>
     Effect.gen(function* () {
       const catalog = yield* Catalog;
       const broken = application("broken", marker).replace(
         'Effect.acquireRelease(acquire, () => record("release"))',
         'Effect.acquireRelease(acquire, () => record("release")).pipe(Effect.andThen(Effect.fail("synthetic failure")))'
       );
-      yield* Effect.promise(() => writeFile(filename, broken));
+      yield* Effect.promise(async () => await writeFile(filename, broken));
       for (let attempt = 0; attempt < 2; attempt += 1) {
         expect(
           (yield* Effect.result(catalog.prepare().pipe(Effect.scoped)))._tag
@@ -181,15 +183,16 @@ test("failed application acquisition closes its resource and can be retried", ()
 
 test.each(["finish", "interrupt"] as const)(
   "historical vault reads retain the provider through %s",
-  (mode) =>
-    withCatalog(({ filename, marker, change, records }) =>
+  async (mode) =>
+    await withCatalog(({ filename, marker, change, records }) =>
       Effect.gen(function* () {
         const catalog = yield* Catalog;
         const gate = `${marker}.gate`;
-        yield* Effect.promise(() =>
-          writeFile(
-            filename,
-            `
+        yield* Effect.promise(
+          async () =>
+            await writeFile(
+              filename,
+              `
 import { appendFileSync, existsSync } from "node:fs";
 import { Application, Vault } from "@offtree/effectory-sdk";
 import { Effect, Option, Redacted, Schema } from "effect";
@@ -205,7 +208,7 @@ const provider = Vault.layer(credentials, () => Effect.acquireRelease(
 ));
 export default Application.make({ vaults: [credentials] }).provide(provider);
 `
-          )
+            )
         );
         yield* switchTo(catalog);
         const revision = catalog.active;
@@ -223,7 +226,7 @@ export default Application.make({ vaults: [credentials] }).provide(provider);
           "reading:vault",
         ]);
         if (mode === "finish") {
-          yield* Effect.promise(() => writeFile(gate, "continue"));
+          yield* Effect.promise(async () => await writeFile(gate, "continue"));
           expect((yield* Fiber.join(read)).value).toBe("synthetic-token");
         } else {
           yield* Fiber.interrupt(read);

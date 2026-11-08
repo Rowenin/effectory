@@ -3,6 +3,9 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
+const SetupResult = Schema.Struct({ harnesses: Schema.Array(Schema.String) });
 const main = path.resolve(import.meta.dir, "../src/main.ts");
 test("agent CLI selects harnesses, returns status and conflict exit codes, and never starts a daemon", () => {
   const root = mkdtempSync(path.join(tmpdir(), "effectory-agent-cli-"));
@@ -40,10 +43,10 @@ test("agent CLI selects harnesses, returns status and conflict exit codes, and n
       "claude-code"
     );
     expect(setup.exitCode).toBe(0);
-    expect(JSON.parse(setup.stdout.toString()).harnesses).toEqual([
-      "claude-code",
-      "codex",
-    ]);
+    expect(
+      Schema.decodeUnknownSync(SetupResult)(JSON.parse(setup.stdout.toString()))
+        .harnesses
+    ).toEqual(["claude-code", "codex"]);
     expect(cli("agent", "status").exitCode).toBe(0);
     expect(cli("agent", "setup").exitCode).toBe(0);
     const skill = path.join(root, ".agents/skills/effectory-build/SKILL.md");

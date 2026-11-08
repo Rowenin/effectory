@@ -75,7 +75,7 @@ export function createRecoveryStore(
   ) => void,
   project: (runId: string, status: Run["status"]) => void
 ) {
-  db.exec(`
+  db.run(`
     CREATE TABLE IF NOT EXISTS host_recovery_clock (singleton INTEGER PRIMARY KEY CHECK(singleton=1), sequence INTEGER NOT NULL);
     INSERT OR IGNORE INTO host_recovery_clock VALUES (1,0);
     CREATE TABLE IF NOT EXISTS host_attempt_windows (
@@ -340,9 +340,9 @@ export function createRecoveryStore(
   const authorizePrincipal = (runId: string, principal: string) => {
     const run = getRun(runId);
     if (
-      !db
+      db
         .query("SELECT 1 FROM host_runs WHERE runId=? AND principal=?")
-        .get(runId, principal)
+        .get(runId, principal) === null
     ) {
       throw fail("NotFound", "Run was not found");
     }
@@ -442,7 +442,7 @@ export function createRecoveryStore(
     principal: string,
     revisionAvailable: boolean
   ) => {
-    const request = Schema.decodeUnknownSync(RecoveryAssessmentRequest)(value, {
+    const request = Schema.decodeSync(RecoveryAssessmentRequest)(value, {
       onExcessProperty: "error",
     });
     const run = authorizePrincipal(request.runId, principal);
@@ -483,15 +483,16 @@ export function createRecoveryStore(
       const hasLake = db
         .query("SELECT name FROM sqlite_master WHERE name='lake_records'")
         .get();
-      const publications = hasLake
-        ? (db
-            .query<
-              { count: number },
-              [string, string]
-            >(`SELECT COUNT(*) count FROM lake_records
+      const publications =
+        hasLake === null
+          ? 0
+          : (db
+              .query<
+                { count: number },
+                [string, string]
+              >(`SELECT COUNT(*) count FROM lake_records
         WHERE json_extract(metadataJson,'$.runId')=? AND json_extract(metadataJson,'$.invocationPath')=?`)
-            .get(run.runId, row.nodeId)?.count ?? 0)
-        : 0;
+              .get(run.runId, row.nodeId)?.count ?? 0);
       return {
         absoluteDeadline:
           timing?.deadline === null || timing?.deadline === undefined
@@ -596,7 +597,7 @@ export function createRecoveryStore(
     principal: string,
     revisionAvailable: boolean
   ) => {
-    const request = Schema.decodeUnknownSync(RecoveryRequest)(value, {
+    const request = Schema.decodeSync(RecoveryRequest)(value, {
       onExcessProperty: "error",
     });
     const previous = lookup(request, principal);

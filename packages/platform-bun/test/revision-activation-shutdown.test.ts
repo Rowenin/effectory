@@ -12,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect, Exit, Fiber, Layer } from "effect";
+import { Effect, Exit, Fiber, Layer, Schema } from "effect";
 
 import { Catalog } from "../src/catalog.ts";
 import { ownershipLayer, RepositoryLease } from "../src/ownership.ts";
@@ -51,21 +51,28 @@ test.each(["preparing", "published"] as const)(
     const filename = path.join(repository, "effectory.ts");
     const marker = path.join(repository, "resources.txt");
     const owner = path.join(state, "owner");
-    const records = Effect.promise(() => readFile(marker, "utf-8")).pipe(
-      Effect.map((text) => text.trim().split("\n"))
-    );
+    const records = Effect.promise(
+      async () => await readFile(marker, "utf-8")
+    ).pipe(Effect.map((text) => text.trim().split("\n")));
     const until = (entry: string) =>
       Effect.gen(function* () {
         while (!(yield* records).includes(entry)) {
           yield* Effect.sleep("5 millis");
         }
       }).pipe(Effect.timeout("10 seconds"));
-    const active = Effect.promise(async () => {
-      const text = await readFile(path.join(state, "active.json"), "utf-8");
-      return (JSON.parse(text) as { revision: string }).revision;
-    });
-    const release = Effect.promise(() =>
-      writeFile(`${marker}.release`, "continue")
+    const active = Effect.promise(
+      async () => await readFile(path.join(state, "active.json"), "utf-8")
+    ).pipe(
+      Effect.flatMap(
+        Schema.decodeEffect(
+          Schema.fromJsonString(Schema.Struct({ revision: Schema.String }))
+        )
+      ),
+      Effect.map(({ revision }) => revision),
+      Effect.orDie
+    );
+    const release = Effect.promise(
+      async () => await writeFile(`${marker}.release`, "continue")
     );
     const layer = () =>
       revisionCatalogLayer(repository).pipe(
@@ -81,8 +88,12 @@ test.each(["preparing", "published"] as const)(
           const host = yield* Effect.gen(function* () {
             const catalog = yield* Catalog;
             original = catalog.active;
-            yield* Effect.promise(() =>
-              writeFile(filename, application("second", marker, boundary))
+            yield* Effect.promise(
+              async () =>
+                await writeFile(
+                  filename,
+                  application("second", marker, boundary)
+                )
             );
             // Match the administration worker: its scoped child closes before
             // the Layer that supplied its catalog and repository ownership.
@@ -91,7 +102,9 @@ test.each(["preparing", "published"] as const)(
             }).pipe(Effect.scoped, Effect.forkScoped);
             return yield* Effect.never.pipe(
               Effect.onInterrupt(() =>
-                Effect.promise(() => appendFile(marker, "shutdown-start\n"))
+                Effect.promise(
+                  async () => await appendFile(marker, "shutdown-start\n")
+                )
               )
             );
           }).pipe(Effect.scoped, Effect.provide(layer()), Effect.forkScoped);

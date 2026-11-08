@@ -18,11 +18,11 @@ import { Runner } from "../../src/runner.ts";
 import { writeReady } from "./ready.ts";
 
 const [directory, mode, readyFile] = process.argv.slice(2);
-if (!(directory && mode && readyFile)) {
+if (directory === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Expected directory, mode and ready-file arguments");
 }
 const audit = new Database(path.join(directory, "audit.sqlite"));
-audit.exec(
+audit.run(
   "CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, count INTEGER NOT NULL)"
 );
 const Input = Schema.Struct({ name: Schema.String });
@@ -69,11 +69,12 @@ const publish = Task.make(
         { key: "main", tags: { source: "example" } }
       );
       if (mode === "publish-crash") {
-        yield* Effect.promise(() =>
-          writeReady(
-            readyFile,
-            JSON.stringify({ runId: context.runId, status: "Published" })
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeReady(
+              readyFile,
+              JSON.stringify({ runId: context.runId, status: "Published" })
+            )
         );
         return yield* Effect.never;
       }
@@ -144,15 +145,16 @@ try {
         const current = yield* store.getRun(run.runId);
         const [wait] = yield* store.listWaits(run.runId);
         if (current.status === "Waiting" && wait && mode === "start") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                runId: run.runId,
-                status: "Waiting",
-                waitId: wait.waitId,
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  runId: run.runId,
+                  status: "Waiting",
+                  waitId: wait.waitId,
+                })
+              )
           );
           return yield* Effect.never;
         }
@@ -177,16 +179,17 @@ try {
             },
             "owner"
           );
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                artifacts: results.rows,
-                result: current.result,
-                runId: run.runId,
-                status: current.status,
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  artifacts: results.rows,
+                  result: current.result,
+                  runId: run.runId,
+                  status: current.status,
+                })
+              )
           );
           return;
         }

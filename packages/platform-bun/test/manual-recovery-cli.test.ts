@@ -64,7 +64,7 @@ export default Application.make({tasks:[work]});`;
       );
     }
     expect(assessment.state).toBe("Recoverable");
-    if (!assessment.token) {
+    if (assessment.token === null) {
       throw new Error("No token");
     }
     expect(
@@ -92,7 +92,7 @@ export default Application.make({tasks:[work]});`;
     expect(await invalid.exited).toBe(2);
     await writeFile(finish, "yes");
     const previousBinary = process.env.EFFECTORY_RECOVERY_PREVIOUS_BINARY;
-    if (previousBinary) {
+    if (previousBinary !== undefined && previousBinary !== "") {
       second.kill("SIGKILL");
       await second.exited;
       const db = new Database(path.join(repository, ".effectory/state.sqlite"));
@@ -170,7 +170,7 @@ export default Application.make({tasks:[work]});`;
         process.kill("SIGKILL");
       }
     }
-    await Promise.all(processes.map((process) => process.exited));
+    await Promise.all(processes.map(async (process) => await process.exited));
     await rm(repository, { force: true, recursive: true });
   }
 }, 90_000);

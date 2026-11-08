@@ -71,10 +71,14 @@ export default Application.make({ tasks: [Write] });
     await writeFile(source, payload);
     const first = await start(repository);
     children.push(first);
-    const endpoint: { url: string } = JSON.parse(
-      await readFile(path.join(repository, ".effectory/daemon.json"), "utf-8")
-    );
-    const credentials: { repositoryId: string; token: string } = JSON.parse(
+    const endpoint = Schema.decodeSync(
+      Schema.fromJsonString(Schema.Struct({ url: Schema.String }))
+    )(await readFile(path.join(repository, ".effectory/daemon.json"), "utf-8"));
+    const credentials = Schema.decodeSync(
+      Schema.fromJsonString(
+        Schema.Struct({ repositoryId: Schema.String, token: Schema.String })
+      )
+    )(
       await readFile(
         path.join(repository, ".effectory/credentials.json"),
         "utf-8"

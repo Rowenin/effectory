@@ -10,6 +10,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { seedFormat2, finishLegacySeed } from "./format2-seed.mjs";
 import { harness } from "./process.mjs";
 
@@ -19,8 +21,53 @@ let binary = oldBinary;
 const root = mkdtempSync("/tmp/effectory-breaking-upgrade-");
 console.log({ root });
 const repository = path.join(root, "source");
+/** @type {Bun.Subprocess[]} */
 const processes = [];
 const h = harness(root);
+
+/** Only the fields this proof reads; other CLI output is kept untouched. */
+const RunReceipt = Schema.Struct({
+  revision: Schema.String,
+  runId: Schema.String,
+});
+const Page = Schema.Struct({ items: Schema.Array(Schema.Unknown) });
+const OpenWait = Schema.Struct({ waitId: Schema.String });
+const Revision = Schema.Struct({
+  disposition: Schema.optionalKey(Schema.Unknown),
+});
+const BlockedPlan = Schema.Struct({
+  plan: Schema.Struct({
+    blockers: Schema.Array(Schema.Unknown),
+    planId: Schema.String,
+    recoveryCopy: Schema.optionalKey(Schema.String),
+    revisions: Schema.Array(Schema.Unknown),
+    source: Schema.Struct({ storage: Schema.optionalKey(Schema.Unknown) }),
+    status: Schema.optionalKey(Schema.Unknown),
+  }),
+});
+const ReadyPlan = Schema.Struct({
+  plan: Schema.Struct({
+    planId: Schema.String,
+    revisions: Schema.Array(Schema.Unknown),
+    source: Schema.Struct({
+      build: Schema.optionalKey(Schema.Unknown),
+      storage: Schema.optionalKey(Schema.Unknown),
+    }),
+    status: Schema.optionalKey(Schema.Unknown),
+    target: Schema.Struct({ build: Schema.optionalKey(Schema.Unknown) }),
+  }),
+});
+const UpgradeReceipt = Schema.Struct({
+  phase: Schema.optionalKey(Schema.Unknown),
+});
+const RunState = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+  revision: Schema.optionalKey(Schema.Unknown),
+  status: Schema.optionalKey(Schema.Unknown),
+});
+const RunSummary = Schema.Struct({
+  data: Schema.Struct({ status: Schema.optionalKey(Schema.Unknown) }),
+});
 const app = `
 import { appendFileSync, existsSync } from 'node:fs';
 if(existsSync('forbid-legacy')) throw new Error('ARCHIVED-CODE-IMPORTED');
@@ -31,6 +78,12 @@ const after=Task.make({id:'after',version:1,input:Schema.String,success:Schema.S
 const workflow=Workflow.make({id:'recovery-proof',version:1,input:Schema.Null,success:Schema.String,error:Schema.Never},Effect.gen(function*(){const graph=yield* Workflow.Builder;const value=yield* graph.task('once',once,null);const approval=yield* graph.approval('review',{after:[value],prompt:'Continue restored run?',timeout:'1 hour'});return yield* graph.task('after',after,value,{after:[approval]});}));
 export default Application.make({tasks:[once,after],workflows:[workflow]});
 `;
+/**
+ * Runs the current `binary` against `repo` and parses its JSON output.
+ * @param {string} repo Repository to operate on.
+ * @param {string[]} args CLI arguments before `--repository`.
+ * @returns {Promise<unknown>} Parsed output, or `null` when empty.
+ */
 async function cli(repo, args) {
   const child = Bun.spawn([binary, ...args, "--repository", repo, "--json"], {
     cwd: repo,
@@ -45,13 +98,19 @@ async function cli(repo, args) {
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
-    assert.equal(child.signalCode, null, `${args}: ${err}`);
-    assert.equal(code, 0, `${args}: ${err}`);
-    return out.trim() ? JSON.parse(out) : null;
+    assert.equal(child.signalCode, null, `${args.join(",")}: ${err}`);
+    assert.equal(code, 0, `${args.join(",")}: ${err}`);
+    /** @type {unknown} */
+    const output = out.trim() ? JSON.parse(out) : null;
+    return output;
   } finally {
     clearTimeout(timer);
   }
 }
+/**
+ * Starts the current `binary`'s daemon for `repo` and waits for readiness.
+ * @param {string} repo Repository to serve.
+ */
 async function start(repo) {
   const child = Bun.spawn([binary, "daemon", "serve", "--repository", repo], {
     cwd: repo,
@@ -67,12 +126,20 @@ async function start(repo) {
   }
   return child;
 }
+/**
+ * Polls until run `id` has an open wait.
+ * @param {string} repo Repository to query.
+ * @param {string} id Run identifier.
+ */
 async function waitOpen(repo, id) {
   const deadline = Date.now() + 20_000;
   for (;;) {
     const page = await cli(repo, ["run", "waits", id, "--status", "Open"]);
+    Schema.asserts(Page, page);
     if (page.items.length > 0) {
-      return page.items[0];
+      const [wait] = page.items;
+      Schema.asserts(OpenWait, wait);
+      return wait;
     }
     assert.ok(Date.now() < deadline, "approval missing");
     await Bun.sleep(100);
@@ -93,6 +160,7 @@ try {
     "original-host-copy",
     "--background",
   ]);
+  Schema.asserts(RunReceipt, run);
   const approval = await waitOpen(repository, run.runId);
   const outputsBefore = await cli(repository, ["run", "outputs", run.runId]);
   assert.equal(
@@ -103,11 +171,15 @@ try {
   await cli(repository, ["daemon", "stop"]);
   await daemon.exited;
   binary = target;
-  const { plan } = await cli(repository, ["upgrade", "plan"]);
+  const blocked = await cli(repository, ["upgrade", "plan"]);
+  Schema.asserts(BlockedPlan, blocked);
+  const { plan } = blocked;
   assert.equal(plan.status, "Blocked");
   assert.equal(plan.source.storage, legacySeed?.plan.target.storage ?? 1);
   assert.ok(plan.blockers.length > 0);
-  assert.equal(plan.revisions[0].disposition, "Archived");
+  const [blockedRevision] = plan.revisions;
+  Schema.asserts(Revision, blockedRevision);
+  assert.equal(blockedRevision.disposition, "Archived");
   const refused = Bun.spawn(
     [
       target,
@@ -144,6 +216,7 @@ try {
     "settle-before-breaking",
   ]);
   const finished = await cli(repository, ["run", "watch", run.runId]);
+  Schema.asserts(RunState, finished);
   assert.equal(finished.status, "Succeeded");
   const finalOutputs = await cli(repository, ["run", "outputs", run.runId]);
   await cli(repository, ["daemon", "stop"]);
@@ -157,10 +230,15 @@ try {
     )
   );
   binary = target;
-  const { plan: ready } = await cli(repository, ["upgrade", "plan"]);
+  const readyPlan = await cli(repository, ["upgrade", "plan"]);
+  Schema.asserts(ReadyPlan, readyPlan);
+  const { plan: ready } = readyPlan;
   assert.equal(ready.status, "Ready");
-  assert.equal(ready.revisions[0].disposition, "Archived");
+  const [readyRevision] = ready.revisions;
+  Schema.asserts(Revision, readyRevision);
+  assert.equal(readyRevision.disposition, "Archived");
   const receipt = await cli(repository, ["upgrade", "apply", ready.planId]);
+  Schema.asserts(UpgradeReceipt, receipt);
   assert.equal(receipt.phase, "Complete");
   const upgraded = await start(repository);
   assert.deepEqual(
@@ -169,6 +247,7 @@ try {
   );
   assert.deepEqual(await cli(repository, ["run", "get", run.runId]), finished);
   const summary = await cli(repository, ["run", "summary", run.runId]);
+  Schema.asserts(RunSummary, summary);
   assert.equal(summary.data.status, "Succeeded");
   const description = Bun.spawn(
     [
@@ -202,6 +281,7 @@ try {
     "--input",
     '"new"',
   ]);
+  Schema.asserts(RunState, fresh);
   assert.equal(fresh.result, "new-continued");
   assert.notEqual(fresh.revision, run.revision);
   await cli(repository, ["daemon", "stop"]);

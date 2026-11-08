@@ -57,7 +57,7 @@ test("normal startup and every affected offline entry point refuse an unfinished
   const filename = path.join(state, "state.sqlite");
   mkdirSync(path.join(state, "upgrades"), { recursive: true });
   const database = new Database(filename);
-  database.exec(
+  database.run(
     "CREATE TABLE evidence(value TEXT); INSERT INTO evidence VALUES('preserve')"
   );
   database.close();
@@ -140,10 +140,9 @@ test("normal startup and every affected offline entry point refuse an unfinished
     expect(existsSync(path.join(root, "snapshot"))).toBe(false);
     expect(existsSync(path.join(root, "exported-key.json"))).toBe(false);
     expect(existsSync(path.join(state, "vaults.sqlite"))).toBe(false);
-    const recovered = await Effect.runPromise(
+    const recovered = await Effect.runPromiseExit(
       recoverExtensionOperations(repository).pipe(
-        Effect.provide(ownershipLayer(`${filename}.owner`)),
-        Effect.exit
+        Effect.provide(ownershipLayer(`${filename}.owner`))
       )
     );
     expect(Exit.isFailure(recovered)).toBe(true);

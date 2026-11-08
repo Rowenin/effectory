@@ -130,12 +130,12 @@ async function manualRecovery(mode: "manual-start" | "manual-drain") {
 
 test(
   "an uncertain manual activity suspends after process death",
-  () => manualRecovery("manual-start"),
+  async () => await manualRecovery("manual-start"),
   25_000
 );
 test(
   "an uncertain manual activity suspends after graceful engine shutdown",
-  () => manualRecovery("manual-drain"),
+  async () => await manualRecovery("manual-drain"),
   25_000
 );
 
@@ -206,12 +206,12 @@ async function recoverTimer(mode: "finish" | "cancel") {
 
 test(
   "a short durable timer survives a deadline elapsed while offline",
-  () => recoverTimer("finish"),
+  async () => await recoverTimer("finish"),
   25_000
 );
 test(
   "cancellation settles a suspended engine execution",
-  () => recoverTimer("cancel"),
+  async () => await recoverTimer("cancel"),
   25_000
 );
 

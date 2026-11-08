@@ -21,15 +21,15 @@ export function initializeRetention(database: Database) {
       ["reclamationPlanId", "TEXT"],
     ] as const) {
       if (!names.has(name)) {
-        database.exec(`ALTER TABLE lake_records ADD COLUMN ${name} ${type}`);
+        database.run(`ALTER TABLE lake_records ADD COLUMN ${name} ${type}`);
       }
     }
     if (!names.has("committedAtMillis")) {
-      database.exec(
+      database.run(
         "UPDATE lake_records SET committedAtMillis = ROUND((julianday(json_extract(metadataJson, '$.committedAt')) - 2440587.5) * 86400000)"
       );
     }
-    database.exec(`
+    database.run(`
       CREATE INDEX IF NOT EXISTS lake_principal_sequence ON lake_records(principal, sequence);
       CREATE INDEX IF NOT EXISTS lake_retained_schema ON lake_records(principal, schemaId, sequence) WHERE reclaimedAt IS NULL;
       CREATE INDEX IF NOT EXISTS lake_retained_principal ON lake_records(principal, sequence) WHERE reclaimedAt IS NULL;
@@ -50,14 +50,16 @@ export function initializeRetention(database: Database) {
       CREATE UNIQUE INDEX IF NOT EXISTS lake_unlink_pending ON lake_reclamation_unlinks(digest) WHERE state = 'Pending';
     `);
     const unlinkColumns = database
-      .query("PRAGMA table_info(lake_reclamation_unlinks)")
-      .all() as { name: string }[];
+      .query<{ name: string }, []>(
+        "PRAGMA table_info(lake_reclamation_unlinks)"
+      )
+      .all();
     if (!unlinkColumns.some((column) => column.name === "failedAt")) {
-      database.exec(
+      database.run(
         "ALTER TABLE lake_reclamation_unlinks ADD COLUMN failedAt REAL"
       );
     }
-    database.exec(`
+    database.run(`
       CREATE INDEX IF NOT EXISTS lake_unlink_queue ON lake_reclamation_unlinks(id) WHERE state='Pending';
       CREATE INDEX IF NOT EXISTS lake_unlink_errors ON lake_reclamation_unlinks(failedAt DESC,id DESC) WHERE state='Pending' AND lastError IS NOT NULL;
     `);
@@ -71,9 +73,9 @@ export function reclamationEpoch(
   const row = database
     .query("SELECT epoch FROM lake_reclamation_epochs WHERE principal = ?")
     .get(principal);
-  return row
-    ? Schema.decodeUnknownSync(Schema.Struct({ epoch: Schema.Int }))(row).epoch
-    : 0;
+  return row === null
+    ? 0
+    : Schema.decodeUnknownSync(Schema.Struct({ epoch: Schema.Int }))(row).epoch;
 }
 
 export function cursorSnapshot(

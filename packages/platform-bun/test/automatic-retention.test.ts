@@ -17,6 +17,12 @@ import { automaticState } from "../src/lake-automatic-store.ts";
 import { resumeReclamation } from "../src/lake-reclamation.ts";
 import { createLake, Lake } from "../src/lake.ts";
 
+const decodeCheckpoint = Schema.decodeSync(
+  Schema.fromJsonString(
+    Schema.Struct({ rank: Schema.Int, restarts: Schema.Int })
+  )
+);
+
 const artifact = (retention?: {
   maxVersions?: number;
   maxAge?: Duration.Input;
@@ -94,8 +100,8 @@ async function withLake<A, E>(
   }
 }
 
-test("default off, idempotent settings, generation fence, automatic receipts and idle metadata bounds", () =>
-  withLake((f) =>
+test("default off, idempotent settings, generation fence, automatic receipts and idle metadata bounds", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const one = yield* f.publish();
       yield* f.publish(undefined, 2);
@@ -138,8 +144,8 @@ test("default off, idempotent settings, generation fence, automatic receipts and
     })
   ));
 
-test("age OR count, captured policy and newest protection match manual eligibility across nonmonotonic times", () =>
-  withLake((f) =>
+test("age OR count, captured policy and newest protection match manual eligibility across nonmonotonic times", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.now());
       const def = artifact({ maxAge: "30 days", maxVersions: 3 });
@@ -185,8 +191,8 @@ test("age OR count, captured policy and newest protection match manual eligibili
     }).pipe(Effect.provide(TestClock.layer()))
   ));
 
-test("first-access holds survive Waiting and missing consumers; release is reconsidered by the next sweep", () =>
-  withLake((f) =>
+test("first-access holds survive Waiting and missing consumers; release is reconsidered by the next sweep", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       yield* TestClock.setTime(Date.now());
       const { ref } = yield* f.publish();
@@ -195,7 +201,7 @@ test("first-access holds survive Waiting and missing consumers; release is recon
       const binding = f.lake.reader(consumer, () => true);
       yield* binding.reader.metadata(
         artifact(),
-        Schema.decodeUnknownSync(artifact().refSchema)(ref)
+        yield* Schema.decodeUnknownEffect(artifact().refSchema)(ref)
       );
       yield* f.store.project(consumer.runId, "Waiting");
       yield* f.lake.automaticSet({ enabled: true });
@@ -224,13 +230,13 @@ test("first-access holds survive Waiting and missing consumers; release is recon
     }).pipe(Effect.provide(TestClock.layer()))
   ));
 
-test("cleanup errors survive unrelated successful batches, disabled cleanup retries, and shared content is rechecked", () =>
-  withLake((f) =>
+test("cleanup errors survive unrelated successful batches, disabled cleanup retries, and shared content is rechecked", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const first = yield* f.publish();
       yield* f.publish(undefined, 2);
       yield* f.lake.automaticSet({ enabled: true });
-      f.db.exec(
+      f.db.run(
         "CREATE TRIGGER cleanup_fault BEFORE UPDATE OF started ON lake_reclamation_unlinks BEGIN SELECT RAISE(ABORT,'fault'); END"
       );
       yield* f.lake.automaticMaintenance;
@@ -241,7 +247,7 @@ test("cleanup errors survive unrelated successful batches, disabled cleanup retr
       yield* f.lake.automaticSet({ enabled: false });
       // Publishing the same bytes now makes the pending old digest shared.
       yield* f.publish(undefined, 1, "new-identity");
-      f.db.exec("DROP TRIGGER cleanup_fault");
+      f.db.run("DROP TRIGGER cleanup_fault");
       for (let i = 0; i < 3; i += 1) {
         yield* f.lake.automaticMaintenance;
       }
@@ -256,13 +262,13 @@ test("cleanup errors survive unrelated successful batches, disabled cleanup retr
     })
   ));
 
-test("automatic transaction rolls back checkpoint, tombstones, intents and receipt on failure", () =>
-  withLake((f) =>
+test("automatic transaction rolls back checkpoint, tombstones, intents and receipt on failure", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const { ref } = yield* f.publish();
       yield* f.publish(undefined, 2);
       yield* f.lake.automaticSet({ enabled: true });
-      f.db.exec(
+      f.db.run(
         "CREATE TRIGGER metadata_fault BEFORE INSERT ON lake_reclamation_epochs BEGIN SELECT RAISE(ABORT,'fault'); END"
       );
       yield* f.lake.automaticMaintenance;
@@ -272,7 +278,7 @@ test("automatic transaction rolls back checkpoint, tombstones, intents and recei
         f.db.query("SELECT COUNT(*) AS n FROM lake_reclamation_plans").get()
       ).toEqual({ n: 0 });
       expect((yield* f.lake.get(ref.artifactId, 1)).value).toBe(1);
-      f.db.exec("DROP TRIGGER metadata_fault");
+      f.db.run("DROP TRIGGER metadata_fault");
       yield* f.sweep();
       expect((yield* f.lake.automaticStatus).lastError).toBeNull();
       expect(
@@ -281,13 +287,18 @@ test("automatic transaction rolls back checkpoint, tombstones, intents and recei
     })
   ));
 
-test("bounded rank checkpoints restart after mutation and defer a hot identity without starving another", () =>
-  withLake((f) =>
+test("bounded rank checkpoints restart after mutation and defer a hot identity without starving another", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const head = yield* f.publish(artifact({ maxVersions: 1000 }));
       const template = f.db
-        .query("SELECT * FROM lake_records LIMIT 1")
-        .get() as Record<string, string | number>;
+        .query<{ metadataJson: string; retentionJson: string }, []>(
+          "SELECT * FROM lake_records LIMIT 1"
+        )
+        .get();
+      if (template === null) {
+        return yield* Effect.die("Missing template record");
+      }
       f.db.transaction(() => {
         for (let v = 2; v <= 500; v += 1) {
           f.db
@@ -298,8 +309,8 @@ test("bounded rank checkpoints restart after mutation and defer a hot identity w
               head.ref.artifactId,
               v,
               `seed-${v}`,
-              template.metadataJson!,
-              template.retentionJson!
+              template.metadataJson,
+              template.retentionJson
             );
         }
       })();
@@ -307,10 +318,12 @@ test("bounded rank checkpoints restart after mutation and defer a hot identity w
       yield* f.publish(undefined, 4, "other");
       yield* f.lake.automaticSet({ enabled: true });
       yield* f.lake.automaticStep();
-      expect(JSON.parse(automaticState(f.db).checkpoint!).rank).toBe(128);
+      expect(decodeCheckpoint(automaticState(f.db).checkpoint!).rank).toBe(128);
       yield* f.publish(artifact({ maxVersions: 1000 }), 501);
       yield* f.lake.automaticStep();
-      expect(JSON.parse(automaticState(f.db).checkpoint!).restarts).toBe(1);
+      expect(decodeCheckpoint(automaticState(f.db).checkpoint!).restarts).toBe(
+        1
+      );
       yield* f.publish(artifact({ maxVersions: 1000 }), 502);
       yield* f.sweep();
       expect(
@@ -321,8 +334,8 @@ test("bounded rank checkpoints restart after mutation and defer a hot identity w
   ));
 
 for (const invocation of [false, true]) {
-  test(`automatic collection waits for report obligations (child workflow: ${invocation})`, () =>
-    withLake((f) =>
+  test(`automatic collection waits for report obligations (child workflow: ${invocation})`, async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.now());
         const run = yield* f.store.submit(
@@ -414,8 +427,8 @@ for (const invocation of [false, true]) {
 
 test(
   "200,000 real lake versions traverse a protected prefix with bounded keyset batches and persisted rank",
-  () =>
-    withLake((f) =>
+  async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         const { ref } = yield* f.publish(artifact({ maxVersions: 3 }));
         const held = yield* f.admit("held-producer");
@@ -431,7 +444,7 @@ test(
         yield* f.lake.automaticSet({ enabled: true });
         yield* f.lake.automaticStep();
         const saved = automaticState(f.db).checkpoint;
-        expect(JSON.parse(saved!).rank).toBe(128);
+        expect(decodeCheckpoint(saved!).rank).toBe(128);
         const reopened = new Database(f.filename);
         try {
           const next = createLake(reopened, f.blobs, f.lease);
@@ -493,27 +506,27 @@ test(
 
 test(
   "SQLite contention retries without keeping a read transaction; scope closure stops the real maintenance loop",
-  () =>
-    withLake((f) =>
+  async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         const { ref } = yield* f.publish();
         yield* f.publish(undefined, 2);
         yield* f.lake.automaticSet({ enabled: true });
         const competitor = new Database(f.filename);
         try {
-          competitor.exec("BEGIN IMMEDIATE");
+          competitor.run("BEGIN IMMEDIATE");
           const release = yield* Effect.forkChild(
             Effect.sleep("60 millis").pipe(
-              Effect.andThen(Effect.sync(() => competitor.exec("COMMIT")))
+              Effect.andThen(Effect.sync(() => competitor.run("COMMIT")))
             )
           );
           expect(yield* f.lake.automaticStep()).toBe(true);
           yield* Fiber.join(release);
-          competitor.exec("BEGIN IMMEDIATE");
+          competitor.run("BEGIN IMMEDIATE");
           const error = yield* f.lake.automaticStep().pipe(Effect.flip);
           expect(error.code).toBe("Unavailable");
           expect(f.db.inTransaction).toBe(false);
-          competitor.exec("ROLLBACK");
+          competitor.run("ROLLBACK");
           let accesses = 0;
           f.lease.assertActive = () => {
             accesses += 1;
@@ -532,7 +545,7 @@ test(
           expect(existsSync(path.join(f.blobs, ref.digest))).toBe(false);
         } finally {
           if (competitor.inTransaction) {
-            competitor.exec("ROLLBACK");
+            competitor.run("ROLLBACK");
           }
           competitor.close();
         }
@@ -543,8 +556,8 @@ test(
 
 test(
   "all 1024 externally pinned versions survive automation until their consumer completes",
-  () =>
-    withLake((f) =>
+  async () =>
+    await withLake((f) =>
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.now());
         const producer = yield* f.admit();
@@ -553,7 +566,7 @@ test(
         const binding = f.lake.reader(consumer, () => true);
         const def = artifact({ maxVersions: 1 });
         for (let i = 0; i < 1024; i += 1) {
-          const ref = Schema.decodeUnknownSync(def.refSchema)(
+          const ref = yield* Schema.decodeUnknownEffect(def.refSchema)(
             yield* f.lake.publish(producer, "output", def, 1, {
               key: `pin-${i}`,
             })
@@ -591,15 +604,20 @@ test(
   30_000
 );
 
-test("huge count policy does not rank with OFFSET; manual deletion resets a partial rank and keeps the newest survivor", () =>
-  withLake((f) =>
+test("huge count policy does not rank with OFFSET; manual deletion resets a partial rank and keeps the newest survivor", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       const { ref } = yield* f.publish(
         artifact({ maxVersions: Number.MAX_SAFE_INTEGER })
       );
       const template = f.db
-        .query("SELECT metadataJson FROM lake_records LIMIT 1")
-        .get() as { metadataJson: string };
+        .query<{ metadataJson: string }, []>(
+          "SELECT metadataJson FROM lake_records LIMIT 1"
+        )
+        .get();
+      if (template === null) {
+        return yield* Effect.die("Missing template record");
+      }
       f.db
         .query(`WITH RECURSIVE n(v) AS (SELECT 2 UNION ALL SELECT v+1 FROM n WHERE v<260)
     INSERT INTO lake_records(principal,artifactId,version,schemaId,schemaVersion,publicationKey,fingerprint,metadataJson,fieldsJson,retentionJson,committedAtMillis)
@@ -618,7 +636,9 @@ test("huge count policy does not rank with OFFSET; manual deletion resets a part
       });
       yield* f.lake.applyReclamation({ planId: plan.planId });
       yield* f.lake.automaticStep();
-      expect(JSON.parse(automaticState(f.db).checkpoint!).restarts).toBe(1);
+      expect(decodeCheckpoint(automaticState(f.db).checkpoint!).restarts).toBe(
+        1
+      );
       yield* f.sweep();
       expect((yield* f.lake.automaticStatus).lastBatch).toBeNull();
       expect(
@@ -631,13 +651,13 @@ test("huge count policy does not rank with OFFSET; manual deletion resets a part
     })
   ));
 
-test("maintenance errors remain visible when storage cannot persist its own diagnostic", () =>
-  withLake((f) =>
+test("maintenance errors remain visible when storage cannot persist its own diagnostic", async () =>
+  await withLake((f) =>
     Effect.gen(function* () {
       yield* f.publish();
       yield* f.publish(undefined, 2);
       yield* f.lake.automaticSet({ enabled: true });
-      f.db.exec(
+      f.db.run(
         "CREATE TRIGGER break_scan BEFORE INSERT ON lake_reclamation_epochs BEGIN SELECT RAISE(ABORT,'scan'); END; CREATE TRIGGER break_diagnostic BEFORE UPDATE OF scanError ON lake_automatic_state WHEN NEW.scanError IS NOT NULL BEGIN SELECT RAISE(ABORT,'diagnostic'); END;"
       );
       yield* f.lake.automaticMaintenance;
@@ -648,7 +668,7 @@ test("maintenance errors remain visible when storage cannot persist its own diag
       yield* f.lake.automaticSet({ enabled: false });
       yield* f.lake.automaticMaintenance;
       expect((yield* f.lake.automaticStatus).lastError).not.toBeNull();
-      f.db.exec("DROP TRIGGER break_scan; DROP TRIGGER break_diagnostic");
+      f.db.run("DROP TRIGGER break_scan; DROP TRIGGER break_diagnostic");
       yield* f.lake.automaticSet({ enabled: true });
       yield* f.sweep();
       expect((yield* f.lake.automaticStatus).lastError).toBeNull();
@@ -662,8 +682,8 @@ for (const phase of [
 ] as const) {
   test(
     `real collector SIGKILL recovery at ${phase} preserves one deletion receipt`,
-    () =>
-      withLake((f) =>
+    async () =>
+      await withLake((f) =>
         Effect.gen(function* () {
           const { ref } = yield* f.publish();
           yield* f.publish(undefined, 2);
@@ -677,10 +697,11 @@ for (const phase of [
             lake: new URL("../src/lake.ts", import.meta.url).href,
             store: new URL("../src/host-store.ts", import.meta.url).href,
           };
-          yield* Effect.promise(() =>
-            writeFile(
-              file,
-              `
+          yield* Effect.promise(
+            async () =>
+              await writeFile(
+                file,
+                `
       import {Database} from "bun:sqlite";
       import {Effect} from ${JSON.stringify(imports.effect)};
       import {createStore} from ${JSON.stringify(imports.store)};
@@ -702,15 +723,15 @@ for (const phase of [
       await Effect.runPromise(lake.${phase === "after-unlink" ? "automaticMaintenance" : "automaticStep()"});
       process.kill(process.pid,"SIGKILL");
     `
-            )
+              )
           );
           const child = Bun.spawn([process.execPath, file], {
             stderr: "pipe",
             stdout: "ignore",
           });
-          const code = yield* Effect.promise(() => child.exited);
-          const error = yield* Effect.promise(() =>
-            new Response(child.stderr).text()
+          const code = yield* Effect.promise(async () => await child.exited);
+          const error = yield* Effect.promise(
+            async () => await new Response(child.stderr).text()
           );
           expect(error).toBe("");
           expect(code).not.toBe(0);

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { WatchPlane } from "@effectory/runtime/watch-rpc";
-import { Effect, Layer } from "effect";
+import { Effect, Exit, Layer, Scope } from "effect";
 import { HttpEffect } from "effect/http";
 import { RpcSerialization, RpcServer } from "effect/rpc";
 
@@ -65,16 +65,16 @@ test("legacy JSON and framed routes share sixteen observers; stalled readers sur
                   if (new URL(request.url).pathname === "/watch") {
                     const bounded = await watchRequest(request);
                     bunServer.timeout(request, 0);
-                    return framed(bounded);
+                    return await framed(bounded);
                   }
-                  return legacy(request);
+                  return await legacy(request);
                 },
                 hostname: "127.0.0.1",
                 idleTimeout: 1,
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           const body = JSON.stringify({
             _tag: "Request",
@@ -83,19 +83,21 @@ test("legacy JSON and framed routes share sixteen observers; stalled readers sur
             payload: { runId: run.runId },
             tag: "RunWatch",
           });
-          const controllers: AbortController[] = [];
+          // Child scope owns the client signals; closing it aborts every request.
+          const connections = yield* Scope.fork(yield* Effect.scope);
           const pending: Promise<unknown>[] = [];
           const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
           for (let index = 0; index < 8; index += 1) {
-            const controller = new AbortController();
-            controllers.push(controller);
+            const signal = yield* Effect.abortSignal.pipe(
+              Scope.provide(connections)
+            );
             pending.push(
               fetch(`http://127.0.0.1:${server.port}/legacy`, {
                 body,
                 method: "POST",
-                signal: controller.signal,
+                signal,
               })
-                .then((response) => response.text())
+                .then(async (response) => await response.text())
                 .catch(() => {})
             );
             yield* Effect.repeat(Effect.sleep("5 millis"), {
@@ -103,29 +105,32 @@ test("legacy JSON and framed routes share sixteen observers; stalled readers sur
             }).pipe(Effect.timeout("2 seconds"));
           }
           for (let index = 0; index < 8; index += 1) {
-            const controller = new AbortController();
-            controllers.push(controller);
-            const response = yield* Effect.promise(() =>
-              fetch(`http://127.0.0.1:${server.port}/watch`, {
-                body: `${body}\n`,
-                method: "POST",
-                signal: controller.signal,
-              })
+            const signal = yield* Effect.abortSignal.pipe(
+              Scope.provide(connections)
+            );
+            const response = yield* Effect.promise(
+              async () =>
+                await fetch(`http://127.0.0.1:${server.port}/watch`, {
+                  body: `${body}\n`,
+                  method: "POST",
+                  signal,
+                })
             );
             if (!response.body) {
               throw new Error("Missing body");
             }
             const reader = response.body.getReader();
             readers.push(reader);
-            yield* Effect.promise(() => reader.read());
+            yield* Effect.promise(async () => await reader.read());
           }
           expect(watcher.active).toBe(16);
           for (const route of ["watch", "legacy"]) {
-            const response = yield* Effect.promise(() =>
-              fetch(`http://127.0.0.1:${server.port}/${route}`, {
-                body: route === "watch" ? `${body}\n` : body,
-                method: "POST",
-              }).then((value) => value.text())
+            const response = yield* Effect.promise(
+              async () =>
+                await fetch(`http://127.0.0.1:${server.port}/${route}`, {
+                  body: route === "watch" ? `${body}\n` : body,
+                  method: "POST",
+                }).then(async (value) => await value.text())
             );
             expect(response).toContain(
               "Repository observer limit reached (16)"
@@ -133,19 +138,20 @@ test("legacy JSON and framed routes share sixteen observers; stalled readers sur
           }
           yield* Effect.sleep("11 seconds");
           for (const reader of readers) {
-            const next = yield* Effect.promise(() => reader.read());
+            const next = yield* Effect.promise(async () => await reader.read());
             expect(next.done).toBe(false);
           }
           expect(watcher.active).toBe(16);
-          for (const controller of controllers) {
-            controller.abort();
-          }
-          yield* Effect.promise(() =>
-            Promise.all(
-              readers.map((reader) => reader.cancel().catch(() => {}))
-            )
+          yield* Scope.close(connections, Exit.void);
+          yield* Effect.promise(
+            async () =>
+              await Promise.all(
+                readers.map(
+                  async (reader) => await reader.cancel().catch(() => {})
+                )
+              )
           );
-          yield* Effect.promise(() => Promise.all(pending));
+          yield* Effect.promise(async () => await Promise.all(pending));
           yield* Effect.repeat(Effect.sleep("5 millis"), {
             until: () => watcher.active <= 8,
           }).pipe(Effect.timeout("2 seconds"));

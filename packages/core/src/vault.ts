@@ -22,7 +22,7 @@ export {
   VaultUnavailable,
 } from "./vault-errors.ts";
 export type { ReadError } from "./vault-errors.ts";
-export type SecretCodec = Schema.Codec<unknown, string, never, never>;
+export type SecretCodec = Schema.Codec<unknown, string>;
 export type Secrets = Readonly<Record<string, SecretCodec>>;
 export interface Registrable {
   readonly kind: "Vault";
@@ -70,7 +70,11 @@ export function make<const Id extends string, const S extends Secrets>(spec: {
   readonly description?: string;
 }): Definition<Id, S> {
   identifier(spec.id);
-  if (!spec.secrets || Object.keys(spec.secrets).length > 256) {
+  if (
+    spec.secrets === null ||
+    spec.secrets === undefined ||
+    Object.keys(spec.secrets).length > 256
+  ) {
     throw new DefinitionError({
       message: "Vault must declare at most 256 keys",
     });
@@ -89,12 +93,11 @@ export function make<const Id extends string, const S extends Secrets>(spec: {
     `@offtree/effectory-sdk/Vault/${spec.id}/${crypto.randomUUID()}`
   );
   const secrets = Object.freeze({ ...spec.secrets });
-  const checked = Effect.flatMap(service, (handle) =>
-    Object.is(handles.get(handle)?.definition, service)
-      ? Effect.succeed(handle)
-      : Effect.fail(
-          new VaultFailure({ reason: "InvalidDefinition", vault: spec.id })
-        )
+  const checked = service.pipe(
+    Effect.filterOrFail(
+      (handle) => Object.is(handles.get(handle)?.definition, service),
+      () => new VaultFailure({ reason: "InvalidDefinition", vault: spec.id })
+    )
   );
   const self = Object.assign(service, {
     get: <K extends keyof S & string>(key: K) =>
@@ -128,7 +131,7 @@ export interface Backend {
   readonly read: (
     key: string
   ) => Effect.Effect<
-    Option.Option<Redacted.Redacted<string>>,
+    Option.Option<Redacted.Redacted>,
     VaultUnavailable | VaultFailure
   >;
   readonly inspect?: (
@@ -167,7 +170,8 @@ export function layer<Id extends string, S extends Secrets, E, R>(
         })
       );
       if (
-        !backend ||
+        backend === null ||
+        backend === undefined ||
         typeof backend.read !== "function" ||
         typeof backend.providerId !== "string" ||
         (backend.providerId.startsWith("effectory/") &&
@@ -253,11 +257,10 @@ export function layer<Id extends string, S extends Secrets, E, R>(
         [HandleTypeId]: { id: definition.id, secrets: definition.secrets },
         get: <K extends keyof S & string>(key: K) =>
           Effect.flatMap(read(key), (value) =>
-            Option.isSome(value)
-              ? Effect.succeed(value.value)
-              : Effect.fail(
-                  new VaultSecretNotFound({ key, vault: definition.id })
-                )
+            Effect.fromOption(
+              value,
+              () => new VaultSecretNotFound({ key, vault: definition.id })
+            )
           ),
         getOption: read,
       });

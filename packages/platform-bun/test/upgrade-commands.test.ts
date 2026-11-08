@@ -13,13 +13,23 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
+import { effectVersion } from "../src/host-modules.generated.ts";
 import { createStore } from "../src/host-store.ts";
 import { ownershipLayer } from "../src/ownership.ts";
 import { runtimeUpgrade } from "../src/upgrade-commands.ts";
 import { fingerprintUpgradeRepository } from "../src/upgrade-fingerprint.ts";
+import { UpgradePlan } from "../src/upgrade-record.ts";
 
+const PlannedOutput = Schema.fromJsonString(
+  Schema.Struct({ digest: Schema.String, plan: UpgradePlan })
+);
+const PackageJson = Schema.fromJsonString(
+  Schema.Struct({
+    devDependencies: Schema.Struct({ effect: Schema.String }),
+  })
+);
 const hash = (value: string | Buffer) =>
   createHash("sha256").update(value).digest("hex");
 const main = path.resolve(import.meta.dir, "../../cli/src/main.ts");
@@ -127,12 +137,12 @@ test("offline CLI plans and inspects without application loading or runtime muta
     expect(planned.code).toBe(0);
     expect(planned.stderr).toBe("");
     expect(planned.stdout).not.toContain("CANARY-UPGRADE-CREDENTIAL");
-    const { plan, digest } = JSON.parse(planned.stdout);
+    const { plan, digest } = Schema.decodeSync(PlannedOutput)(planned.stdout);
     expect(plan.status).toBe("Unsupported");
     expect(plan.source.build).toBe(f.build);
     expect(plan.work["execution.runs"]).toBe(1);
     expect(plan.work["outbox.Dispatch"]).toBe(1);
-    expect(plan.workByRevision[0].examples[0].id).toBe(f.run.runId);
+    expect(plan.workByRevision[0]?.examples[0]?.id).toBe(f.run.runId);
     expect(plan.revisions[0]).toMatchObject({
       disposition: "Unavailable",
       revision: f.revision,
@@ -162,9 +172,10 @@ test("offline CLI plans and inspects without application loading or runtime muta
     const bare = await cli(f.repository, ["upgrade"]);
     expect(bare.code).toBe(0);
     expect(
-      JSON.parse(readFileSync(path.join(f.repository, "package.json"), "utf-8"))
-        .devDependencies.effect
-    ).toBe("4.0.5");
+      Schema.decodeSync(PackageJson)(
+        readFileSync(path.join(f.repository, "package.json"), "utf-8")
+      ).devDependencies.effect
+    ).toBe(effectVersion);
     const stale = await cli(f.repository, ["upgrade", "apply", plan.planId]);
     expect(stale.code).toBe(5);
     expect(stale.stderr).toContain("Repository changed since upgrade planning");
@@ -179,15 +190,15 @@ test("planning rejects an active owner and unknown durable work before publishin
   const f = fixture();
   try {
     const busy = await Effect.runPromise(
-      Effect.tryPromise(() => cli(f.repository, ["upgrade", "plan"])).pipe(
-        Effect.provide(ownershipLayer(`${f.filename}.owner`))
-      )
+      Effect.tryPromise(
+        async () => await cli(f.repository, ["upgrade", "plan"])
+      ).pipe(Effect.provide(ownershipLayer(`${f.filename}.owner`)))
     );
     expect(busy.code).toBe(5);
     expect(busy.stderr).toContain("owned by another process");
     expect(existsSync(path.join(f.state, "upgrades"))).toBe(false);
     const db = new Database(f.filename);
-    db.exec("UPDATE host_outbox SET kind='UnknownFutureIntent'");
+    db.run("UPDATE host_outbox SET kind='UnknownFutureIntent'");
     db.close();
     const before = bytes(f.repository);
     await expect(
@@ -202,8 +213,8 @@ test("planning rejects an active owner and unknown durable work before publishin
 
 test("repository fingerprint includes dependencies, runtime rows, artifacts and earlier upgrade receipts", async () => {
   const f = fixture();
-  const fingerprint = () =>
-    Effect.runPromise(
+  const fingerprint = async () =>
+    await Effect.runPromise(
       fingerprintUpgradeRepository(f.repository).pipe(
         Effect.provide(ownershipLayer(`${f.filename}.owner`))
       )
@@ -229,7 +240,7 @@ test("repository fingerprint includes dependencies, runtime rows, artifacts and 
     expect(dependencies.identity).not.toBe(receipt.identity);
     expect(dependencies.dependencies).not.toBe(receipt.dependencies);
     const db = new Database(f.filename);
-    db.exec("UPDATE host_runs SET status='Waiting'");
+    db.run("UPDATE host_runs SET status='Waiting'");
     db.close();
     const changed = await fingerprint();
     expect(changed.identity).not.toBe(dependencies.identity);
@@ -294,7 +305,7 @@ test.each(["runtime", "vault"] as const)(
       const db = new Database(
         kind === "runtime" ? f.filename : path.join(f.state, "vaults.sqlite")
       );
-      db.exec("PRAGMA user_version=9000");
+      db.run("PRAGMA user_version=9000");
       db.close();
       const before = bytes(f.repository);
       await expect(

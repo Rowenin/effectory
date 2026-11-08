@@ -64,7 +64,7 @@ const settle = (runId: string) =>
     return yield* Effect.die("Operator run did not settle");
   });
 
-test("scheduled occurrence survives retries, replacement, patches, branches and linked fan-out; manual runs omit it", () => {
+test("scheduled occurrence survives retries, replacement, patches, branches and linked fan-out; manual runs omit it", async () => {
   const seen: {
     runId: string;
     occurrence: typeof WorkflowSchedule.Occurrence.Type | undefined;
@@ -247,7 +247,7 @@ test("scheduled occurrence survives retries, replacement, patches, branches and 
     schedules: [schedule],
     tasks: [Base],
   });
-  return withHost(
+  return await withHost(
     app,
     Effect.gen(function* () {
       const store = yield* HostStore;
@@ -279,9 +279,9 @@ test("scheduled occurrence survives retries, replacement, patches, branches and 
       expect((yield* store.getRun(run.runId)).schedule).toEqual(run.schedule);
       expect(publications).toHaveLength(2);
       expect(publications[0]?.artifactId).toBe(publications[1]?.artifactId);
-      expect(publications.map((item) => item.version).toSorted()).toEqual([
-        1, 2,
-      ]);
+      expect(
+        publications.map((item) => item.version).toSorted((a, b) => a - b)
+      ).toEqual([1, 2]);
       for (const request of [
         {
           input: ["manual"],

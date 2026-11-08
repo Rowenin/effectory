@@ -21,7 +21,7 @@ export function storageError(cause: unknown, message: string) {
       continue;
     }
     seen.add(current);
-    const code = Reflect.get(current, "code");
+    const code: unknown = Reflect.get(current, "code");
     if (code === "SQLITE_FULL" || code === "ENOSPC" || code === "EDQUOT") {
       full = true;
       break;

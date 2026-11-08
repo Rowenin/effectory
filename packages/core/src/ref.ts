@@ -67,7 +67,7 @@ export function resolve(
 ): unknown {
   if (is(value)) {
     const source = scopes ? scopes.get(value.scope) : results;
-    if (!source?.has(value.nodeId)) {
+    if (source?.has(value.nodeId) !== true) {
       throw new DefinitionError({
         message: `Missing node result: ${value.nodeId}`,
       });

@@ -30,7 +30,7 @@ const event = (
     tag: "AttemptStarted",
   },
 });
-const run: typeof Run.Type = {
+const run: Run = {
   acceptedAt: "2026-11-05T00:00:00.000Z",
   engineId: null,
   error: null,
@@ -135,13 +135,13 @@ test("human terminal replay reports an oversized tail while machine mode retains
               Bun.serve({
                 fetch: async (request) =>
                   new URL(request.url).pathname.startsWith("/rpc/watch")
-                    ? watch(await watchRequest(request))
-                    : handler(request),
+                    ? await watch(await watchRequest(request))
+                    : await handler(request),
                 hostname: "127.0.0.1",
                 port: 0,
               })
             ),
-            (running) => Effect.promise(() => running.stop(true))
+            (running) => Effect.promise(async () => await running.stop(true))
           );
           mkdirSync(path.join(repository, ".effectory"));
           writeFileSync(

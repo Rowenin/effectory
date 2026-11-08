@@ -12,9 +12,9 @@ export function reportInvocationScan(
   pages: ReturnType<typeof createPagination>,
   runId: string,
   principal: string,
-  request: typeof PageRequest.Type
+  request: PageRequest
 ) {
-  const { cursor, ...query } = Schema.decodeUnknownSync(PageRequest)(request, {
+  const { cursor, ...query } = Schema.decodeSync(PageRequest)(request, {
     onExcessProperty: "error",
   });
   authorizeRun(database, runId, principal);

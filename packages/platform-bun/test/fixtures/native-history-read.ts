@@ -17,7 +17,7 @@ const [repository] = process.argv.slice(2);
 const ids = Schema.decodeUnknownSync(Schema.Array(Schema.String))(
   JSON.parse(process.argv[3] ?? "null")
 );
-if (!repository) {
+if (repository === undefined) {
   throw new Error("Missing fixture repository");
 }
 const state = path.join(repository, ".effectory", "state.sqlite");

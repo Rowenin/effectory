@@ -2,7 +2,6 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { Tag } from "@offtree/effectory-sdk";
 import {
@@ -12,6 +11,7 @@ import {
 import { Effect, Option, Schema } from "effect";
 
 import { installHostModules } from "../src/host-runtime.ts";
+import { importModule } from "./fixtures/import-module.ts";
 
 test("external application and extension modules share bindings while foreign copies only share the DI service key", async () => {
   const directory = await mkdtemp(
@@ -29,12 +29,12 @@ test("external application and extension modules share bindings while foreign co
       extension,
       'import * as Tag from "@offtree/effectory-sdk/Tag"; import * as Schema from "effect/Schema"; export const Build = Tag.make("build", Schema.Int);'
     );
-    const app = (await import(pathToFileURL(application).href)) as {
+    const app = await importModule<{
       Team: Tag.Definition<"team", typeof Schema.String>;
-    };
-    const ext = (await import(pathToFileURL(extension).href)) as {
+    }>(application, { Team: "function" });
+    const ext = await importModule<{
       Build: Tag.Definition<"build", typeof Schema.Int>;
-    };
+    }>(extension, { Build: "function" });
     expect(normalize([app.Team("platform"), ext.Build(42)])).toEqual({
       build: "42",
       team: "platform",
@@ -55,7 +55,9 @@ test("external application and extension modules share bindings while foreign co
       throw new Error("Missing duplicate SDK bundle");
     }
     await writeFile(foreign, await output.text());
-    const duplicate = (await import(pathToFileURL(foreign).href)) as typeof Tag;
+    const duplicate = await importModule<Pick<typeof Tag, "make">>(foreign, {
+      make: "function",
+    });
     const ForeignTeam = duplicate.make("team", Schema.String);
     expect(() => declarations([ForeignTeam])).toThrow("canonical");
     expect(() => normalize([ForeignTeam("foreign")])).toThrow("canonical");

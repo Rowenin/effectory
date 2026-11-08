@@ -2,11 +2,14 @@ import type { ExtensionManifest } from "@effectory/runtime/extension-protocol";
 import { Extension } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
-function record(value: unknown): Record<string, unknown> {
+function record(value: unknown): object {
   if (typeof value !== "object" || value === null) {
     throw new Error("Extension export must be an object");
   }
-  return value as Record<string, unknown>;
+  return value;
+}
+function exported(value: unknown, name: string): unknown {
+  return Reflect.get(record(value), name);
 }
 function sameEntries(
   actual: readonly {
@@ -42,14 +45,18 @@ export async function validateExports(
   implementationModule: unknown,
   archiveDigest: string
 ) {
-  const contracts = record(contractsModule)[manifest.contracts.export];
-  const definition = record(implementationModule)[manifest.entrypoint.export];
+  const contracts = exported(contractsModule, manifest.contracts.export);
+  const definition = exported(implementationModule, manifest.entrypoint.export);
   // These casts cross the module boundary. Extension.load checks SDK provenance
   // and exact codec identities before any fields are used below.
   const descriptor = Extension.installed(
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Extension.load validates the module at this boundary
     record(contracts) as unknown as Extension.Contracts<Extension.Definition>,
-    () =>
-      Promise.resolve(record(definition) as unknown as Extension.Definition),
+    async () =>
+      await Promise.resolve(
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- Extension.load validates the module at this boundary
+        record(definition) as unknown as Extension.Definition
+      ),
     archiveDigest
   );
   const loaded = await Effect.runPromise(

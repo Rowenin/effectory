@@ -38,7 +38,7 @@ import { assertTrustedDigests, replaceFile } from "./extension-bindings.ts";
 import { prepareExtensions } from "./extension-bootstrap.ts";
 import { GitHubSourceLive } from "./extension-source.ts";
 import { validateExtensions } from "./extension-validator.ts";
-import { hostAbi, installHostModules } from "./host-runtime.ts";
+import { hostAbi, hostVersions, installHostModules } from "./host-runtime.ts";
 import { RepositoryLease } from "./ownership.ts";
 import { RevisionManifest as Manifest } from "./revision-manifest.ts";
 import { reclaimedRevisionError } from "./revision-reclaim-history.ts";
@@ -71,7 +71,8 @@ function loadApplication(
         Effect.gen(function* () {
           const imported: unknown = yield* Effect.tryPromise({
             catch: revisionUnavailable,
-            try: () => import(pathToFileURL(filename).href),
+            try: async (): Promise<unknown> =>
+              await import(pathToFileURL(filename).href),
           });
           const application = yield* Effect.try({
             catch: revisionUnavailable,
@@ -89,10 +90,12 @@ function loadApplication(
               }
               // The dynamic boundary cannot inspect TypeScript service requirements.
               // Registry construction validates declarations; authoring types check R.
+              // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context, effecttsgo/unsafe-effect-type-assertion, typescript/no-unsafe-type-assertion -- user code loaded at runtime has an unknown error type; the checker cannot relate this erased generic
               return layer as Layer.Layer<Application.Registry, unknown>;
             },
           });
           const context = yield* building(
+            // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
             Layer.buildWithScope(application, scope).pipe(
               Effect.provideService(Vault.LocalStore, vaults)
             )
@@ -120,7 +123,7 @@ export const revisionCatalogLayer = (repository: string) =>
     Effect.gen(function* () {
       const lease = yield* RepositoryLease;
       const parent = yield* Effect.scope;
-      const hostContext = yield* Effect.context<never>();
+      const hostContext = yield* Effect.context();
       const vaults = yield* makeVaultStore(repository, lease);
       const semaphore = yield* Semaphore.make(1);
       const stateDirectory = path.join(repository, ".effectory");
@@ -184,7 +187,7 @@ export const revisionCatalogLayer = (repository: string) =>
         const storedManifest = yield* Effect.try({
           catch: revisionUnavailable,
           try: () => {
-            const manifest = Schema.decodeUnknownSync(Manifest)(
+            const decoded = Schema.decodeUnknownExit(Manifest)(
               JSON.parse(
                 revisionFile(
                   path.join(directory, "manifest.json"),
@@ -193,6 +196,10 @@ export const revisionCatalogLayer = (repository: string) =>
               ),
               { onExcessProperty: "error" }
             );
+            if (Exit.isFailure(decoded)) {
+              throw revisionUnavailable();
+            }
+            const manifest = decoded.value;
             if (
               digestOf(`${manifest.hostAbi}/${manifest.digest}`) !== revision ||
               digestOf(revisionFile(filename, 16_777_216)) !== manifest.digest
@@ -258,7 +265,7 @@ export const revisionCatalogLayer = (repository: string) =>
               try: () => assertExecutable(revision),
             });
             const filename = revisions.get(revision);
-            if (!filename) {
+            if (filename === undefined || filename === "") {
               return yield* revisionUnavailable();
             }
             const scope = yield* Effect.scope;
@@ -330,7 +337,7 @@ export const revisionCatalogLayer = (repository: string) =>
                     path.join(directory, "manifest.json"),
                     JSON.stringify({
                       digest: contentDigest,
-                      effectVersion: "4.0.5",
+                      effectVersion: hostVersions.effect,
                       executionContract,
                       extensionDigests: [
                         ...new Set(

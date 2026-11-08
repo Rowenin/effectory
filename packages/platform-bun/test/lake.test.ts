@@ -76,8 +76,8 @@ function producer(key: string) {
   });
 }
 
-test("slot publication keys share an artifact across runs while different slots remain distinct", () =>
-  withLake(
+test("slot publication keys share an artifact across runs while different slots remain distinct", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const key = `slot-${Date.parse("2026-11-05T10:00:00.000Z")}`;
@@ -111,8 +111,8 @@ test("slot publication keys share an artifact across runs while different slots 
     })
   ));
 
-test("publication commits provenance and one event; replay and changed metadata are distinct", () =>
-  withLake(
+test("publication commits provenance and one event; replay and changed metadata are distinct", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const store = yield* HostStore;
@@ -168,8 +168,8 @@ test("publication commits provenance and one event; replay and changed metadata 
     })
   ));
 
-test("latest query pagination pins old versions while concurrent runs publish new ones", () =>
-  withLake(
+test("latest query pagination pins old versions while concurrent runs publish new ones", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const first = yield* producer("first");
@@ -222,8 +222,8 @@ test("latest query pagination pins old versions while concurrent runs publish ne
     })
   ));
 
-test("declared field queries distinguish missing and null, and query validation rejects unsupported fields", () =>
-  withLake(
+test("declared field queries distinguish missing and null, and query validation rejects unsupported fields", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const identity = yield* producer("query");
@@ -288,8 +288,8 @@ const metricQuery: Query = {
   versions: "latest",
 };
 
-test("Boolean, range and membership queries agree with an independent reference set", () =>
-  withLake(
+test("Boolean, range and membership queries agree with an independent reference set", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const identity = yield* producer("metrics");
@@ -387,8 +387,8 @@ test("Boolean, range and membership queries agree with an independent reference 
     })
   ));
 
-test("ordered projection pages retain old latest versions during writes and distinguish missing from null", () =>
-  withLake(
+test("ordered projection pages retain old latest versions during writes and distinguish missing from null", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const identity = yield* producer("ordered");
@@ -463,8 +463,8 @@ test("ordered projection pages retain old latest versions during writes and dist
     })
   ));
 
-test("query validation rejects incompatible comparisons, undeclared projection/order and excessive ASTs", () =>
-  withLake(
+test("query validation rejects incompatible comparisons, undeclared projection/order and excessive ASTs", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const identity = yield* producer("invalid-query");
@@ -525,8 +525,8 @@ test("query validation rejects incompatible comparisons, undeclared projection/o
     })
   ));
 
-test("exact artifact version pages exclude later writes and authorize before cursor lookup", () =>
-  withLake(
+test("exact artifact version pages exclude later writes and authorize before cursor lookup", async () =>
+  await withLake(
     Effect.gen(function* () {
       const lake = yield* Lake;
       const one = yield* producer("version-one");

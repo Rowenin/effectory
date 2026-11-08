@@ -69,7 +69,7 @@ test("250k generations: bounded seeks, old watermarks, sparse conjunctions, migr
     const group = Effect.runSync(
       store.reportList({ runId: dense.runId }, "owner")
     ).items[0]?.groupId;
-    if (!group) {
+    if (group === undefined) {
       throw new Error("Missing group");
     }
     // Model an older writer: generation records are inserted without the new indexes.

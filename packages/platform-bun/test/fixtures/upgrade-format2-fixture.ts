@@ -81,16 +81,16 @@ export async function format2Fixture(realVault: boolean) {
     };
     return {
       ...f,
-      accept: (stage = "accepted") =>
-        f.run(
+      accept: async (stage = "accepted") =>
+        await f.run(
           acceptRuntimeUpgrade(f.repository, saved, policy, (name) =>
             name === stage ? Effect.die("component checkpoint") : Effect.void
           ).pipe(Effect.exit)
         ),
       nextOwner: owner,
       policy,
-      resume: () =>
-        f.run(
+      resume: async () =>
+        await f.run(
           Effect.gen(function* () {
             const j = yield* makeUpgradeJournal(f.repository);
             const record = yield* j.inspect(saved.plan.planId);

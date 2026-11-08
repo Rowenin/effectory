@@ -2,6 +2,12 @@ import { OperationError } from "@effectory/runtime/protocol";
 import { RunTags } from "@offtree/effectory-sdk/RunTags";
 import { Effect, Schema } from "effect";
 
+/** Flag parsers throw OperationError; anything else is reported as invalid input. */
+export const inputError = (cause: unknown) =>
+  cause instanceof OperationError
+    ? cause
+    : new OperationError({ code: "InvalidInput", message: String(cause) });
+
 export function parseTags(
   values: readonly string[],
   flag = "--tag"
@@ -27,7 +33,7 @@ export function parseTags(
     entries.push([key, value.slice(separator + 1)]);
   }
   try {
-    return Schema.decodeUnknownSync(RunTags)(Object.fromEntries(entries));
+    return Schema.decodeSync(RunTags)(Object.fromEntries(entries));
   } catch (error) {
     throw new OperationError({
       code: "InvalidInput",
@@ -39,14 +45,14 @@ export function parseTags(
 export function tagsFor<E, R>(
   client: {
     readonly SystemStatus: (
-      request: Record<never, never>
+      request: Record<string, never>
     ) => Effect.Effect<{ readonly capabilities: readonly string[] }, E, R>;
   },
   values: readonly string[]
 ) {
   return Effect.gen(function* () {
     const tags = yield* Effect.try({
-      catch: (error) => error as OperationError,
+      catch: inputError,
       try: () => parseTags(values),
     });
     const payload: { readonly tags?: Readonly<Record<string, string>> } = {};

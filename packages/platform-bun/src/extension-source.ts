@@ -85,17 +85,23 @@ const apiArgs = (url: string, accept: string) => [
   "--header",
   "X-GitHub-Api-Version: 2022-11-28",
 ];
-const decodeJson = <S extends Schema.Codec<unknown, unknown, never, never>>(
+const decodeJson = <S extends Schema.Codec<unknown, unknown>>(
   schema: S,
   bytes: Uint8Array
 ) =>
   Effect.try({
     catch: () => invalid("GitHub returned unsupported release metadata"),
-    try: () =>
-      Schema.decodeUnknownSync(schema)(
-        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes))
-      ),
-  });
+    try: (): unknown =>
+      JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+  }).pipe(
+    Effect.flatMap((value) =>
+      Schema.decodeUnknownEffect(schema)(value).pipe(
+        Effect.mapError(() =>
+          invalid("GitHub returned unsupported release metadata")
+        )
+      )
+    )
+  );
 export const gitHubSourceLayer = Layer.effect(
   ExtensionSource,
   Effect.gen(function* () {
@@ -103,7 +109,7 @@ export const gitHubSourceLayer = Layer.effect(
     return {
       download: (source) =>
         Effect.gen(function* () {
-          const checked = yield* Schema.decodeUnknownEffect(ResolvedSource)(
+          const checked = yield* Schema.decodeEffect(ResolvedSource)(
             source
           ).pipe(
             Effect.mapError(() => invalid("Invalid locked GitHub source"))
@@ -131,9 +137,7 @@ export const gitHubSourceLayer = Layer.effect(
         }),
       resolve: (source) =>
         Effect.gen(function* () {
-          const checked = yield* Schema.decodeUnknownEffect(GitHubSource)(
-            source
-          ).pipe(
+          const checked = yield* Schema.decodeEffect(GitHubSource)(source).pipe(
             Effect.mapError(() => invalid("Invalid GitHub extension source"))
           );
           const raw = yield* gh.run(
@@ -174,10 +178,13 @@ export const gitHubSourceLayer = Layer.effect(
               1_048_576
             )
           );
-          const publisherDigest = asset.digest?.startsWith("sha256:")
-            ? asset.digest.slice(7)
-            : null;
-          return yield* Schema.decodeUnknownEffect(ResolvedSource)({
+          const publisherDigest =
+            asset.digest !== undefined &&
+            asset.digest !== null &&
+            asset.digest.startsWith("sha256:")
+              ? asset.digest.slice(7)
+              : null;
+          return yield* Schema.decodeEffect(ResolvedSource)({
             ...checked,
             assetId: asset.id,
             commit: commit.sha,
@@ -218,7 +225,7 @@ export const latestRelease = (source: typeof GitHubSource.Type) =>
         "Latest published release has no unique matching extension asset"
       );
     }
-    return yield* Schema.decodeUnknownEffect(GitHubSource)({
+    return yield* Schema.decodeEffect(GitHubSource)({
       ...source,
       ref: release.tag_name,
     }).pipe(

@@ -65,7 +65,7 @@ const settle = (runId: string) =>
 
 const disconnectedSignal = () => Effect.die("Receiver not connected");
 
-test("uninterruptible task cleanup is held for attention without blocking unrelated runs", () => {
+test("uninterruptible task cleanup is held for attention without blocking unrelated runs", async () => {
   const release = Deferred.makeUnsafe<null>();
   let active = false;
   const task = Task.make(
@@ -118,7 +118,7 @@ test("uninterruptible task cleanup is held for attention without blocking unrela
       return yield* graph.task("work", task, null);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task, healthy], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -162,7 +162,7 @@ test("uninterruptible task cleanup is held for attention without blocking unrela
 
 test.each(["task", "attempt", "child", "workflow"] as const)(
   "%s deadline interrupts active work and waits for resource cleanup",
-  (kind) => {
+  async (kind) => {
     let active = false;
     let calls = 0;
     const task = Task.make(
@@ -227,7 +227,7 @@ test.each(["task", "attempt", "child", "workflow"] as const)(
         return yield* graph.task("work", task, null, options);
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({ tasks: [task], workflows: [flow] }),
       Effect.gen(function* () {
         const run = yield* (yield* Runner).submit(
@@ -249,7 +249,7 @@ test.each(["task", "attempt", "child", "workflow"] as const)(
   15_000
 );
 
-test("workflow deadline closes an open approval without an answer", () => {
+test("workflow deadline closes an open approval without an answer", async () => {
   const flow = Workflow.make(
     {
       error: Schema.Never,
@@ -265,7 +265,7 @@ test("workflow deadline closes an open approval without an answer", () => {
       return "done";
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [], workflows: [flow] }),
     Effect.gen(function* () {
       const run = yield* (yield* Runner).submit(
@@ -285,7 +285,7 @@ test("workflow deadline closes an open approval without an answer", () => {
   );
 }, 15_000);
 
-test("total task deadline includes retry backoff", () => {
+test("total task deadline includes retry backoff", async () => {
   let calls = 0;
   const RetryError = Schema.TaggedStruct("RetryLater", {});
   const task = Task.make(
@@ -319,7 +319,7 @@ test("total task deadline includes retry backoff", () => {
       });
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const run = yield* (yield* Runner).submit(
@@ -339,7 +339,7 @@ test("total task deadline includes retry backoff", () => {
 
 test.each(["RateLimited", "Permanent"] as const)(
   "task retries select declared error tags (%s)",
-  (tag) => {
+  async (tag) => {
     const attempts: number[] = [];
     const keys: string[] = [];
     const RetryError = Schema.Union([
@@ -381,7 +381,7 @@ test.each(["RateLimited", "Permanent"] as const)(
         });
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({ tasks: [task], workflows: [flow] }),
       Effect.gen(function* () {
         const run = yield* (yield* Runner).submit(
@@ -414,7 +414,7 @@ test.each(["RateLimited", "Permanent"] as const)(
 
 test.each([false, true])(
   "a callback before trigger completion preserves the trigger outcome (failure=%s)",
-  (failTrigger) => {
+  async (failTrigger) => {
     let calls = 0;
     let signal: (waitId: string) => Effect.Effect<void> = disconnectedSignal;
     const trigger = Task.make(
@@ -457,7 +457,7 @@ test.each([false, true])(
         });
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({ tasks: [trigger], workflows: [flow] }),
       Effect.gen(function* () {
         const runner = yield* Runner;
@@ -498,7 +498,7 @@ test.each([false, true])(
   15_000
 );
 
-test("a child workflow cannot leak an error outside its declared boundary", () => {
+test("a child workflow cannot leak an error outside its declared boundary", async () => {
   const task = Task.make(
     {
       error: Schema.Literal("Oops"),
@@ -536,7 +536,7 @@ test("a child workflow cannot leak an error outside its declared boundary", () =
       return yield* graph.workflow("child", child, null);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [parent] }),
     Effect.gen(function* () {
       const run = yield* (yield* Runner).submit(
@@ -558,7 +558,7 @@ test("a child workflow cannot leak an error outside its declared boundary", () =
 }, 15_000);
 
 const Input = Schema.Struct({ choice: Schema.Boolean });
-test("an inactive branch capture does not delay the selected branch", () => {
+test("an inactive branch capture does not delay the selected branch", async () => {
   let called = false;
   const task = Task.make(
     {
@@ -601,7 +601,7 @@ test("an inactive branch capture does not delay the selected branch", () => {
       });
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -640,7 +640,7 @@ test("an inactive branch capture does not delay the selected branch", () => {
     })
   );
 }, 15_000);
-test("only the selected branch executes and captures parent values with shadowed node names", () => {
+test("only the selected branch executes and captures parent values with shadowed node names", async () => {
   const calls: string[] = [];
   const task = Task.make(
     {
@@ -682,7 +682,7 @@ test("only the selected branch executes and captures parent values with shadowed
       });
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -703,7 +703,7 @@ test("only the selected branch executes and captures parent values with shadowed
   );
 }, 15_000);
 
-test("keyed fan-out preserves result order and nested leaf limits without controller deadlock", () => {
+test("keyed fan-out preserves result order and nested leaf limits without controller deadlock", async () => {
   const Target = Schema.Struct({ id: Schema.String, value: Schema.Int });
   let active = 0;
   let maximum = 0;
@@ -776,7 +776,7 @@ test("keyed fan-out preserves result order and nested leaf limits without contro
       );
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -801,7 +801,7 @@ test("keyed fan-out preserves result order and nested leaf limits without contro
   );
 }, 15_000);
 
-test("answering a concurrent gate does not replay an in-flight manual sibling", () => {
+test("answering a concurrent gate does not replay an in-flight manual sibling", async () => {
   let calls = 0;
   let active = false;
   const task = Task.make(
@@ -839,7 +839,7 @@ test("answering a concurrent gate does not replay an in-flight manual sibling", 
       return yield* graph.task("manual", task, null);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -879,7 +879,7 @@ test("answering a concurrent gate does not replay an in-flight manual sibling", 
   );
 }, 15_000);
 
-test("a short durable sleep can wake without interrupting a manual sibling", () => {
+test("a short durable sleep can wake without interrupting a manual sibling", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -911,7 +911,7 @@ test("a short durable sleep can wake without interrupting a manual sibling", () 
       return yield* graph.task("manual", task, null);
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -933,7 +933,7 @@ test("a short durable sleep can wake without interrupting a manual sibling", () 
 
 test.each(["reject", "cancel", "expire"] as const)(
   "%s closes sibling waits and quiesces manual work before the terminal projection",
-  (operation) => {
+  async (operation) => {
     let active = false;
     let calls = 0;
     const task = Task.make(
@@ -980,7 +980,7 @@ test.each(["reject", "cancel", "expire"] as const)(
         return yield* graph.task("manual", task, null);
       })
     );
-    return withHost(
+    return await withHost(
       Application.make({ tasks: [task], workflows: [flow] }),
       Effect.gen(function* () {
         const runner = yield* Runner;
@@ -1040,7 +1040,7 @@ test.each(["reject", "cancel", "expire"] as const)(
   15_000
 );
 
-test("duplicate fan-out keys fail before any item handler starts", () => {
+test("duplicate fan-out keys fail before any item handler starts", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -1088,7 +1088,7 @@ test("duplicate fan-out keys fail before any item handler starts", () => {
       );
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [flow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -1107,7 +1107,7 @@ test("duplicate fan-out keys fail before any item handler starts", () => {
   );
 }, 15_000);
 
-test("an oversized task result becomes a bounded host failure without replaying a manual handler", () => {
+test("an oversized task result becomes a bounded host failure without replaying a manual handler", async () => {
   let calls = 0;
   const task = Task.make(
     {
@@ -1124,7 +1124,7 @@ test("an oversized task result becomes a bounded host failure without replaying 
         return "x".repeat(1_048_576);
       })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task] }),
     Effect.gen(function* () {
       const runner = yield* Runner;
@@ -1147,7 +1147,7 @@ test("an oversized task result becomes a bounded host failure without replaying 
   );
 }, 15_000);
 
-test("task Effect logs are attributed and native output inspection pages by byte budget", () => {
+test("task Effect logs are attributed and native output inspection pages by byte budget", async () => {
   let executions = 0;
   const task = Task.make(
     {
@@ -1183,7 +1183,7 @@ test("task Effect logs are attributed and native output inspection pages by byte
       return null;
     })
   );
-  return withHost(
+  return await withHost(
     Application.make({ tasks: [task], workflows: [workflow] }),
     Effect.gen(function* () {
       const runner = yield* Runner;

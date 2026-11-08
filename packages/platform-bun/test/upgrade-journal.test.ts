@@ -12,12 +12,14 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { ownershipLayer } from "../src/ownership.ts";
 import { makeUpgradeJournal } from "../src/upgrade-journal.ts";
 import type { UpgradePlan } from "../src/upgrade-record.ts";
 import { assertUpgradeIdle } from "../src/upgrade-transition-gate.ts";
+
+const JsonObject = Schema.Record(Schema.String, Schema.Unknown);
 
 const build = "b".repeat(64);
 const identity = "a".repeat(64);
@@ -41,12 +43,12 @@ function fixture() {
     work: {},
     workByRevision: [],
   };
-  const run = <A, E>(
+  const run = async <A, E>(
     body: (
       journal: Effect.Success<ReturnType<typeof makeUpgradeJournal>>
     ) => Effect.Effect<A, E>
   ) =>
-    Effect.runPromise(
+    await Effect.runPromise(
       makeUpgradeJournal(root).pipe(
         Effect.flatMap(body),
         Effect.provide(ownershipLayer(path.join(state, "state.sqlite.owner")))
@@ -144,9 +146,18 @@ test("upgrade journal rejects corrupted history and substituted prepare files wi
       "upgrade-history",
       `${f.plan.planId}.json`
     );
-    const record = JSON.parse(readFileSync(filename, "utf-8"));
-    record.plan.source.identity = "c".repeat(64);
-    writeFileSync(filename, JSON.stringify(record));
+    const record = Schema.decodeSync(Schema.fromJsonString(JsonObject))(
+      readFileSync(filename, "utf-8")
+    );
+    const plan = Schema.decodeUnknownSync(JsonObject)(record.plan);
+    const source = Schema.decodeUnknownSync(JsonObject)(plan.source);
+    writeFileSync(
+      filename,
+      JSON.stringify({
+        ...record,
+        plan: { ...plan, source: { ...source, identity: "c".repeat(64) } },
+      })
+    );
     await expect(f.run((j) => j.inspect(f.plan.planId))).rejects.toMatchObject({
       code: "RevisionUnavailable",
     });

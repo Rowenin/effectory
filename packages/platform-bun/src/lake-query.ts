@@ -122,7 +122,7 @@ function selectRows(query: Query, source: readonly Row[]) {
 function decodeQuery(request: Query) {
   checkJsonBudget(request, { bytes: 65_536, depth: 24, values: 4096 });
   try {
-    return Schema.decodeUnknownSync(Query)(request, {
+    return Schema.decodeSync(Query)(request, {
       onExcessProperty: "error",
     });
   } catch {
@@ -164,15 +164,16 @@ export function lakeQuery(
       "SELECT fieldsJson FROM lake_schemas WHERE schemaId = ? AND version = ?"
     )
     .get(query.artifact.schemaId, query.artifact.schemaVersion);
-  const descriptions = schema
-    ? Schema.decodeUnknownSync(FieldDescriptions)(
-        JSON.parse(
-          Schema.decodeUnknownSync(
-            Schema.Struct({ fieldsJson: Schema.String })
-          )(schema).fieldsJson
-        )
-      )
-    : [];
+  const descriptions =
+    schema === null
+      ? []
+      : Schema.decodeUnknownSync(FieldDescriptions)(
+          JSON.parse(
+            Schema.decodeUnknownSync(
+              Schema.Struct({ fieldsJson: Schema.String })
+            )(schema).fieldsJson
+          )
+        );
   validateRequest(query, descriptions);
   const { matched, scanned, scannedBytes } = scanRows(
     database,

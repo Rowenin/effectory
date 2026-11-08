@@ -63,7 +63,7 @@ export const doctor = (directory: string) =>
       if (Option.isSome(status) && status.value.lastError !== null) {
         findings.push({
           code: "AutomaticRetention",
-          message: `Reclamation maintenance has unresolved failures; use lake reclaim automatic status${status.value.lastError.planId ? ` and lake reclaim apply ${status.value.lastError.planId}` : ""}`,
+          message: `Reclamation maintenance has unresolved failures; use lake reclaim automatic status${status.value.lastError.planId !== undefined && status.value.lastError.planId !== "" ? ` and lake reclaim apply ${status.value.lastError.planId}` : ""}`,
           severity: "Warning",
         });
       }

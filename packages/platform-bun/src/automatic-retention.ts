@@ -6,12 +6,8 @@ import { Lake } from "./lake.ts";
 export const automaticRetentionLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const lake = yield* Lake;
+    // automaticMaintenance records its own failures and never fails.
     yield* lake.automaticMaintenance.pipe(
-      Effect.catch(() =>
-        Effect.logWarning("Automatic retention maintenance will retry").pipe(
-          Effect.as(false)
-        )
-      ),
       Effect.flatMap((busy) => Effect.sleep(busy ? "20 millis" : "1 second")),
       Effect.forever,
       Effect.forkScoped

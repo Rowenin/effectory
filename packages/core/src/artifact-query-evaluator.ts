@@ -1,5 +1,6 @@
 /* oxlint-disable unicorn/consistent-function-scoping -- Pure evaluator helpers are grouped with their error factory. */
 import { Schema } from "effect";
+import { absurd } from "effect/Function";
 
 import type {
   Expression,
@@ -23,8 +24,8 @@ export interface Row {
 }
 
 /** Shared semantics; adapters retain their own boundary error types. */
-export function makeQueryEvaluator<E>(
-  failure: (code: "InvalidInput" | "LimitExceeded", message: string) => E
+export function makeQueryEvaluator(
+  failure: (code: "InvalidInput" | "LimitExceeded", message: string) => Error
 ) {
   const missing = Symbol("missing");
   type Value = Schema.Json | typeof missing;
@@ -116,7 +117,12 @@ export function makeQueryEvaluator<E>(
           pending.push({ depth: depth + 1, node: node.term });
           break;
         }
-        default: {
+        case "Eq":
+        case "Gt":
+        case "Gte":
+        case "In":
+        case "Lt":
+        case "Lte": {
           const types = fieldTypes(node.field, descriptions);
           const values = node._tag === "In" ? node.values : [node.value];
           if (values.some((value) => !types.includes(kind(value)))) {
@@ -133,6 +139,10 @@ export function makeQueryEvaluator<E>(
               "Ordered comparison value must match the field's non-null scalar type"
             );
           }
+          break;
+        }
+        default: {
+          absurd(node);
         }
       }
     }
@@ -141,7 +151,7 @@ export function makeQueryEvaluator<E>(
     actual: Value,
     expected: Schema.Json,
     operation: "Eq" | "Gt" | "Gte" | "Lt" | "Lte"
-  ) {
+  ): boolean {
     if (actual === missing) {
       return false;
     }
@@ -169,8 +179,11 @@ export function makeQueryEvaluator<E>(
       case "Lt": {
         return difference < 0;
       }
-      default: {
+      case "Lte": {
         return difference <= 0;
+      }
+      default: {
+        return absurd(operation);
       }
     }
   }
@@ -190,8 +203,15 @@ export function makeQueryEvaluator<E>(
           compare(fieldValue(row, node.field), value, "Eq")
         );
       }
-      default: {
+      case "Eq":
+      case "Gt":
+      case "Gte":
+      case "Lt":
+      case "Lte": {
         return compare(fieldValue(row, node.field), node.value, node._tag);
+      }
+      default: {
+        return absurd(node);
       }
     }
   }

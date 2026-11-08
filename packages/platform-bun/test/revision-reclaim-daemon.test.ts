@@ -61,16 +61,19 @@ test("128-slot recovery, retired submission identity and historical reclamation 
     expect(run.result).toBe("first");
     await cli(repository, ["daemon", "stop"]);
     await first.exited;
-    const manifest = JSON.parse(
+    const manifest = Schema.decodeSync(
+      Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+    )(
       readFileSync(
         path.join(state, "revisions", run.revision, "manifest.json"),
         "utf-8"
       )
     );
+    const hostAbi = Schema.decodeUnknownSync(Schema.String)(manifest.hostAbi);
     for (let index = 0; index < 127; index += 1) {
       const source = `throw new Error("unused candidate ${index} must never import");`;
       const digest = digestOf(source);
-      const revision = digestOf(`${manifest.hostAbi}/${digest}`);
+      const revision = digestOf(`${hostAbi}/${digest}`);
       const directory = path.join(state, "revisions", revision);
       mkdirSync(directory);
       writeFileSync(path.join(directory, "application.mjs"), source);

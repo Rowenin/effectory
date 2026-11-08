@@ -37,7 +37,7 @@ test("typed bindings and optional declarations preserve exact labels", () => {
 test("value reads use ordinary DI and preserve absence versus invalid metadata", async () => {
   const result = await Effect.runPromise(
     Effect.all({ build: Build.value(), team: Team.value() }).pipe(
-      Effect.provide(Layer.succeed(Tag.Values, { build: "042" }))
+      Effect.provideService(Tag.Values, { build: "042" })
     )
   );
   expect(result).toEqual({ build: Option.some(42), team: Option.none() });
@@ -80,11 +80,7 @@ test("task-local Layers can read tags and retain typed read failures", async () 
     Owner,
     Team.value().pipe(Effect.map(Option.getOrElse(() => "none")))
   );
-  const task = Task.make(spec, () =>
-    Effect.gen(function* () {
-      return yield* Owner;
-    })
-  ).provide(layer);
+  const task = Task.make(spec, () => Owner).provide(layer);
   expect(
     (
       await Effect.runPromise(
@@ -121,20 +117,14 @@ test("task Layers acquire and release per invocation even under a shared revisio
         )
     )
   );
-  const task = Task.make(spec, () =>
-    Effect.gen(function* () {
-      return yield* Owner;
-    })
-  ).provide(layer);
+  const task = Task.make(spec, () => Owner).provide(layer);
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
         const context = yield* Layer.build(layer);
-        expect(
-          yield* Effect.gen(function* () {
-            return yield* Owner;
-          }).pipe(Effect.provideContext(context))
-        ).toBe("application");
+        expect(yield* Owner.pipe(Effect.provideContext(context))).toBe(
+          "application"
+        );
         const values = yield* Effect.all(
           [
             Task.test(task, { input: null, tags: [Team("one")] }),
@@ -173,11 +163,7 @@ export const tagRequirementProof = () => {
       return yield* Other;
     })
   );
-  const task = Task.make(spec, () =>
-    Effect.gen(function* () {
-      return yield* Owner;
-    })
-  ).provide(layer);
+  const task = Task.make(spec, () => Owner).provide(layer);
   const missing = Application.make({ tasks: [task] });
   // @ts-expect-error Other is still a real application requirement.
   const invalid: Application.Application<never> = missing;

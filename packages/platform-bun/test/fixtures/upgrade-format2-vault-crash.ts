@@ -9,13 +9,13 @@ import { retargetVaultFence } from "../../src/upgrade-vault-fence.ts";
 const [repository, planId, targetBuild, priorPlan, priorBuild, action, stage] =
   process.argv.slice(2);
 if (
-  !repository ||
-  !planId ||
-  !targetBuild ||
-  !priorPlan ||
-  !priorBuild ||
+  repository === undefined ||
+  planId === undefined ||
+  targetBuild === undefined ||
+  priorPlan === undefined ||
+  priorBuild === undefined ||
   (action !== "Protect" && action !== "Abort") ||
-  !stage
+  stage === undefined
 ) {
   throw new Error("Missing format-2 crash fixture arguments");
 }

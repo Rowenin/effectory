@@ -1,5 +1,5 @@
 /* oxlint-disable max-classes-per-file -- Independent services prove source and task-local Layer inference. */
-import { expect, test } from "bun:test";
+import { expect, expectTypeOf, test } from "bun:test";
 
 import {
   Context,
@@ -88,7 +88,9 @@ test("bytes descriptors are frozen, normalize MIME and reject schema/field drift
     },
     { contentType: "text/plain", id: "bad", schema: Schema.String, version: 1 },
   ]) {
-    expect(() => Reflect.apply(Artifact.make, undefined, [invalid])).toThrow();
+    expect(() => {
+      Reflect.apply(Artifact.make, undefined, [invalid]);
+    }).toThrow();
   }
   for (const contentType of [
     "text/csv; charset=utf-8",
@@ -103,20 +105,22 @@ test("bytes descriptors are frozen, normalize MIME and reject schema/field drift
       Artifact.make({ contentType, id: "bad", kind: "bytes", version: 1 })
     ).toThrow();
   }
-  expect(() =>
-    Artifact.make({ ...Bytes, schema: Schema.String } as unknown as Parameters<
-      typeof Artifact.make
-    >[0])
-  ).toThrow();
-  expect(() =>
-    Artifact.make({
-      contentType: "text/plain",
-      fields: [],
-      id: "bad",
-      kind: "bytes",
-      version: 1,
-    } as unknown as Parameters<typeof Artifact.make>[0])
-  ).toThrow();
+  expect(() => {
+    Reflect.apply(Artifact.make, undefined, [
+      { ...Bytes, schema: Schema.String },
+    ]);
+  }).toThrow();
+  expect(() => {
+    Reflect.apply(Artifact.make, undefined, [
+      {
+        contentType: "text/plain",
+        fields: [],
+        id: "bad",
+        kind: "bytes",
+        version: 1,
+      },
+    ]);
+  }).toThrow();
 });
 
 test("test publications consume exact bytes, retain copied content, tags and stable receipts", async () => {
@@ -225,12 +229,12 @@ test("unsupported runtime and output membership fail before consuming source", a
 });
 
 // oxlint-disable-next-line unicorn/throw-new-error -- Effect schema class factory, not an Error constructor.
-class SourceFailure extends Schema.TaggedError<SourceFailure>()(
-  "SourceFailure",
-  {
-    reason: Schema.String,
-  }
-) {}
+class SourceFailure extends Schema.TaggedError<
+  SourceFailure,
+  { readonly brand: unique symbol }
+>()("SourceFailure", {
+  reason: Schema.String,
+}) {}
 class Source extends Context.Service<Source, Uint8Array>()(
   "binary-tests/Source"
 ) {}
@@ -277,11 +281,7 @@ test("task-local Layers can publish bytes and late services are closed", async (
       });
     })
   );
-  const task = Task.make(spec, () =>
-    Effect.gen(function* () {
-      return yield* Helper;
-    })
-  )
+  const task = Task.make(spec, () => Helper)
     .provide(helper)
     .provide(Layer.succeed(Source, new Uint8Array([1, 2])));
   const result = await Effect.runPromise(Task.test(task, { input: null }));
@@ -327,33 +327,31 @@ test("interrupting an awaited byte source releases it before fallback publicatio
   expect(result.publications).toHaveLength(1);
 });
 
-type Equal<A, B> =
-  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
-    ? true
-    : false;
-function equal<A, B>(proof: Equal<A, B>) {
-  return proof;
-}
-
 export function binaryTypeProof(storage: typeof ArtifactStorage.Service) {
   const array = storage.publish(Bytes, new Uint8Array(), { key: "x" });
-  equal<Effect.Services<typeof array>, never>(true);
-  equal<Effect.Error<typeof array>, TaskRuntimeError>(true);
-  equal<Effect.Success<typeof array>["schemaId"], "binary/test">(true);
+  expectTypeOf<Effect.Services<typeof array>>().toEqualTypeOf<never>();
+  expectTypeOf<Effect.Error<typeof array>>().toEqualTypeOf<TaskRuntimeError>();
+  expectTypeOf<
+    Effect.Success<typeof array>["schemaId"]
+  >().toEqualTypeOf<"binary/test">();
   const failed = storage.publish(Bytes, Stream.fail("boom" as const), {
     key: "x",
   });
-  equal<Effect.Error<typeof failed>, "boom" | TaskRuntimeError>(true);
+  expectTypeOf<Effect.Error<typeof failed>>().toEqualTypeOf<
+    "boom" | TaskRuntimeError
+  >();
   const sourced = storage.publish(Bytes, Stream.fromEffect(Source), {
     key: "x",
   });
-  equal<Effect.Services<typeof sourced>, Source>(true);
+  expectTypeOf<Effect.Services<typeof sourced>>().toEqualTypeOf<Source>();
   const scoped = storage.publish(
     Bytes,
     Stream.fromEffect(Effect.acquireRelease(Source, () => Effect.void)),
     { key: "x" }
   );
-  equal<Effect.Services<typeof scoped>, Source | Scope.Scope>(true);
+  expectTypeOf<Effect.Services<typeof scoped>>().toEqualTypeOf<
+    Source | Scope.Scope
+  >();
   // @ts-expect-error JSON values are determined by the artifact schema.
   const invalidJson = storage.publish(Json, { count: "wrong" }, { key: "x" });
   // @ts-expect-error JSON objects cannot be published to bytes artifacts.
@@ -367,7 +365,7 @@ export function binaryTypeProof(storage: typeof ArtifactStorage.Service) {
       });
     })
   );
-  const closed: Task.Definition<typeof spec, never> = task;
+  const closed: Task.Definition<typeof spec> = task;
   Application.make({
     artifacts: [Bytes, Json],
     tasks: [closed],
@@ -386,7 +384,7 @@ export function binaryTypeProof(storage: typeof ArtifactStorage.Service) {
 export function genericPublishProof<
   Id extends string,
   BId extends string,
-  S extends Schema.Codec<unknown, unknown, never, never>,
+  S extends Schema.Codec<unknown, unknown>,
   E,
   R,
 >(

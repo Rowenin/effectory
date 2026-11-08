@@ -2,7 +2,7 @@ import type { Database } from "bun:sqlite";
 
 import { OperationError } from "@effectory/runtime/protocol";
 import { RecoveryReceipt } from "@effectory/runtime/recovery-protocol";
-import { Effect, Schema } from "effect";
+import { Cause, Effect, Exit, Schema } from "effect";
 
 import type { InspectionBudget } from "./inspection-budget.ts";
 import { unsupportedUpgradeWork, upgradeScanner } from "./upgrade-scan.ts";
@@ -79,7 +79,7 @@ export function inspectUpgradeRecovery(
         if (present.length !== tables.length) {
           throw unsupportedUpgradeWork("partial manual recovery storage");
         }
-        const rows = Schema.decodeUnknownSync(
+        const decoded = Schema.decodeUnknownExit(
           Schema.Array(
             Schema.Struct({
               sequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -89,6 +89,10 @@ export function inspectUpgradeRecovery(
         )(database.query("SELECT * FROM host_recovery_clock LIMIT 2").all(), {
           onExcessProperty: "error",
         });
+        if (Exit.isFailure(decoded)) {
+          throw Cause.squash(decoded.cause);
+        }
+        const rows = decoded.value;
         if (
           rows.length !== 1 ||
           !rows[0] ||

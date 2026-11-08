@@ -70,7 +70,7 @@ test("report search CLI discovers across root runs, reads a result, continues pa
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.source.scope).toBe("invocation");
     const id = page.items[0]?.reportId;
-    if (!id) {
+    if (id === undefined) {
       throw new Error("Missing search result");
     }
     expect(await cli(repository, ["report", "get", id])).toMatchObject({
@@ -105,7 +105,7 @@ test("report search CLI discovers across root runs, reads a result, continues pa
     const line = human.stderr
       .split("\n")
       .find((value) => value.startsWith("effectory "));
-    if (!line) {
+    if (line === undefined) {
       throw new Error("Missing continuation command");
     }
     const continuation = Bun.spawn(

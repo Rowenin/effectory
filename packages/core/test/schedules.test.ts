@@ -19,8 +19,8 @@ const base = {
   input: { names: ["Ada"] },
   workflow: Echo,
 };
-const build = (app: Application.Application<never>) =>
-  Effect.runPromise(Application.Registry.pipe(Effect.provide(app.layer)));
+const build = async (app: Application.Application<never>) =>
+  await Effect.runPromise(Application.Registry.pipe(Effect.provide(app.layer)));
 
 test("schedule captures strict immutable encoded input and normalizes only cron whitespace", () => {
   const input = { names: ["Ada"] };
@@ -35,7 +35,9 @@ test("schedule captures strict immutable encoded input and normalizes only cron 
   expect(Object.isFrozen(value.encodedInput)).toBe(true);
   expect(
     Object.isFrozen(
-      Reflect.get(value.encodedInput as { names: readonly string[] }, "names")
+      typeof value.encodedInput === "object" && value.encodedInput !== null
+        ? Reflect.get(value.encodedInput, "names")
+        : undefined
     )
   ).toBe(true);
   expect(value.cron).toBe("0 * * * *");
@@ -182,7 +184,7 @@ export function scheduleTypeFixtures() {
   const { input: _input, ...withoutInput } = base;
   // @ts-expect-error Fixed input must be supplied explicitly.
   WorkflowSchedule.make(withoutInput);
-  Effect.runPromise(
+  void Effect.runPromise(
     // @ts-expect-error Application services cannot disappear through scheduling.
     Effect.scoped(
       Layer.build(

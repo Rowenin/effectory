@@ -11,11 +11,11 @@ import { Runner } from "../../src/runner.ts";
 import { writeReady } from "./ready.ts";
 
 const [directory, mode, readyFile] = process.argv.slice(2);
-if (!(directory && mode && readyFile)) {
+if (directory === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Missing fixture arguments");
 }
 const audit = new Database(path.join(directory, "audit.sqlite"));
-audit.exec(
+audit.run(
   "CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, count INTEGER NOT NULL)"
 );
 const work = Task.make(
@@ -104,15 +104,16 @@ try {
           waits.length === 3 &&
           current.status === "Waiting"
         ) {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                runId: run.runId,
-                status: current.status,
-                waits: waits.map((wait) => wait.waitId).toSorted(),
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  runId: run.runId,
+                  status: current.status,
+                  waits: waits.map((wait) => wait.waitId).toSorted(),
+                })
+              )
           );
           return yield* Effect.never;
         }
@@ -131,16 +132,17 @@ try {
           }
         }
         if (current.status === "Succeeded") {
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                result: current.result,
-                runId: run.runId,
-                status: current.status,
-                waits: waits.map((wait) => wait.waitId).toSorted(),
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  result: current.result,
+                  runId: run.runId,
+                  status: current.status,
+                  waits: waits.map((wait) => wait.waitId).toSorted(),
+                })
+              )
           );
           return;
         }

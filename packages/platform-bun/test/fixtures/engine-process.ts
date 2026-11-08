@@ -11,12 +11,12 @@ import { ownershipLayer } from "../../src/ownership.ts";
 import { writeReady } from "./ready.ts";
 
 const [filename, mode, readyFile] = process.argv.slice(2);
-if (!(filename && mode && readyFile)) {
+if (filename === undefined || mode === undefined || readyFile === undefined) {
   throw new Error("Expected database, mode and ready-file arguments");
 }
 
 const audit = new Database(`${filename}.audit`);
-audit.exec(
+audit.run(
   "CREATE TABLE IF NOT EXISTS effects (id TEXT PRIMARY KEY, count INTEGER NOT NULL)"
 );
 const approval = DurableDeferred.make("approval", { success: Schema.String });
@@ -47,15 +47,16 @@ const handler = workflow.toLayer(({ runId }) =>
               "INSERT INTO effects VALUES ('manual', 1) ON CONFLICT(id) DO UPDATE SET count = count + 1"
             )
             .run();
-          yield* Effect.promise(() =>
-            writeReady(
-              readyFile,
-              JSON.stringify({
-                duplicate: "in-flight",
-                id: "in-flight",
-                status: "InFlight",
-              })
-            )
+          yield* Effect.promise(
+            async () =>
+              await writeReady(
+                readyFile,
+                JSON.stringify({
+                  duplicate: "in-flight",
+                  id: "in-flight",
+                  status: "InFlight",
+                })
+              )
           );
           return yield* Effect.never;
         }),
@@ -101,7 +102,7 @@ const handler = workflow.toLayer(({ runId }) =>
 function deliverDecisions(store: typeof HostStore.Service, id: string) {
   return Effect.gen(function* () {
     for (const intent of yield* store.outbox()) {
-      if (intent.kind === "Settle" && intent.waitId) {
+      if (intent.kind === "Settle" && intent.waitId !== null) {
         yield* DurableDeferred.succeed(approval, {
           token: DurableDeferred.tokenFromExecutionId(approval, {
             executionId: id,
@@ -123,15 +124,16 @@ const program = Effect.gen(function* () {
     "owner"
   );
   if (mode === "accept-only") {
-    yield* Effect.promise(() =>
-      writeReady(
-        readyFile,
-        JSON.stringify({
-          duplicate: run.runId,
-          id: run.runId,
-          status: "Queued",
-        })
-      )
+    yield* Effect.promise(
+      async () =>
+        await writeReady(
+          readyFile,
+          JSON.stringify({
+            duplicate: run.runId,
+            id: run.runId,
+            status: "Queued",
+          })
+        )
     );
     return yield* Effect.never;
   }
@@ -158,11 +160,12 @@ const program = Effect.gen(function* () {
       (value) => value
     );
     if (mode === "record-answer") {
-      yield* Effect.promise(() =>
-        writeReady(
-          readyFile,
-          JSON.stringify({ duplicate, id, status: "Recorded" })
-        )
+      yield* Effect.promise(
+        async () =>
+          await writeReady(
+            readyFile,
+            JSON.stringify({ duplicate, id, status: "Recorded" })
+          )
       );
       return yield* Effect.never;
     }
@@ -171,7 +174,7 @@ const program = Effect.gen(function* () {
   for (let attempt = 0; attempt < 400; attempt += 1) {
     if (
       mode === "manual-drain" &&
-      (yield* Effect.promise(() => Bun.file(readyFile).exists()))
+      (yield* Effect.promise(async () => await Bun.file(readyFile).exists()))
     ) {
       return;
     }
@@ -180,21 +183,23 @@ const program = Effect.gen(function* () {
       const state = result.value;
       if (mode === "manual-recover" && state._tag === "Suspended") {
         const current = yield* store.getRun(run.runId);
-        yield* Effect.promise(() =>
-          writeReady(
-            readyFile,
-            JSON.stringify({ duplicate, id, status: current.status })
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeReady(
+              readyFile,
+              JSON.stringify({ duplicate, id, status: current.status })
+            )
         );
         return;
       }
       if (mode === "start" && state._tag === "Suspended") {
         yield* store.project(run.runId, "Waiting");
-        yield* Effect.promise(() =>
-          writeReady(
-            readyFile,
-            JSON.stringify({ duplicate, id, status: "Suspended" })
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeReady(
+              readyFile,
+              JSON.stringify({ duplicate, id, status: "Suspended" })
+            )
         );
         return yield* Effect.never;
       }
@@ -204,11 +209,12 @@ const program = Effect.gen(function* () {
         }
         const resultValue = state.exit.value;
         yield* store.project(run.runId, "Succeeded", resultValue);
-        yield* Effect.promise(() =>
-          writeReady(
-            readyFile,
-            JSON.stringify({ duplicate, id, result: resultValue })
-          )
+        yield* Effect.promise(
+          async () =>
+            await writeReady(
+              readyFile,
+              JSON.stringify({ duplicate, id, result: resultValue })
+            )
         );
         return;
       }

@@ -49,8 +49,8 @@ function fixture() {
     add,
     directory,
     root,
-    run: () =>
-      Effect.runPromise(
+    run: async () =>
+      await Effect.runPromise(
         inventoryReclaimRevisions(root).pipe(
           Effect.provide(ownershipLayer(path.join(root, ".effectory", "owner")))
         )

@@ -49,13 +49,18 @@ function required<A>(value: A | null | undefined): A {
   return value;
 }
 const idOf = Schema.decodeUnknownSync(Schema.Struct({ planId: Schema.String }));
-const errorCode = <A, E>(exit: Exit.Exit<A, E>) =>
-  Exit.isFailure(exit)
-    ? Reflect.get(
-        Option.getOrUndefined(Cause.findErrorOption(exit.cause)) as object,
-        "code"
-      )
-    : undefined;
+const errorCode = <A, E>(exit: Exit.Exit<A, E>): unknown => {
+  if (Exit.isSuccess(exit)) {
+    return undefined;
+  }
+  const error: unknown = Option.getOrUndefined(
+    Cause.findErrorOption(exit.cause)
+  );
+  if (typeof error !== "object" || error === null) {
+    throw new TypeError("Expected a typed failure object");
+  }
+  return Reflect.get(error, "code");
+};
 function fixture() {
   const repository = mkdtempSync(path.join(tmpdir(), "effectory-run-reclaim-"));
   const directory = path.join(repository, ".effectory");
@@ -455,8 +460,14 @@ test("preview is owner-scoped and strict, and unknown completion evidence remain
     await Effect.runPromise(
       Effect.gen(function* () {
         yield* RepositoryLease;
-        const busy = yield* Effect.promise(() =>
-          Effect.runPromiseExit(reclaimRuns(f.repository, { kind: "compact" }))
+        // A separate root, without this lease holder's context, must find the
+        // repository busy.
+        const busy = yield* Effect.promise(
+          async () =>
+            // @effect-diagnostics-next-line runEffectInsideEffect:off
+            await Effect.runPromiseExit(
+              reclaimRuns(f.repository, { kind: "compact" })
+            )
         );
         expect(Exit.isFailure(busy)).toBe(true);
       }).pipe(Effect.provide(ownershipLayer(`${f.filename}.owner`)))
@@ -630,7 +641,7 @@ test("plan selection is bounded and ordered by latest completion, and legacy adm
         Schema.Struct({ families: Schema.Array(Schema.Unknown) })
       )(remaining).families
     ).toHaveLength(5);
-    f.db.exec(
+    f.db.run(
       "ALTER TABLE host_runs RENAME COLUMN admissionLane TO admissionNamespace"
     );
     createStore(f.db, f.lease);
@@ -654,11 +665,11 @@ test("full SQLite intent rolls back before any history is removed and can be ret
     const plan = await Effect.runPromise(
       store.plan({ completedBefore: "2099-01-01T00:00:00Z" })
     );
-    f.db.exec("CREATE TABLE retirement_space_pressure (value BLOB)");
+    f.db.run("CREATE TABLE retirement_space_pressure (value BLOB)");
     const pageCount = required(
       f.db.query<{ page_count: number }, []>("PRAGMA page_count").get()
     ).page_count;
-    f.db.exec(`PRAGMA max_page_count=${pageCount + 8}`);
+    f.db.run(`PRAGMA max_page_count=${pageCount + 8}`);
     let full = false;
     try {
       for (let n = 0; n < 1000; n += 1) {
@@ -681,7 +692,7 @@ test("full SQLite intent rolls back before any history is removed and can be ret
       count: 100,
     });
     expect(store.load(plan.planId).state).toBe("Planned");
-    f.db.exec(
+    f.db.run(
       "DROP TABLE retirement_space_pressure; PRAGMA max_page_count=1073741823"
     );
     expect(
@@ -825,14 +836,14 @@ test("SIGKILL during compaction leaves committed history intact and compaction r
   try {
     const run = f.submit("vacuum");
     f.finish(run.runId);
-    f.db.exec("CREATE TABLE retirement_compaction_fixture (payload BLOB)");
+    f.db.run("CREATE TABLE retirement_compaction_fixture (payload BLOB)");
     const insert = f.db.query(
       "INSERT INTO retirement_compaction_fixture VALUES(zeroblob(16777216))"
     );
     for (let n = 0; n < 16; n += 1) {
       insert.run();
     }
-    f.db.exec(
+    f.db.run(
       "DELETE FROM retirement_compaction_fixture WHERE rowid%2=0; PRAGMA wal_checkpoint(TRUNCATE)"
     );
     const ready = path.join(f.directory, "vacuum-ready");

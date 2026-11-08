@@ -51,15 +51,15 @@ export function validateExtensions(
             validationCommand(repository, input),
             { failure, maximumBytes: 4096 }
           );
-          yield* Effect.try({
+          const report = yield* Effect.try({
             catch: failure,
-            try: () =>
-              Schema.decodeUnknownSync(
-                Schema.Struct({ valid: Schema.Literal(true) })
-              )(JSON.parse(new TextDecoder().decode(bytes)), {
-                onExcessProperty: "error",
-              }),
+            try: (): unknown => JSON.parse(new TextDecoder().decode(bytes)),
           });
+          yield* Schema.decodeUnknownEffect(
+            Schema.Struct({ valid: Schema.Literal(true) })
+          )(report, { onExcessProperty: "error" }).pipe(
+            Effect.mapError(failure)
+          );
         }),
       (input) => Effect.sync(() => rmSync(input, { force: true }))
     );

@@ -12,6 +12,7 @@ export type TaskRecord = Readonly<Record<string, RegisteredTask>>;
 export type WorkflowRecord = Readonly<Record<string, Workflow.Definition>>;
 export type ArtifactRecord = Readonly<Record<string, Artifact.Any>>;
 export type Implementation = RegisteredTask & { readonly providerId: string };
+// oxlint-disable-next-line typescript/no-generated-empty-object-type -- a {} default keeps keyof inference in the public API
 type Empty = Readonly<Record<never, never>>;
 
 export interface Definition<
@@ -76,15 +77,20 @@ export function make<
   // The optional generic contributions default to empty records/tuples. The
   // assertions retain the exact named exports supplied by the caller.
   const definition: Definition<T, I, W, A, P> = Object.freeze({
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
     artifacts: Object.freeze({ ...spec.artifacts }) as A,
     id: spec.id,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
     implementations: Object.freeze([
       ...(spec.implementations ?? []),
     ]) as unknown as I,
     kind: "Extension",
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
     patches: Object.freeze([...(spec.patches ?? [])]) as unknown as P,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
     tasks: Object.freeze({ ...spec.tasks }) as T,
     version: spec.version,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
     workflows: Object.freeze({ ...spec.workflows }) as W,
   });
   definitions.add(definition);
@@ -175,7 +181,7 @@ export function use<D extends Definition, const O extends Options<D> = Empty>(
   selection?: O
 ): Use<D, O> {
   for (const binding of selection?.patches ?? []) {
-    Schema.decodeUnknownSync(BindingSchema)(binding, {
+    Schema.decodeSync(BindingSchema)(binding, {
       onExcessProperty: "error",
     });
     identifier(binding.id);
@@ -210,6 +216,7 @@ export function use<D extends Definition, const O extends Options<D> = Empty>(
         }
       : {}),
   };
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- freezing a caller-supplied generic record keeps its type
   return Object.freeze({ extension, selection: Object.freeze(selected) as O });
 }
 

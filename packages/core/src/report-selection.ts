@@ -105,14 +105,14 @@ export function selectReports(
   const selected = candidates.filter(
     (entry) =>
       entry.required ||
-      (!requested.skipAll &&
-        !requested.skip?.includes(entry.id) &&
+      (requested.skipAll !== true &&
+        requested.skip?.includes(entry.id) !== true &&
         !(requested.skipTags && match(entry.tags, requested.skipTags)) &&
         (!requested.only || requested.only.includes(entry.id)) &&
         (!requested.onlyTags || match(entry.tags, requested.onlyTags)))
   );
   const selectedIds = new Set(selected.map((entry) => entry.id));
-  const decision = Schema.decodeUnknownSync(SelectionDecision)({
+  const decision = Schema.decodeSync(SelectionDecision)({
     excluded: candidates
       .filter((entry) => !selectedIds.has(entry.id))
       .map((entry) => entry.id)

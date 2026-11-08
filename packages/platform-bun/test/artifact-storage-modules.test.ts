@@ -2,12 +2,12 @@ import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { Artifact, ArtifactStorage, Task } from "@offtree/effectory-sdk";
 import { Effect, Schema } from "effect";
 
 import { installHostModules } from "../src/host-runtime.ts";
+import { importModule } from "./fixtures/import-module.ts";
 
 test("application and extension imports resolve the same ArtifactStorage and canonical artifact", async () => {
   const directory = await mkdtemp(
@@ -39,13 +39,15 @@ const Report = Artifact.make({ id: "report", version: 1, schema: Schema.Int });
 export const task = Task.make({ id: "report", version: 1, input: Schema.Null, success: Report.refSchema, error: Schema.Never, replay: "idempotent", outputs: { report: Report } }, () => publish(Report));
 `
     );
-    const ext = (await import(pathToFileURL(extension).href)) as {
+    const ext = await importModule<{
       ArtifactStorage: typeof ArtifactStorage;
-    };
+    }>(extension, { ArtifactStorage: "function" });
     expect(ext.ArtifactStorage).toBe(ArtifactStorage);
-    const app = (await import(pathToFileURL(application).href)) as {
-      task: Task.Definition;
-    };
+    const app = await importModule<{
+      task: Task.Definition<
+        Task.Spec & { readonly error: typeof Schema.Never }
+      >;
+    }>(application, { task: "object" });
     const result = await Effect.runPromise(
       Task.test(app.task, { input: null })
     );

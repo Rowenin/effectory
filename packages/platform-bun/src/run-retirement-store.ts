@@ -220,7 +220,7 @@ export function createRetirementStore(
                   .query(
                     "SELECT 1 FROM host_outbox WHERE runId=? AND delivered=0 LIMIT 1"
                   )
-                  .get(row.runId)
+                  .get(row.runId) !== null
               ) {
                 reason ??= "PendingOutbox";
               }
@@ -229,11 +229,11 @@ export function createRetirementStore(
                   .query(
                     "SELECT 1 FROM host_recovery_holds WHERE runId=? AND state='Open' UNION ALL SELECT 1 FROM host_recovery_gate_obligations WHERE runId=? AND closed=0 LIMIT 1"
                   )
-                  .get(row.runId, row.runId)
+                  .get(row.runId, row.runId) !== null
               ) {
                 reason ??= "PendingRecovery";
               }
-              if (capture) {
+              if (capture !== undefined && capture !== "") {
                 db.query(
                   "INSERT INTO host_retirement_members VALUES(?,?,?)"
                 ).run(capture, row.runId, root);
@@ -277,7 +277,7 @@ export function createRetirementStore(
           ) {
             reason = "PendingReports";
           }
-          if (row.settledAt) {
+          if (row.settledAt !== null && row.settledAt !== "") {
             const settledAt = yield* retirementSql(() =>
               Schema.decodeUnknownSync(RetirementInstant)(row.settledAt)
             );
@@ -354,7 +354,7 @@ export function createRetirementStore(
       let estimatedPayloadBytes = 0;
       for (const step of retirementDeletionSteps(planId)) {
         const [table, where] = step;
-        if (!table || !where) {
+        if (table === undefined || where === undefined) {
           continue;
         }
         const exists = yield* retirementSql(() =>
@@ -362,7 +362,7 @@ export function createRetirementStore(
             .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
             .get(table)
         );
-        if (!exists) {
+        if (exists === null) {
           continue;
         }
         const columns = yield* retirementSql(() =>
@@ -430,9 +430,14 @@ export function createRetirementStore(
           return yield* retirementError("NotFound", "Run was not found");
         }
         if (row.admissionLane === "report") {
+          const report: unknown = JSON.parse(row.reportJson ?? "{}");
+          const sourceRunId: unknown =
+            typeof report === "object" && report !== null
+              ? Reflect.get(report, "sourceRunId")
+              : undefined;
           return yield* retirementError(
             "InvalidInput",
-            `Select the source run instead: ${String(JSON.parse(row.reportJson ?? "{}").sourceRunId)}`
+            `Select the source run instead: ${String(sourceRunId)}`
           );
         }
       }
@@ -479,7 +484,7 @@ export function createRetirementStore(
         for (const row of page) {
           after = row.runId;
           const info = yield* family(row.runId);
-          if (info.reason) {
+          if (info.reason !== null) {
             protectedCounts[info.reason] =
               (protectedCounts[info.reason] ?? 0) + 1;
             continue;
@@ -561,7 +566,7 @@ export function createRetirementStore(
       for (const expected of families) {
         const actual = yield* family(expected.sourceRunId);
         if (
-          actual.reason ||
+          actual.reason !== null ||
           actual.summary.fingerprint !== expected.fingerprint
         ) {
           return yield* retirementError(
@@ -623,7 +628,7 @@ export function createRetirementStore(
             db.query(
               "INSERT OR IGNORE INTO host_retired_targets SELECT 'wait',waitId,?,? FROM host_waits WHERE runId=?"
             ).run(principal, member.sourceRunId, member.runId);
-            if (member.engineId) {
+            if (member.engineId !== null && member.engineId !== "") {
               db.query(
                 "INSERT OR IGNORE INTO host_retirement_native VALUES(?,'Workflow/EffectoryExecution/v1',?)"
               ).run(planId, member.engineId);
@@ -646,16 +651,16 @@ export function createRetirementStore(
         db.query(
           "UPDATE host_retirement_plans SET state='Applying',startedAt=? WHERE planId=?"
         ).run(now, planId);
-        db.exec("UPDATE host_retirement_epoch SET epoch=epoch+1 WHERE id=1");
+        db.run("UPDATE host_retirement_epoch SET epoch=epoch+1 WHERE id=1");
       })
       .immediate();
   const deleteBatch = (planId: string, table: string, where: string) =>
     db
       .transaction(() => {
         if (
-          !db
+          db
             .query("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
-            .get(table)
+            .get(table) === null
         ) {
           return 0;
         }

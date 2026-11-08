@@ -207,7 +207,7 @@ test("selection capture rolls back with admission and empty selectors preserve o
   const f = fixture();
   try {
     const resolved = resolveReportPlan(await registry(), "workflow", "flow");
-    f.database.exec(
+    f.database.run(
       "CREATE TRIGGER reject_plan BEFORE INSERT ON host_report_plans BEGIN SELECT RAISE(ABORT,'test'); END;"
     );
     expect(() =>
@@ -229,7 +229,7 @@ test("selection capture rolls back with admission and empty selectors preserve o
     expect(
       f.database.query("SELECT count(*) count FROM host_outbox").get()
     ).toEqual({ count: 0 });
-    f.database.exec("DROP TRIGGER reject_plan");
+    f.database.run("DROP TRIGGER reject_plan");
     const run = sync(
       f.store.submit(
         {
@@ -275,7 +275,7 @@ test("selection capture rolls back with admission and empty selectors preserve o
       ({ required: _required, tags: _tags, ...entry }) => entry
     );
     expect(
-      Schema.decodeUnknownSync(ReportPlan)(legacyPlan).map((entry) => [
+      Schema.decodeSync(ReportPlan)(legacyPlan).map((entry) => [
         entry.required,
         entry.tags,
       ])
@@ -369,7 +369,7 @@ test("bounded decisions are optional to old Run readers and absent from summarie
     { length: 128 },
     (_, index) => `r${String(index).padStart(3, "0")}${"x".repeat(196)}`
   );
-  const decision = Schema.decodeUnknownSync(SelectionDecision)({
+  const decision = Schema.decodeSync(SelectionDecision)({
     excluded: [],
     requested: { only: ids, skip: ids },
     required: ids,
@@ -400,10 +400,10 @@ test("bounded decisions are optional to old Run readers and absent from summarie
     ...row,
     reportSelection: decision,
   });
-  expect(Schema.decodeUnknownSync(OldRun)(modern)).not.toHaveProperty(
+  expect(Schema.decodeSync(OldRun)(modern)).not.toHaveProperty(
     "reportSelection"
   );
-  expect(Schema.decodeUnknownSync(RunSummary)(modern)).not.toHaveProperty(
+  expect(Schema.decodeSync(RunSummary)(modern)).not.toHaveProperty(
     "reportSelection"
   );
 });

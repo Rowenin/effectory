@@ -10,6 +10,7 @@ import { ReportSearchPage } from "@effectory/runtime/report-protocol";
 import { Schema } from "effect";
 
 import { approval, cli, start } from "./fixtures/cli.ts";
+import { arrayContaining } from "./fixtures/matchers.ts";
 
 const application = `
 import {Application,Report,Task,Workflow} from "@offtree/effectory-sdk";
@@ -63,7 +64,7 @@ test("child report registration survives kill/restart; source-workflow CLI searc
     const sql = (query: string) => {
       const db = new Database(path.join(repository, ".effectory/state.sqlite"));
       try {
-        db.exec(query);
+        db.run(query);
       } finally {
         db.close();
       }
@@ -137,7 +138,7 @@ test("child report registration survives kill/restart; source-workflow CLI searc
     ).toMatchObject({
       content: {
         data: {
-          events: expect.arrayContaining(["WaitOpened", "WaitSettled"]),
+          events: arrayContaining(["WaitOpened", "WaitSettled"]),
           result: { _tag: "Succeeded", value: 42 },
         },
       },

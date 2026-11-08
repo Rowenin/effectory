@@ -127,11 +127,12 @@ export default Application.make({ tasks: [work] });
     const trap = `import { writeFileSync } from "node:fs"; writeFileSync(${JSON.stringify(imported)}, "imported"); throw new Error("Must not import historical code");`;
     await writeFile(path.join(repository, "effectory.ts"), trap);
     await Promise.all(
-      readdirSync(path.join(state, "revisions")).map((revision) =>
-        writeFile(
-          path.join(state, "revisions", revision, "application.mjs"),
-          trap
-        )
+      readdirSync(path.join(state, "revisions")).map(
+        async (revision) =>
+          await writeFile(
+            path.join(state, "revisions", revision, "application.mjs"),
+            trap
+          )
       )
     );
     const child = Bun.spawn(
@@ -186,7 +187,9 @@ export default Application.make({ tasks: [work] });
         await Promise.all(
           ["", "-wal", "-shm"]
             .filter((suffix) => existsSync(filename + suffix))
-            .map((suffix) => copyFile(filename + suffix, copy + suffix))
+            .map(
+              async (suffix) => await copyFile(filename + suffix, copy + suffix)
+            )
         );
         const database = new Database(copy);
         // Host-owned column names only. Unknown headers must fail before the

@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { OperationError } from "@effectory/runtime/protocol";
-import { Clock, Effect, Schema } from "effect";
+import { Cause, Clock, Effect, Exit, Schema } from "effect";
 
 import { RepositoryLease } from "./ownership.ts";
 import { inspectRevisionManifests } from "./revision-manifest.ts";
@@ -104,10 +104,14 @@ export function assessRuntimeUpgrade(
         }
         let repositoryId: string;
         try {
-          ({ repositoryId } = Schema.decodeUnknownSync(Credentials)(
+          const credentials = Schema.decodeExit(Credentials)(
             readStoredCredentials(repository),
             { onExcessProperty: "error" }
-          ));
+          );
+          if (Exit.isFailure(credentials)) {
+            throw Cause.squash(credentials.cause);
+          }
+          ({ repositoryId } = credentials.value);
         } catch {
           throw new OperationError({
             code: "RevisionUnavailable",

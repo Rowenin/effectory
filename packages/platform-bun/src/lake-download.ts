@@ -22,12 +22,10 @@ export function binaryDownload<E = never>(
   directory: string,
   lookup: () => ArtifactRecord,
   mapOpenError?: (cause: unknown) => E
-): Stream.Stream<typeof DownloadFrame.Type, OperationError | E> {
+): Stream.Stream<DownloadFrame, OperationError | E> {
   // Task readers preserve native open/liveness failures before the CLI's
   // generic storage adapter erases their classification.
-  const openEffect = <A>(
-    body: () => A
-  ): Effect.Effect<A, OperationError | E> =>
+  const openEffect = <A>(body: () => A): Effect.Effect<A, OperationError | E> =>
     mapOpenError
       ? Effect.try({ catch: mapOpenError, try: body })
       : fileEffect(body);
@@ -45,7 +43,8 @@ export function binaryDownload<E = never>(
           }
           if (
             !/^[a-f0-9]{64}$/u.test(record.digest) ||
-            !record.contentType ||
+            record.contentType === undefined ||
+            record.contentType === "" ||
             record.bytes < 0 ||
             record.bytes > binaryLimit
           ) {

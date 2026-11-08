@@ -36,9 +36,20 @@ export interface CapturedOptions {
   readonly timeoutMillis: number;
 }
 
+// Duration.fromInput validates strings, tuples and objects itself; this only
+// rules out values it can never accept.
+function isDurationInput(value: unknown): value is Duration.Input {
+  return (
+    typeof value === "number" ||
+    typeof value === "bigint" ||
+    typeof value === "string" ||
+    (typeof value === "object" && value !== null)
+  );
+}
+
 export function capture(input: Options): CapturedOptions {
   try {
-    const decoded = Schema.decodeUnknownSync(options)(input, {
+    const decoded = Schema.decodeSync(options)(input, {
       onExcessProperty: "error",
     });
     if (
@@ -47,11 +58,12 @@ export function capture(input: Options): CapturedOptions {
     ) {
       throw new Error("Undefined timeout");
     }
-    const duration = Duration.fromInput(
-      (Object.hasOwn(decoded, "requestTimeout")
-        ? decoded.requestTimeout
-        : "30 seconds") as Duration.Input
-    );
+    const timeout = Object.hasOwn(decoded, "requestTimeout")
+      ? decoded.requestTimeout
+      : "30 seconds";
+    const duration = isDurationInput(timeout)
+      ? Duration.fromInput(timeout)
+      : Option.none();
     const timeoutMillis = Option.isSome(duration)
       ? Duration.toMillis(duration.value)
       : Number.NaN;

@@ -376,7 +376,7 @@ export function createUpgradeRecoveryCopy(
           throw error;
         }
       }
-      Schema.decodeUnknownSync(Manifest.fields.planId)(planId);
+      Schema.decodeSync(Manifest.fields.planId)(planId);
       return root;
     });
     const entries = yield* inventoryUpgradeRepository(source);

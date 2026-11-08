@@ -12,7 +12,12 @@ import {
 } from "../packages/platform-bun/src/extension-source.ts";
 
 const [source, asset] = process.argv.slice(2);
-if (!source || !asset) {
+if (
+  source === undefined ||
+  source === "" ||
+  asset === undefined ||
+  asset === ""
+) {
   throw new Error(
     "Usage: bun scripts/verify-release-download.ts github:owner/repository@tag asset-name"
   );

@@ -78,7 +78,7 @@ test("authored graph resumes approval and reuses publication after death before 
     for (const child of children) {
       child.kill();
     }
-    await Promise.all(children.map((child) => child.exited));
+    await Promise.all(children.map(async (child) => await child.exited));
     await rm(directory, { force: true, recursive: true });
   }
 }, 40_000);
@@ -128,7 +128,7 @@ test.each(["workflow", "attempt", "completed"] as const)(
       for (const child of children) {
         child.kill();
       }
-      await Promise.all(children.map((child) => child.exited));
+      await Promise.all(children.map(async (child) => await child.exited));
       await rm(directory, { force: true, recursive: true });
     }
   },
@@ -176,7 +176,7 @@ test("fan-out retains keyed receivers, completed manual tasks and input result o
     for (const child of children) {
       child.kill();
     }
-    await Promise.all(children.map((child) => child.exited));
+    await Promise.all(children.map(async (child) => await child.exited));
     await rm(directory, { force: true, recursive: true });
   }
 }, 40_000);
@@ -231,7 +231,7 @@ test("a persisted retry resumes after offline backoff without repeating the fail
     for (const child of children) {
       child.kill();
     }
-    await Promise.all(children.map((child) => child.exited));
+    await Promise.all(children.map(async (child) => await child.exited));
     await rm(directory, { force: true, recursive: true });
   }
 }, 40_000);

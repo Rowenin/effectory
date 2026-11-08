@@ -3,7 +3,7 @@ import { expect, test } from "bun:test";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { Exit } from "effect";
+import { Exit, Schema } from "effect";
 
 import {
   readRuntimeStorage,
@@ -13,6 +13,13 @@ import {
 import { assessRuntimeUpgrade } from "../src/upgrade-assessment.ts";
 import { acceptRuntimeUpgrade } from "../src/upgrade-executor.ts";
 import { format2Fixture } from "./fixtures/upgrade-format2-fixture.ts";
+
+const readCredentials = (filename: string) =>
+  Schema.decodeSync(
+    Schema.fromJsonString(
+      Schema.Struct({ planId: Schema.String, targetBuild: Schema.String })
+    )
+  )(readFileSync(filename, "utf-8"));
 
 const bytes = (root: string, file: string) =>
   readFileSync(path.join(root, file), "utf-8");
@@ -125,7 +132,9 @@ test("format-2 abort keeps a changed logical credential and rejects a foreign ow
   try {
     await f.accept("credentials-envelope-v2");
     const filename = path.join(f.state, "credentials.json");
-    const current = JSON.parse(readFileSync(filename, "utf-8"));
+    const current = Schema.decodeSync(
+      Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+    )(readFileSync(filename, "utf-8"));
     writeFileSync(
       filename,
       JSON.stringify({ ...current, targetBuild: "d".repeat(64) })
@@ -135,9 +144,7 @@ test("format-2 abort keeps a changed logical credential and rejects a foreign ow
       () => true
     );
     expect(refused).toBe(true);
-    expect(JSON.parse(readFileSync(filename, "utf-8")).targetBuild).toBe(
-      "d".repeat(64)
-    );
+    expect(readCredentials(filename).targetBuild).toBe("d".repeat(64));
     writeFileSync(
       filename,
       JSON.stringify({
@@ -151,9 +158,7 @@ test("format-2 abort keeps a changed logical credential and rejects a foreign ow
     const aborted = await f.resume();
     expect(aborted.phase).toBe("Aborted");
     expect(readStoredCredentials(f.repository).token).toBe("changed-token");
-    expect(JSON.parse(readFileSync(filename, "utf-8")).planId).toBe(
-      f.owner.planId
-    );
+    expect(readCredentials(filename).planId).toBe(f.owner.planId);
   } finally {
     f.cleanup();
   }

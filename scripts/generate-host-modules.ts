@@ -10,6 +10,8 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { Schema } from "effect";
+
 const root = path.resolve(import.meta.dir, "..");
 const output = path.join(
   root,
@@ -25,9 +27,14 @@ function packageRoot(name: string) {
 /** Every public `effect` entry: named exports plus files matched by `./*`. */
 function effectSpecifiers() {
   const directory = packageRoot("effect");
-  const manifest = JSON.parse(
-    readFileSync(path.join(directory, "package.json"), "utf-8")
-  ) as { version: string; exports: Record<string, unknown> };
+  const manifest = Schema.decodeSync(
+    Schema.fromJsonString(
+      Schema.Struct({
+        exports: Schema.Record(Schema.String, Schema.Unknown),
+        version: Schema.String,
+      })
+    )
+  )(readFileSync(path.join(directory, "package.json"), "utf-8"));
   const specifiers = new Set<string>();
   for (const [key, target] of Object.entries(manifest.exports)) {
     if (target !== null && !key.includes("*") && key !== "./package.json") {
@@ -55,9 +62,11 @@ function effectSpecifiers() {
 }
 
 function coreSpecifiers() {
-  const manifest = JSON.parse(
-    readFileSync(path.join(root, "packages/core/package.json"), "utf-8")
-  ) as { exports: Record<string, string> };
+  const manifest = Schema.decodeSync(
+    Schema.fromJsonString(
+      Schema.Struct({ exports: Schema.Record(Schema.String, Schema.String) })
+    )
+  )(readFileSync(path.join(root, "packages/core/package.json"), "utf-8"));
   return Object.keys(manifest.exports)
     .filter((key) => key !== "./package.json")
     .map((key) =>

@@ -48,9 +48,9 @@ test("activation keeps a running task's application alive until task cleanup and
   const filename = path.join(repository, "effectory.ts");
   const marker = path.join(repository, "lifetime.txt");
   const state = path.join(repository, ".effectory");
-  const records = Effect.promise(() => readFile(marker, "utf-8")).pipe(
-    Effect.map((text) => text.trim().split("\n"))
-  );
+  const records = Effect.promise(
+    async () => await readFile(marker, "utf-8")
+  ).pipe(Effect.map((text) => text.trim().split("\n")));
   const until = (phase: string) =>
     Effect.gen(function* () {
       while (!(yield* records).includes(phase)) {
@@ -75,8 +75,8 @@ test("activation keeps a running task's application alive until task cleanup and
           "owner"
         );
         yield* until("handler:first");
-        yield* Effect.promise(() =>
-          writeFile(filename, application("second", marker))
+        yield* Effect.promise(
+          async () => await writeFile(filename, application("second", marker))
         );
         yield* Effect.gen(function* () {
           yield* catalog.activate(yield* catalog.prepare());
@@ -87,11 +87,15 @@ test("activation keeps a running task's application alive until task cleanup and
           "handler:first",
           "acquire:second",
         ]);
-        yield* Effect.promise(() => writeFile(`${marker}.handler`, "continue"));
+        yield* Effect.promise(
+          async () => await writeFile(`${marker}.handler`, "continue")
+        );
         yield* until("cleanup:first");
         expect(yield* records).not.toContain("release:first");
         expect((yield* store.getRun(run.runId)).status).toBe("Running");
-        yield* Effect.promise(() => writeFile(`${marker}.cleanup`, "continue"));
+        yield* Effect.promise(
+          async () => await writeFile(`${marker}.cleanup`, "continue")
+        );
         yield* until("release:first");
         let finished = yield* store.getRun(run.runId);
         while (finished.status !== "Succeeded") {
@@ -110,11 +114,12 @@ test("activation keeps a running task's application alive until task cleanup and
         ]);
       }).pipe(
         Effect.ensuring(
-          Effect.promise(() =>
-            Promise.all([
-              writeFile(`${marker}.handler`, "continue"),
-              writeFile(`${marker}.cleanup`, "continue"),
-            ])
+          Effect.promise(
+            async () =>
+              await Promise.all([
+                writeFile(`${marker}.handler`, "continue"),
+                writeFile(`${marker}.cleanup`, "continue"),
+              ])
           )
         ),
         Effect.timeout("15 seconds"),
@@ -149,9 +154,9 @@ test("host shutdown retains an inactive revision through its native Activity's c
       'yield* wait(".cleanup");',
       'yield* Effect.sleep("50 millis");'
     );
-  const records = Effect.promise(() => readFile(marker, "utf-8")).pipe(
-    Effect.map((text) => text.trim().split("\n"))
-  );
+  const records = Effect.promise(
+    async () => await readFile(marker, "utf-8")
+  ).pipe(Effect.map((text) => text.trim().split("\n")));
   try {
     await mkdir(state);
     await writeFile(filename, source("first"));
@@ -171,7 +176,9 @@ test("host shutdown retains an inactive revision through its native Activity's c
         while (!(yield* records).includes("handler:first")) {
           yield* Effect.sleep("5 millis");
         }
-        yield* Effect.promise(() => writeFile(filename, source("second")));
+        yield* Effect.promise(
+          async () => await writeFile(filename, source("second"))
+        );
         yield* Effect.gen(function* () {
           yield* catalog.activate(yield* catalog.prepare());
         }).pipe(Effect.scoped);

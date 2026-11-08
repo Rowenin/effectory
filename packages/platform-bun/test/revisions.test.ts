@@ -62,7 +62,9 @@ test("source changes retain executable old application revisions with canonical 
         if (!oldTask || !newTask) {
           return yield* Effect.die("Missing retained task");
         }
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
         expect(yield* oldTask.execute({}, context)).toBe("first");
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
         expect(yield* newTask.execute({}, context)).toBe("second");
       }).pipe(Effect.scoped, Effect.provide(layer()))
     );
@@ -84,10 +86,14 @@ test("activation rejects stale source and stale candidates while retaining the p
       Effect.gen(function* () {
         const catalog = yield* Catalog;
         const first = catalog.active;
-        yield* Effect.promise(() => writeFile(filename, application("second")));
+        yield* Effect.promise(
+          async () => await writeFile(filename, application("second"))
+        );
         const stale = yield* catalog.prepare();
         expect(catalog.active).toBe(first);
-        yield* Effect.promise(() => writeFile(filename, application("third")));
+        yield* Effect.promise(
+          async () => await writeFile(filename, application("third"))
+        );
         const rejected = yield* Effect.result(catalog.activate(stale));
         expect(rejected._tag).toBe("Failure");
         expect(catalog.active).toBe(first);
@@ -103,20 +109,25 @@ test("activation rejects stale source and stale candidates while retaining the p
         if (!prior || !current) {
           return yield* Effect.die("Missing task");
         }
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
         expect(yield* prior.execute({}, context)).toBe("first");
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
         expect(yield* current.execute({}, context)).toBe("third");
-        yield* Effect.promise(() =>
-          writeFile(
-            filename,
-            application("invalid").replace(
-              "tasks: [task]",
-              "tasks: [task, task]"
+        yield* Effect.promise(
+          async () =>
+            await writeFile(
+              filename,
+              application("invalid").replace(
+                "tasks: [task]",
+                "tasks: [task, task]"
+              )
             )
-          )
         );
         expect((yield* Effect.result(catalog.prepare()))._tag).toBe("Failure");
         expect(catalog.active).toBe(third.revision);
-        yield* Effect.promise(() => writeFile(filename, application("third")));
+        yield* Effect.promise(
+          async () => await writeFile(filename, application("third"))
+        );
       }).pipe(
         Effect.scoped,
         Effect.provide(
@@ -135,6 +146,7 @@ test("activation rejects stale source and stale candidates while retaining the p
         if (!task) {
           return yield* Effect.die("Missing task");
         }
+        // oxlint-disable-next-line effecttsgo/any-unknown-in-error-context -- user code loaded at runtime has an unknown error type
         expect(yield* task.execute({}, context)).toBe("third");
       }).pipe(
         Effect.scoped,

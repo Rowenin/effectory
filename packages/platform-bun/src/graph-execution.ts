@@ -127,7 +127,7 @@ export function nodeCodec(node: Workflow.Node): Boundary {
 }
 
 export const nodeResultName = (path: string) => `node/${path}`;
-// Effect 4.0.5 names the deferred owned by raceAll with this prefix. A one-arm
+// Effect 4 (checked through 4.1.2) names the deferred owned by raceAll with this prefix. A one-arm
 // race gives each node a held activity scope and a cached, engine-owned result.
 export const nodeResult = (path: string) =>
   DurableDeferred.make(`raceAll/${nodeResultName(path)}`, {

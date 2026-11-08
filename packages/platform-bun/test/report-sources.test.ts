@@ -46,8 +46,8 @@ const storeLayer = (filename: string) =>
     Layer.provide(ownershipLayer(`${filename}.owner`))
   );
 
-test("pinned report plans survive reopen and idempotent admission cannot change them", () =>
-  withDatabase(async (filename) => {
+test("pinned report plans survive reopen and idempotent admission cannot change them", async () =>
+  await withDatabase(async (filename) => {
     let runId = "";
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -92,8 +92,8 @@ test("pinned report plans survive reopen and idempotent admission cannot change 
     );
   }));
 
-test("report capture, invocation arming and root completion roll back with their source transactions", () =>
-  withDatabase(async (filename) => {
+test("report capture, invocation arming and root completion roll back with their source transactions", async () =>
+  await withDatabase(async (filename) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -101,7 +101,7 @@ test("report capture, invocation arming and root completion roll back with their
           Effect.sync(() => new Database(filename)),
           (connection) => Effect.sync(() => connection.close())
         );
-        db.exec(
+        db.run(
           "CREATE TRIGGER fail_plan BEFORE INSERT ON host_report_plans BEGIN SELECT RAISE(ABORT, 'injected plan failure'); END"
         );
         expect(
@@ -117,7 +117,7 @@ test("report capture, invocation arming and root completion roll back with their
         ).toBe(true);
         expect(yield* store.listRuns()).toHaveLength(0);
         expect(yield* store.outbox()).toHaveLength(0);
-        db.exec("DROP TRIGGER fail_plan");
+        db.run("DROP TRIGGER fail_plan");
         const entry = {
           ...rootEntry,
           attachmentId: "task-summary",
@@ -130,7 +130,7 @@ test("report capture, invocation arming and root completion roll back with their
           "revision",
           "owner"
         );
-        db.exec(
+        db.run(
           "CREATE TRIGGER fail_source BEFORE INSERT ON host_report_sources BEGIN SELECT RAISE(ABORT, 'injected source failure'); END"
         );
         expect(
@@ -143,12 +143,12 @@ test("report capture, invocation arming and root completion roll back with their
           )
         ).toBe(true);
         expect(yield* store.invocations(run.runId)).toHaveLength(0);
-        db.exec("DROP TRIGGER fail_source");
+        db.run("DROP TRIGGER fail_source");
         yield* store.registerInvocation(run.runId, "node", "engine", {
           taskId: "task",
         });
         expect(yield* store.reportPendingSources("Armed")).toHaveLength(2);
-        db.exec(
+        db.run(
           "CREATE TRIGGER fail_projection BEFORE UPDATE ON host_report_sources BEGIN SELECT RAISE(ABORT, 'injected projection failure'); END"
         );
         expect(
@@ -158,15 +158,15 @@ test("report capture, invocation arming and root completion roll back with their
         ).toBe(true);
         expect((yield* store.getRun(run.runId)).status).toBe("Queued");
         expect(yield* store.reportPendingSources("Ready")).toHaveLength(0);
-        db.exec("DROP TRIGGER fail_projection");
+        db.run("DROP TRIGGER fail_projection");
         yield* store.project(run.runId, "Succeeded", "done");
         expect(yield* store.reportPendingSources("Ready")).toHaveLength(1);
       }).pipe(Effect.scoped, Effect.provide(storeLayer(filename)))
     );
   }));
 
-test("sixteen attachments share one armed invocation record and duplicate dispatch is harmless", () =>
-  withDatabase(async (filename) => {
+test("sixteen attachments share one armed invocation record and duplicate dispatch is harmless", async () =>
+  await withDatabase(async (filename) => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const store = yield* HostStore;
@@ -196,8 +196,8 @@ test("sixteen attachments share one armed invocation record and duplicate dispat
     );
   }));
 
-test("schedule report-plan edits preserve generation and capture the observed revision at admission", () =>
-  withDatabase(async (filename) => {
+test("schedule report-plan edits preserve generation and capture the observed revision at admission", async () =>
+  await withDatabase(async (filename) => {
     const flow = Workflow.make(
       {
         error: Schema.Never,
@@ -254,8 +254,8 @@ test("schedule report-plan edits preserve generation and capture the observed re
     );
   }));
 
-test("the bounded invocation scan rotates durably past unresolved early sources", () =>
-  withDatabase(async (filename) => {
+test("the bounded invocation scan rotates durably past unresolved early sources", async () =>
+  await withDatabase(async (filename) => {
     let runId = "";
     let lastPosition = 0;
     await Effect.runPromise(

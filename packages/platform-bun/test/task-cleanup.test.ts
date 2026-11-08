@@ -34,10 +34,9 @@ test("cleanup crashes never become domain retries, while ordinary failures still
           }
         })
     ).pipe(
-      Effect.flatMap((entry) =>
-        mode === "acquire" && entry === 1
-          ? Effect.fail({ _tag: "Transient" } as const)
-          : Effect.succeed(entry)
+      Effect.filterOrFail(
+        (entry) => !(mode === "acquire" && entry === 1),
+        () => ({ _tag: "Transient" }) as const
       )
     );
     const task = Task.make(

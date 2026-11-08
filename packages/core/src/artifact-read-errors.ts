@@ -1,39 +1,39 @@
 /* oxlint-disable max-classes-per-file, unicorn/throw-new-error */
 import { Schema } from "effect";
 
-export class ArtifactReadError extends Schema.TaggedError<ArtifactReadError>()(
-  "ArtifactReadError",
-  {
-    artifactId: Schema.NullOr(Schema.String),
-    message: Schema.String,
-    reason: Schema.Literals([
-      "NotFound",
-      "Reclaimed",
-      "KindMismatch",
-      "SchemaMismatch",
-      "DigestMismatch",
-      "DecodeFailed",
-      "Corrupt",
-      "InvalidQuery",
-      "InvalidCursor",
-      "CursorExpired",
-      "QueryBudget",
-      "PinLimit",
-      "ConcurrencyLimit",
-      "Closed",
-      "Unsupported",
-    ]),
-    version: Schema.NullOr(Schema.Int),
-  }
-) {}
+export class ArtifactReadError extends Schema.TaggedError<
+  ArtifactReadError,
+  { readonly brand: unique symbol }
+>()("ArtifactReadError", {
+  artifactId: Schema.NullOr(Schema.String),
+  message: Schema.String,
+  reason: Schema.Literals([
+    "NotFound",
+    "Reclaimed",
+    "KindMismatch",
+    "SchemaMismatch",
+    "DigestMismatch",
+    "DecodeFailed",
+    "Corrupt",
+    "InvalidQuery",
+    "InvalidCursor",
+    "CursorExpired",
+    "QueryBudget",
+    "PinLimit",
+    "ConcurrencyLimit",
+    "Closed",
+    "Unsupported",
+  ]),
+  version: Schema.NullOr(Schema.Int),
+}) {}
 
-export class ArtifactUnavailable extends Schema.TaggedError<ArtifactUnavailable>()(
-  "ArtifactUnavailable",
-  {
-    message: Schema.String,
-    reason: Schema.Literals(["Busy", "Storage"]),
-  }
-) {}
+export class ArtifactUnavailable extends Schema.TaggedError<
+  ArtifactUnavailable,
+  { readonly brand: unique symbol }
+>()("ArtifactUnavailable", {
+  message: Schema.String,
+  reason: Schema.Literals(["Busy", "Storage"]),
+}) {}
 
 export type ReadError = ArtifactReadError | ArtifactUnavailable;
 

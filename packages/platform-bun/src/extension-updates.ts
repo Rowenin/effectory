@@ -15,7 +15,7 @@ export const extensionUpdates = (
   input: typeof ExtensionOutdatedRequest.Type
 ) =>
   Effect.gen(function* () {
-    const request = yield* Schema.decodeUnknownEffect(ExtensionOutdatedRequest)(
+    const request = yield* Schema.decodeEffect(ExtensionOutdatedRequest)(
       input,
       { onExcessProperty: "error" }
     ).pipe(

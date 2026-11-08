@@ -110,7 +110,7 @@ export function createReportInspection(
         runId,
         history = false,
         limit = 50,
-      } = Schema.decodeUnknownSync(RunReportsRequest)(value, {
+      } = Schema.decodeSync(RunReportsRequest)(value, {
         onExcessProperty: "error",
       });
       authorizeRun(database, runId, principal);

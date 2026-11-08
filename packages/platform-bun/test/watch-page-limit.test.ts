@@ -10,10 +10,10 @@ import { guardWatchFrame, watchLineLimit } from "../src/watch-plane.ts";
 test("an oversized stored watch event cannot be retrieved through the event page API", async () => {
   const database = new Database(":memory:");
   try {
-    database.exec(
+    database.run(
       "CREATE TABLE host_runs (runId TEXT, principal TEXT, lastSequence INTEGER)"
     );
-    database.exec(
+    database.run(
       "CREATE TABLE host_events (at TEXT, payloadJson TEXT, runId TEXT, sequence INTEGER, tag TEXT)"
     );
     database

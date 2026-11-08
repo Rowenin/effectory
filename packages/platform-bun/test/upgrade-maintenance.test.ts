@@ -55,7 +55,7 @@ async function fixture() {
       )
     );
     Effect.runSync(host.project(run.runId, "Succeeded", {}));
-    database.exec("UPDATE host_outbox SET delivered=1");
+    database.run("UPDATE host_outbox SET delivered=1");
     const retirement = createRetirementStore(database, "repository", "owner");
     await Effect.runPromise(retirement.plan({ runId: run.runId }));
     database
@@ -109,7 +109,7 @@ test.each([
   async (fault) => {
     const f = await fixture();
     try {
-      f.database.exec(fault);
+      f.database.run(fault);
       const before = f.database.serialize();
       const exit = await Effect.runPromiseExit(
         inspectUpgradeMaintenance(f.database)

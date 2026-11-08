@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { Effect, Schema } from "effect";
 
 import { ownershipLayer } from "../../packages/platform-bun/src/ownership.ts";
 import { verifyUpgradeRecoveryCopy } from "../../packages/platform-bun/src/upgrade-copy.ts";
@@ -25,8 +25,42 @@ const root = mkdtempSync("/tmp/effectory-actual-upgrade-");
 console.log({ root });
 const repository = path.join(root, "source");
 const restored = path.join(root, "restored");
+/** @type {Bun.Subprocess[]} */
 const processes = [];
 const h = harness(root);
+
+/** Only the fields this proof reads; other CLI output is kept untouched. */
+const RunReceipt = Schema.Struct({
+  revision: Schema.optionalKey(Schema.Unknown),
+  runId: Schema.String,
+});
+const RunState = Schema.Struct({
+  result: Schema.optionalKey(Schema.Unknown),
+  revision: Schema.optionalKey(Schema.Unknown),
+  runId: Schema.optionalKey(Schema.Unknown),
+  status: Schema.optionalKey(Schema.Unknown),
+});
+const Page = Schema.Struct({ items: Schema.Array(Schema.Unknown) });
+const OpenWait = Schema.Struct({ waitId: Schema.String });
+const UpgradePlan = Schema.Struct({
+  plan: Schema.Struct({
+    planId: Schema.String,
+    recoveryCopy: Schema.String,
+    source: Schema.Struct({ storage: Schema.optionalKey(Schema.Unknown) }),
+    status: Schema.optionalKey(Schema.Unknown),
+    target: Schema.Struct({ build: Schema.optionalKey(Schema.Unknown) }),
+    work: Schema.Struct({
+      "execution.runs": Schema.optionalKey(Schema.Unknown),
+    }),
+  }),
+});
+const AppliedUpgrade = Schema.Struct({
+  acceptance: Schema.Struct({ recoveryDigest: Schema.String }),
+  phase: Schema.optionalKey(Schema.Unknown),
+});
+const RecoveryManifest = Schema.Struct({
+  entries: Schema.Array(Schema.Unknown),
+});
 const app = `
 import { appendFileSync } from 'node:fs';
 import { Application, Task, Workflow } from '@offtree/effectory-sdk';
@@ -36,6 +70,12 @@ const after=Task.make({id:'after',version:1,input:Schema.String,success:Schema.S
 const workflow=Workflow.make({id:'recovery-proof',version:1,input:Schema.Null,success:Schema.String,error:Schema.Never},Effect.gen(function*(){const graph=yield* Workflow.Builder;const value=yield* graph.task('once',once,null);const approval=yield* graph.approval('review',{after:[value],prompt:'Continue restored run?',timeout:'1 hour'});return yield* graph.task('after',after,value,{after:[approval]});}));
 export default Application.make({tasks:[once,after],workflows:[workflow]});
 `;
+/**
+ * Runs the current `binary` against `repo` and parses its JSON output.
+ * @param {string} repo Repository to operate on.
+ * @param {string[]} args CLI arguments before `--repository`.
+ * @returns {Promise<unknown>} Parsed output, or `null` when empty.
+ */
 async function cli(repo, args) {
   const child = Bun.spawn([binary, ...args, "--repository", repo, "--json"], {
     cwd: repo,
@@ -50,13 +90,19 @@ async function cli(repo, args) {
       new Response(child.stdout).text(),
       new Response(child.stderr).text(),
     ]);
-    assert.equal(child.signalCode, null, `${args}: ${err}`);
-    assert.equal(code, 0, `${args}: ${err}`);
-    return out.trim() ? JSON.parse(out) : null;
+    assert.equal(child.signalCode, null, `${args.join(",")}: ${err}`);
+    assert.equal(code, 0, `${args.join(",")}: ${err}`);
+    /** @type {unknown} */
+    const output = out.trim() ? JSON.parse(out) : null;
+    return output;
   } finally {
     clearTimeout(timer);
   }
 }
+/**
+ * Starts the current `binary`'s daemon for `repo` and waits for readiness.
+ * @param {string} repo Repository to serve.
+ */
 async function start(repo) {
   const child = Bun.spawn([binary, "daemon", "serve", "--repository", repo], {
     cwd: repo,
@@ -72,12 +118,20 @@ async function start(repo) {
   }
   return child;
 }
+/**
+ * Polls until run `id` has an open wait.
+ * @param {string} repo Repository to query.
+ * @param {string} id Run identifier.
+ */
 async function waitOpen(repo, id) {
   const deadline = Date.now() + 20_000;
   for (;;) {
     const page = await cli(repo, ["run", "waits", id, "--status", "Open"]);
+    Schema.asserts(Page, page);
     if (page.items.length > 0) {
-      return page.items[0];
+      const [wait] = page.items;
+      Schema.asserts(OpenWait, wait);
+      return wait;
     }
     assert.ok(Date.now() < deadline, "approval missing");
     await Bun.sleep(100);
@@ -98,8 +152,10 @@ try {
     "original-host-copy",
     "--background",
   ]);
+  Schema.asserts(RunReceipt, run);
   const approval = await waitOpen(repository, run.runId);
   const before = await cli(repository, ["run", "get", run.runId]);
+  Schema.asserts(RunState, before);
   const outputsBefore = await cli(repository, ["run", "outputs", run.runId]);
   assert.equal(
     readFileSync(path.join(repository, "executions.txt"), "utf-8"),
@@ -109,12 +165,15 @@ try {
   await cli(repository, ["daemon", "stop"]);
   await daemon.exited;
   binary = target;
-  const { plan } = await cli(repository, ["upgrade", "plan"]);
+  const planned = await cli(repository, ["upgrade", "plan"]);
+  Schema.asserts(UpgradePlan, planned);
+  const { plan } = planned;
   console.log({ plan });
   assert.equal(plan.status, "Ready");
   assert.equal(plan.work["execution.runs"], legacySeed ? 2 : 1);
   assert.equal(plan.source.storage, legacySeed?.plan.target.storage ?? 1);
   const applied = await cli(repository, ["upgrade", "apply", plan.planId]);
+  Schema.asserts(AppliedUpgrade, applied);
   console.log({ applied });
   assert.equal(applied.phase, "Complete");
   assert.deepEqual(
@@ -127,21 +186,18 @@ try {
     await cli(repository, ["run", "outputs", run.runId]),
     outputsBefore
   );
-  assert.equal(
-    (
-      await cli(repository, [
-        "workflow",
-        "run",
-        "recovery-proof",
-        "--input",
-        "null",
-        "--request-key",
-        "original-host-copy",
-        "--background",
-      ])
-    ).runId,
-    run.runId
-  );
+  const resubmitted = await cli(repository, [
+    "workflow",
+    "run",
+    "recovery-proof",
+    "--input",
+    "null",
+    "--request-key",
+    "original-host-copy",
+    "--background",
+  ]);
+  Schema.asserts(RunState, resubmitted);
+  assert.equal(resubmitted.runId, run.runId);
   assert.equal((await waitOpen(repository, run.runId)).waitId, approval.waitId);
   await cli(repository, [
     "run",
@@ -150,10 +206,9 @@ try {
     "--request-key",
     "continue-upgraded",
   ]);
-  assert.equal(
-    (await cli(repository, ["run", "watch", run.runId])).result,
-    "already-completed-continued"
-  );
+  const watched = await cli(repository, ["run", "watch", run.runId]);
+  Schema.asserts(RunState, watched);
+  assert.equal(watched.result, "already-completed-continued");
   assert.equal(
     readFileSync(path.join(repository, "executions.txt"), "utf-8"),
     `once
@@ -161,9 +216,11 @@ try {
   );
   await cli(repository, ["daemon", "stop"]);
   await upgraded.exited;
+  /** @type {unknown} */
   const manifest = JSON.parse(
     readFileSync(path.join(plan.recoveryCopy, "manifest.json"), "utf-8")
   );
+  Schema.asserts(RecoveryManifest, manifest);
   const copy = { digest: applied.acceptance.recoveryDigest, manifest };
   const owned = ownershipLayer(
     path.join(repository, ".effectory/state.sqlite.owner")
@@ -183,6 +240,7 @@ try {
   const rolledBack = await start(restored);
   await finishLegacySeed(h, oldBinary, restored, legacySeed);
   const retained = await cli(restored, ["run", "get", run.runId]);
+  Schema.asserts(RunState, retained);
   assert.equal(retained.revision, before.revision);
   assert.equal(retained.runId, before.runId);
   const outputsRestored = await cli(restored, ["run", "outputs", run.runId]);
@@ -197,6 +255,7 @@ try {
     "original-host-copy",
     "--background",
   ]);
+  Schema.asserts(RunState, repeated);
   assert.equal(repeated.runId, run.runId);
   const restoredWait = await waitOpen(restored, run.runId);
   assert.equal(restoredWait.waitId, approval.waitId);
@@ -208,6 +267,7 @@ try {
     "continue-restored",
   ]);
   const finished = await cli(restored, ["run", "watch", run.runId]);
+  Schema.asserts(RunState, finished);
   assert.equal(finished.status, "Succeeded");
   assert.equal(finished.result, "already-completed-continued");
   assert.equal(

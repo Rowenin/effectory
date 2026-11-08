@@ -87,6 +87,12 @@ export function reportStatus(
     case "TimedOut": {
       return "Failed";
     }
+    case "Cancelling":
+    case "Retrying":
+    case "Running":
+    case "Waiting": {
+      return "Running";
+    }
     default: {
       return "Running";
     }
@@ -95,7 +101,7 @@ export function reportStatus(
 
 /** Compact generation records reference a single source and its immutable plan. */
 export function createReportRecords(database: Database) {
-  database.exec(`
+  database.run(`
     CREATE TABLE IF NOT EXISTS host_report_groups (
       groupId TEXT PRIMARY KEY, sourceId TEXT NOT NULL REFERENCES host_report_sources(sourceId),
       sourceRunId TEXT NOT NULL REFERENCES host_runs(runId), attachmentIndex INTEGER NOT NULL,
@@ -126,7 +132,7 @@ export function createReportRecords(database: Database) {
         `${selection} WHERE r.reportId = ? AND (? IS NULL OR root.principal = ?)`
       )
       .get(id, principal ?? null, principal ?? null);
-    if (!raw) {
+    if (raw === null) {
       if (principal !== undefined) {
         refuseRetired(database, "report", id, principal);
       }
@@ -191,7 +197,7 @@ export function createReportRecords(database: Database) {
         "SELECT fingerprint,receiptJson FROM host_report_receipts WHERE operation = ? AND subjectId = ? AND principal = ? AND requestKey = ?"
       )
       .get(operation, subject, actor, key);
-    if (!raw) {
+    if (raw === null) {
       return null;
     }
     const row = Schema.decodeUnknownSync(
@@ -220,7 +226,7 @@ export function createReportRecords(database: Database) {
   return {
     arm: (
       sourceId: string,
-      source: typeof SourceIdentity.Type,
+      source: SourceIdentity,
       entries: EncodedReportPlan,
       createdAt: string
     ) => {
@@ -286,10 +292,9 @@ export function createReportRecords(database: Database) {
             message: "Invalid report cancellation request",
           });
         }
-        const request = Schema.decodeUnknownSync(ReportCancelSingleRequest)(
-          value,
-          { onExcessProperty: "error" }
-        );
+        const request = Schema.decodeSync(ReportCancelSingleRequest)(value, {
+          onExcessProperty: "error",
+        });
         const current = get(request.reportId, getRun, actor);
         const reason = request.reason ?? null;
         const fingerprint = canonical({ reason });
@@ -369,7 +374,7 @@ export function createReportRecords(database: Database) {
           AND g.sourceRunId > ?
         ORDER BY g.sourceRunId LIMIT 1`);
       const raw = query.get(sourceRunId) ?? query.get("");
-      if (!raw) {
+      if (raw === null) {
         return null;
       }
       const chosen = Schema.decodeUnknownSync(
@@ -399,7 +404,7 @@ export function createReportRecords(database: Database) {
     load,
     materialize: (
       sourceId: string,
-      source: typeof SourceIdentity.Type,
+      source: SourceIdentity,
       ineligible: "NotStarted" | "NoNativeExecution" | null,
       entries: EncodedReportPlan
     ) => {
@@ -463,7 +468,7 @@ export function createReportRecords(database: Database) {
             message: "Invalid report retry request",
           });
         }
-        const request = Schema.decodeUnknownSync(ReportRetryRequest)(value, {
+        const request = Schema.decodeSync(ReportRetryRequest)(value, {
           onExcessProperty: "error",
         });
         const current = get(request.reportId, getRun, actor);

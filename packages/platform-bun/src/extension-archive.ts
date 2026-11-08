@@ -147,6 +147,9 @@ function validateProviderIds(manifest: typeof ExtensionManifest.Type) {
   }
 }
 
+const manifestLists = (manifest: typeof ExtensionManifest.Type, file: string) =>
+  (manifest.files[file] ?? "") !== "";
+
 export function validateManifest(manifest: typeof ExtensionManifest.Type) {
   const names = Object.keys(manifest.files);
   if (
@@ -164,8 +167,8 @@ export function validateManifest(manifest: typeof ExtensionManifest.Type) {
     if (
       !entry.file.endsWith(".mjs") ||
       entry.types !== entry.file.replace(/\.mjs$/u, ".d.mts") ||
-      !manifest.files[entry.file] ||
-      !manifest.files[entry.types]
+      !manifestLists(manifest, entry.file) ||
+      !manifestLists(manifest, entry.types)
     ) {
       throw invalid(
         "Each extension entry needs an ESM file and matching .d.mts declarations"

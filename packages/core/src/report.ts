@@ -72,6 +72,7 @@ export function sourceOf<T extends Target>(
     sourceSchemas.set(key, schema);
   }
   // The phantom identity is checked through the private schema registry at runtime.
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- brands the schema with its phantom source identity
   return schema as SourceOf<T["spec"]["id"], T["spec"]["version"], KindOf<T>>;
 }
 

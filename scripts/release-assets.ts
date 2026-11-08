@@ -23,6 +23,8 @@ import {
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { Schema } from "effect";
+
 const root = path.resolve(import.meta.dir, "..");
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
@@ -57,9 +59,9 @@ run([
 
 const sdkDirectory = path.join(root, "dist", "sdk");
 run([bun, "scripts/build-sdk.ts", "--outdir", sdkDirectory]);
-const { version } = JSON.parse(
-  readFileSync(path.join(sdkDirectory, "package.json"), "utf-8")
-) as { version: string };
+const { version } = Schema.decodeSync(
+  Schema.fromJsonString(Schema.Struct({ version: Schema.String }))
+)(readFileSync(path.join(sdkDirectory, "package.json"), "utf-8"));
 const sdkArchive = `offtree-effectory-sdk-${version}.tgz`;
 const packed = Bun.spawnSync(
   [bun, "pm", "pack", "--destination", outdir, "--quiet"],
