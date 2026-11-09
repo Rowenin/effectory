@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/Rowenin/effectory/compare/v0.2.0...v0.3.0) (2026-11-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **extensions:** GitHub extension adds now build repository sources by default. Pass --asset explicitly to install a prebuilt release archive.
+
+### Features
+
+* **extensions:** run typed agent sessions and install commit-pinned Git sources ([#2](https://github.com/Rowenin/effectory/issues/2)) ([dc40f6f](https://github.com/Rowenin/effectory/commit/dc40f6f4aa41dd94fc3452b9eadf59a55eae4de6))
+
 ## [0.2.0](https://github.com/Rowenin/effectory/compare/v0.1.0...v0.2.0) (2026-11-08)
 
 

@@ -22,31 +22,31 @@
     },
     "extensions/agent-runner": {
       "name": "@offtree/effectory-extension-agent-runner",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@distilled.cloud/core": "1.0.0-rc.18",
         "@distilled.cloud/opencode": "1.0.0-rc.18",
       },
       "peerDependencies": {
-        "@offtree/effectory-sdk": "0.2.0",
+        "@offtree/effectory-sdk": "0.3.0",
         "effect": "4.1.2",
       },
     },
     "extensions/aws-vault": {
       "name": "@offtree/effectory-extension-aws-vault",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@distilled.cloud/aws": "1.0.0-rc.18",
         "@distilled.cloud/core": "1.0.0-rc.18",
       },
       "peerDependencies": {
-        "@offtree/effectory-sdk": "0.2.0",
+        "@offtree/effectory-sdk": "0.3.0",
         "effect": "4.1.2",
       },
     },
     "packages/cli": {
       "name": "@offtree/effectory-cli",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "bin": {
         "effectory": "./src/main.ts",
       },
@@ -59,14 +59,14 @@
     },
     "packages/core": {
       "name": "@offtree/effectory-sdk",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "effect": "4.1.2",
       },
     },
     "packages/platform-bun": {
       "name": "@effectory/platform-bun",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@effect/platform-bun": "4.1.2",
         "@effect/sql-sqlite-bun": "4.1.2",
@@ -77,7 +77,7 @@
     },
     "packages/runtime": {
       "name": "@effectory/runtime",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "dependencies": {
         "@offtree/effectory-sdk": "workspace:*",
         "effect": "4.1.2",

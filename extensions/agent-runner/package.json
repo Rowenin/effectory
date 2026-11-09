@@ -1,6 +1,6 @@
 {
   "name": "@offtree/effectory-extension-agent-runner",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,7 @@
     "@distilled.cloud/opencode": "1.0.0-rc.18"
   },
   "peerDependencies": {
-    "@offtree/effectory-sdk": "0.2.0",
+    "@offtree/effectory-sdk": "0.3.0",
     "effect": "4.1.2"
   }
 }
