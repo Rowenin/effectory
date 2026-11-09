@@ -15,7 +15,10 @@ import {
 } from "../src/extension-source.ts";
 import { archiveFixture } from "./fixtures/extension-archive.ts";
 
-const source = parseSource("github:acme/private-tools@release/v1");
+const source = parseSource(
+  "github:acme/private-tools@release/v1",
+  "effectory.tgz"
+);
 const bytes = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value));
 test("GitHub resolution pins release, asset and commit identities; download uses the locked asset", async () => {
@@ -56,6 +59,9 @@ test("GitHub resolution pins release, asset and commit identities; download uses
     Effect.gen(function* () {
       const adapter = yield* ExtensionSource;
       const resolved = yield* adapter.resolve(source);
+      if ("kind" in resolved) {
+        throw new Error("Expected release source");
+      }
       expect(resolved.assetId).toBe(20);
       expect(resolved.releaseId).toBe(10);
       expect(resolved.commit).toBe("a".repeat(40));

@@ -138,7 +138,9 @@ export const extensionManagerLayer = (
               Effect.provideService(RepositoryLease, lease)
             ));
           yield* perform(() => journal.candidate(id, actor, lock));
-          yield* restoreCache(repository, lock).pipe(
+          yield* restoreCache(repository, lock, {
+            trust: request.kind !== "Remove" && request.trust,
+          }).pipe(
             Effect.provideService(ExtensionSource, source),
             Effect.provideService(RepositoryLease, lease)
           );

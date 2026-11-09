@@ -77,6 +77,8 @@ else { const pkg = packages.find(item => endpoint.endsWith("/" + item.ref) || (e
         "extension",
         "add",
         "github:fixture/tools@v1",
+        "--asset",
+        "effectory.tgz",
         "--as",
         "Tools",
         "--trust",

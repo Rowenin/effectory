@@ -51,6 +51,40 @@ export const ResolvedSource = Schema.Struct({
     Schema.isBetween({ maximum: extensionLimits.archiveBytes, minimum: 1 })
   ),
 });
+export const SourcePath = Schema.String.check(
+  Schema.isMaxLength(200),
+  Schema.isPattern(
+    /^(?:\.|[A-Za-z0-9_-][A-Za-z0-9_.-]*(?:\/[A-Za-z0-9_-][A-Za-z0-9_.-]*)*)$/u
+  )
+);
+export const GitRepositorySource = Schema.Struct({
+  kind: Schema.Literal("git"),
+  path: SourcePath,
+  ref: Schema.NonEmptyString.check(
+    Schema.isMaxLength(200),
+    Schema.isPattern(/^(?!.*(?:\.\.|\/\/))[A-Za-z0-9][A-Za-z0-9._/-]*$/u)
+  ),
+  repository: Repository,
+});
+export const SourceToolchain = Schema.Struct({
+  bun: Schema.NonEmptyString,
+  effect: Schema.NonEmptyString,
+  sdk: Schema.NonEmptyString,
+});
+export const ResolvedGitSource = Schema.Struct({
+  ...GitRepositorySource.fields,
+  commit: ResolvedSource.fields.commit,
+  toolchain: SourceToolchain,
+});
+/** Untagged release selectors remain byte-compatible with existing locks. */
+export const ExtensionSelector = Schema.Union([
+  GitRepositorySource,
+  GitHubSource,
+]);
+export const ResolvedExtensionSource = Schema.Union([
+  ResolvedGitSource,
+  ResolvedSource,
+]);
 const Entry = Schema.Struct({
   export: ExportName,
   file: ArchivePath,
@@ -80,7 +114,7 @@ export const ExtensionManifest = Schema.Struct({
     tasks: Schema.Array(NamedContract).check(Schema.isMaxLength(256)),
     workflows: Schema.Array(NamedContract).check(Schema.isMaxLength(256)),
   }),
-  dependencies: Schema.Record(ImportName, GitHubSource),
+  dependencies: Schema.Record(ImportName, ExtensionSelector),
   dependencyInventory: Schema.Array(
     Schema.Struct({ name: BoundedText, version: BoundedText })
   ).check(Schema.isMaxLength(256)),
@@ -90,6 +124,14 @@ export const ExtensionManifest = Schema.Struct({
   id: ExtensionId,
   manifestVersion: Schema.Literal(1),
   sdkVersion: Schema.Literal("0.0.0"),
+  sourceBuild: Schema.optionalKey(
+    Schema.Struct({
+      lockfile: SourcePath,
+      lockfileDigest: Digest,
+      toolchain: SourceToolchain,
+      typescript: Schema.NonEmptyString,
+    })
+  ),
   version: Schema.String.check(
     Schema.isPattern(/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/u),
     Schema.isMaxLength(100)
@@ -101,7 +143,7 @@ export const LockedPackage = Schema.Struct({
   dependencies: Schema.Record(ImportName, ExtensionId),
   manifest: ExtensionManifest,
   manifestDigest: Digest,
-  source: ResolvedSource,
+  source: ResolvedExtensionSource,
 });
 export const ExtensionLock = Schema.Struct({
   format: Schema.Literal(1),
@@ -110,7 +152,7 @@ export const ExtensionLock = Schema.Struct({
     ExtensionId,
     Schema.Struct({
       bindingName: Schema.optionalKey(ExportName),
-      source: GitHubSource,
+      source: ExtensionSelector,
     })
   ),
 });
@@ -121,7 +163,7 @@ export const ExtensionAdd = Schema.Struct({
   ...Mutation,
   bindingName: Schema.optionalKey(ExportName),
   kind: Schema.Literal("Add"),
-  source: GitHubSource,
+  source: ExtensionSelector,
   trust: Schema.Boolean,
 });
 export const ExtensionUpdate = Schema.Struct({
@@ -141,7 +183,10 @@ export const ExtensionChange = Schema.Union([
   ExtensionUpdate,
   ExtensionRemove,
 ]);
-export const ResolutionSnapshot = Schema.Record(Schema.String, ResolvedSource);
+export const ResolutionSnapshot = Schema.Record(
+  Schema.String,
+  ResolvedExtensionSource
+);
 
 export const ExtensionOperation = Schema.Struct({
   acceptedAt: Schema.String,
@@ -166,7 +211,7 @@ export const ExtensionSummary = Schema.Struct({
   id: ExtensionId,
   root: Schema.Boolean,
   selected: Schema.Boolean,
-  source: ResolvedSource,
+  source: ResolvedExtensionSource,
   version: Schema.String,
 });
 export const ExtensionInventory = Schema.Struct({
@@ -186,10 +231,10 @@ export const ExtensionUpdatePage = Schema.Struct({
   items: Schema.Array(
     Schema.Struct({
       changed: Schema.NullOr(Schema.Boolean),
-      current: GitHubSource,
+      current: ExtensionSelector,
       error: Schema.NullOr(OperationError),
       id: ExtensionId,
-      latest: Schema.NullOr(GitHubSource),
+      latest: Schema.NullOr(ExtensionSelector),
     })
   ).check(Schema.isMaxLength(20)),
   nextAfterId: Schema.NullOr(ExtensionId),

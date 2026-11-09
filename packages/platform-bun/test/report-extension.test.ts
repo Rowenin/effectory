@@ -148,6 +148,8 @@ Generic:Task.make(Generic.spec,()=>Effect.gen(function*(){const history=yield* R
         "extension",
         "add",
         "github:fixture/reports@v1",
+        "--asset",
+        "effectory.tgz",
         "--as",
         "Reports",
         "--trust",

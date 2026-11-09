@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { gunzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 import {
   ExtensionManifest,
@@ -7,6 +7,8 @@ import {
 } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
 import { Schema } from "effect";
+
+import { hostVersions } from "./host-runtime.ts";
 
 export const digest = (bytes: Uint8Array | string) =>
   createHash("sha256").update(bytes).digest("hex");
@@ -28,6 +30,59 @@ export function archivePath(value: string): string {
     );
   }
   return value;
+}
+/** Portable source builds use canonical headers rather than filesystem timestamps. */
+export function packArchive(
+  files: ReadonlyMap<string, Uint8Array>
+): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  for (const [name, bytes] of [...files].toSorted(([a], [b]) => {
+    if (a === b) {
+      return 0;
+    }
+    return a < b ? -1 : 1;
+  })) {
+    archivePath(name);
+    const header = Buffer.alloc(512);
+    const split = name.length <= 100 ? -1 : name.lastIndexOf("/");
+    const leaf = split === -1 ? name : name.slice(split + 1);
+    const prefix = split === -1 ? "" : name.slice(0, split);
+    if (leaf.length > 100 || prefix.length > 155) {
+      throw new Error("Source archive path exceeds ustar limits");
+    }
+    header.write(leaf, 0, 100, "ascii");
+    header.write(prefix, 345, 155, "ascii");
+    const number = (value: number, offset: number, length: number) =>
+      header.write(
+        `${value.toString(8).padStart(length - 1, "0")}\0`,
+        offset,
+        length,
+        "ascii"
+      );
+    number(0o644, 100, 8);
+    number(0, 108, 8);
+    number(0, 116, 8);
+    number(bytes.length, 124, 12);
+    number(0, 136, 12);
+    header.fill(32, 148, 156);
+    header[156] = 48;
+    header.write("ustar\0", 257, 6, "ascii");
+    header.write("00", 263, 2, "ascii");
+    number(
+      header.reduce((sum, byte) => sum + byte, 0),
+      148,
+      8
+    );
+    chunks.push(
+      header,
+      bytes,
+      Buffer.alloc((512 - (bytes.length % 512)) % 512)
+    );
+  }
+  chunks.push(Buffer.alloc(1024));
+  const compressed = gzipSync(Buffer.concat(chunks), { level: 9 });
+  compressed[9] = 255;
+  return compressed;
 }
 function textField(header: Uint8Array, offset: number, length: number): string {
   const bytes = header.subarray(offset, offset + length);
@@ -150,7 +205,21 @@ function validateProviderIds(manifest: typeof ExtensionManifest.Type) {
 const manifestLists = (manifest: typeof ExtensionManifest.Type, file: string) =>
   (manifest.files[file] ?? "") !== "";
 
+function validateSourcePeers(manifest: typeof ExtensionManifest.Type) {
+  if (
+    manifest.sourceBuild !== undefined &&
+    (manifest.sourceBuild.toolchain.effect !== hostVersions.effect ||
+      manifest.sourceBuild.toolchain.sdk !==
+        hostVersions["@offtree/effectory-sdk"])
+  ) {
+    throw invalid(
+      "Source extension requires its original Effect and SDK host peers"
+    );
+  }
+}
+
 export function validateManifest(manifest: typeof ExtensionManifest.Type) {
+  validateSourcePeers(manifest);
   const names = Object.keys(manifest.files);
   if (
     names.length > extensionLimits.files - 1 ||

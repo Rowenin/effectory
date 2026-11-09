@@ -62,11 +62,19 @@ async function fixture(
   };
   return { archive, locked };
 }
-const selector = (source: (typeof LockedPackage.Type)["source"]) => ({
-  assetName: source.assetName,
-  ref: source.ref,
-  repository: source.repository,
-});
+const selector = (source: (typeof LockedPackage.Type)["source"]) =>
+  "kind" in source
+    ? {
+        kind: source.kind,
+        path: source.path,
+        ref: source.ref,
+        repository: source.repository,
+      }
+    : {
+        assetName: source.assetName,
+        ref: source.ref,
+        repository: source.repository,
+      };
 function snapshot(
   locked: typeof LockedPackage.Type
 ): typeof ExtensionLock.Type {

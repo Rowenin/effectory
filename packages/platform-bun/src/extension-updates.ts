@@ -61,7 +61,10 @@ export const extensionUpdates = (
           const result = yield* Effect.result(latestRelease(current));
           return result._tag === "Success"
             ? {
-                changed: result.success.ref !== current.ref,
+                changed:
+                  "kind" in current
+                    ? result.success.ref !== lock.packages[id]?.source.commit
+                    : result.success.ref !== current.ref,
                 current,
                 error: null,
                 id,

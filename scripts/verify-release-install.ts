@@ -156,6 +156,9 @@ try {
     false,
     "Offline restore/startup tried GitHub"
   );
+  if ("kind" in installed.source) {
+    throw new Error("Expected release source");
+  }
   console.log(
     JSON.stringify({
       assetId: installed.source.assetId,

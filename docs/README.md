@@ -51,3 +51,7 @@ Current executable evidence: [implementation status](implementation-status.md). 
 [Report selection](report-selection.md): choose attachments at admission, preserve required reports, and inspect captured choices.
 
 [Report search](report-search.md): discover report records across source runs, filter metadata and continue bounded pages.
+
+[Agent runner extension](../extensions/agent-runner/README.md): one manual-replay task for OpenCode, Claude Code and Codex, explicit continuation, native policies, provider Layers and verified recovery behavior.
+
+[Source extension installation](extension-source-installation.md): install GitHub repository paths, pin commits, restore on another computer and author reproducible source builds.

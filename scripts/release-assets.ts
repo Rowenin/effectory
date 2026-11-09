@@ -4,6 +4,7 @@
  *   effectory-<platform>               standalone binaries (all release targets)
  *   offtree-effectory-sdk-<v>.tgz      the authoring SDK, installed by URL
  *   effectory-aws-vault.tgz            the AWS vault extension
+ *   effectory-agent-runner.tgz         the agent runner extension
  *   install.sh                         the installer
  *   SHA256SUMS                         checksums of all of the above
  *
@@ -82,6 +83,17 @@ run([
 copyFileSync(
   path.join(extensionDirectory, "effectory-aws-vault.tgz"),
   path.join(outdir, "effectory-aws-vault.tgz")
+);
+const agentDirectory = path.join(root, "dist", "extensions", "agent-runner");
+run([
+  bun,
+  "scripts/build-agent-runner-extension.ts",
+  "--outdir",
+  agentDirectory,
+]);
+copyFileSync(
+  path.join(agentDirectory, "effectory-agent-runner.tgz"),
+  path.join(outdir, "effectory-agent-runner.tgz")
 );
 copyFileSync(path.join(root, "install.sh"), path.join(outdir, "install.sh"));
 

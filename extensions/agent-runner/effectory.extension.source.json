@@ -1,0 +1,38 @@
+{
+  "format": 1,
+  "id": "offtree/agent-runner",
+  "capabilities": ["environment", "filesystem", "network", "process"],
+  "contracts": {
+    "export": "contracts",
+    "file": "src/contracts.ts"
+  },
+  "entrypoint": {
+    "export": "default",
+    "file": "src/extension.ts"
+  },
+  "contributions": {
+    "artifacts": [
+      {
+        "id": "offtree/agent-runner/result",
+        "name": "Result",
+        "version": 1
+      },
+      {
+        "id": "offtree/agent-runner/transcript",
+        "name": "Transcript",
+        "version": 1
+      }
+    ],
+    "implementations": [],
+    "patches": [],
+    "tasks": [
+      {
+        "id": "offtree/agent-runner/run-session",
+        "name": "RunSession",
+        "version": 1
+      }
+    ],
+    "workflows": []
+  },
+  "dependencies": {}
+}
