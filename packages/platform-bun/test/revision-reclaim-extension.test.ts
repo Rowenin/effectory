@@ -47,6 +47,8 @@ else{process.stdout.write(JSON.stringify({id:1,draft:false,tag_name:"v1",assets:
       "extension",
       "add",
       "github:fixture/tools@v1",
+      "--asset",
+      "effectory.tgz",
       "--as",
       "Tools",
       "--trust",

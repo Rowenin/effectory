@@ -28,6 +28,9 @@ await Effect.runPromise(
   Effect.gen(function* () {
     const adapter = yield* ExtensionSource;
     const resolved = yield* adapter.resolve(parseSource(source, asset));
+    if ("kind" in resolved) {
+      throw new Error("Expected release source");
+    }
     const first = yield* adapter.download(resolved);
     const second = yield* adapter.download(resolved);
     const sha256 = digest(first);

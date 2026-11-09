@@ -126,6 +126,8 @@ export const contracts={id:"fixture/reader",version:"1.0.0",tasks:{},workflows:{
         "extension",
         "add",
         "github:fixture/reader@v1",
+        "--asset",
+        "effectory.tgz",
         "--as",
         "Reads",
         "--trust",

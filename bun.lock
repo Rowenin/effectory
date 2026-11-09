@@ -20,6 +20,18 @@
         "ultracite": "8.1.1",
       },
     },
+    "extensions/agent-runner": {
+      "name": "@offtree/effectory-extension-agent-runner",
+      "version": "0.2.0",
+      "dependencies": {
+        "@distilled.cloud/core": "1.0.0-rc.18",
+        "@distilled.cloud/opencode": "1.0.0-rc.18",
+      },
+      "peerDependencies": {
+        "@offtree/effectory-sdk": "0.2.0",
+        "effect": "4.1.2",
+      },
+    },
     "extensions/aws-vault": {
       "name": "@offtree/effectory-extension-aws-vault",
       "version": "0.2.0",
@@ -94,6 +106,8 @@
 
     "@distilled.cloud/core": ["@distilled.cloud/core@1.0.0-rc.18", "", { "peerDependencies": { "effect": "^4.0.5" } }, "sha512-Iui60+sNl1CwUu7NKGLuFf3VC4H9xYzfm0Fc8ZQvd87qwf1sDMB3EAWZrq/QFgrwzSY16z2mJ0PNHaBUnGet8A=="],
 
+    "@distilled.cloud/opencode": ["@distilled.cloud/opencode@1.0.0-rc.18", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.18" }, "peerDependencies": { "effect": "^4.0.5" } }, "sha512-dTQcg3mkBVJB1BUSY1wmasJoLK9zhlCOP7sEm1UnufNGOH26irDisVcjKcg/Z/W7NCd1bDDglYsVAq88McDboA=="],
+
     "@effect/platform-bun": ["@effect/platform-bun@4.1.2", "", { "dependencies": { "@effect/platform-node-shared": "4.1.2" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-waEAa84CITqjctgw9VdhlL9PyXRHICG3KAWTFRDPUE2XL/pfMPhO7V9oFdfx22dbAhhUzV+MHs0d9hnmy/DQ7w=="],
 
     "@effect/platform-node-shared": ["@effect/platform-node-shared@4.1.2", "", { "dependencies": { "@types/ws": "^8.18.2", "ws": "^8.22.1" }, "peerDependencies": { "effect": "^4.1.2" } }, "sha512-wSwl9A/G1hcVvF8nLI+YfB3EyOIDvWS6+lsTZBkmgDnPBL7m8YWZF+1HD+mdEsb52SUGfukip46Q3gRwSdk3QA=="],
@@ -127,6 +141,8 @@
     "@nodelib/fs.walk": ["@nodelib/fs.walk@1.2.8", "", { "dependencies": { "@nodelib/fs.scandir": "2.1.5", "fastq": "1.20.3" } }, "sha512-oGB+UxlgWcgQkgwo8GcEGwemoTFt3FIO9ababBmaGwXIoBKZ+GTy0pP185beGg7Llih/NSHSV2XAs1lnznocSg=="],
 
     "@offtree/effectory-cli": ["@offtree/effectory-cli@workspace:packages/cli"],
+
+    "@offtree/effectory-extension-agent-runner": ["@offtree/effectory-extension-agent-runner@workspace:extensions/agent-runner"],
 
     "@offtree/effectory-extension-aws-vault": ["@offtree/effectory-extension-aws-vault@workspace:extensions/aws-vault"],
 

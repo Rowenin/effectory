@@ -59,7 +59,9 @@ export function prepareExtensions(
     if (snapshot === null) {
       return null;
     }
-    const lock = yield* restoreCache(repository, snapshot);
+    const lock = yield* restoreCache(repository, snapshot, {
+      trust: options.trust,
+    });
     return yield* Effect.try({
       catch: failure,
       try: () => {

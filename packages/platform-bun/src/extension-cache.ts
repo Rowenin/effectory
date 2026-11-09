@@ -18,6 +18,7 @@ import path from "node:path";
 import type { LockedPackage } from "@effectory/runtime/extension-protocol";
 import {
   ExtensionLock,
+  ExtensionSelector,
   ExtensionManifest,
   extensionLimits,
 } from "@effectory/runtime/extension-protocol";
@@ -84,6 +85,15 @@ export function validateLock(value: unknown): typeof ExtensionLock.Type {
   for (const locked of Object.values(lock.packages)) {
     validateManifest(locked.manifest);
     if (
+      "kind" in locked.source &&
+      (locked.manifest.sourceBuild === undefined ||
+        canonical(locked.manifest.sourceBuild.toolchain) !==
+          canonical(locked.source.toolchain))
+    ) {
+      throw invalid("Git source build provenance disagrees with the lock");
+    }
+    if (
+      !("kind" in locked.source) &&
       locked.source.publisherDigest !== null &&
       locked.source.publisherDigest !== locked.archiveDigest
     ) {
@@ -96,9 +106,8 @@ export function validateLock(value: unknown): typeof ExtensionLock.Type {
     if (
       !locked ||
       locked.manifest.id !== id ||
-      root.source.repository !== locked.source.repository ||
-      root.source.ref !== locked.source.ref ||
-      root.source.assetName !== locked.source.assetName
+      canonical(encode(ExtensionSelector, root.source)) !==
+        canonical(encode(ExtensionSelector, locked.source))
     ) {
       throw invalid(`Root and locked package disagree: ${id}`);
     }
@@ -139,9 +148,8 @@ export function validateLock(value: unknown): typeof ExtensionLock.Type {
       if (
         !target ||
         !requested ||
-        requested.repository !== target.source.repository ||
-        requested.ref !== target.source.ref ||
-        requested.assetName !== target.source.assetName
+        canonical(encode(ExtensionSelector, requested)) !==
+          canonical(encode(ExtensionSelector, target.source))
       ) {
         throw invalid(`Dependency source disagrees with lock: ${id}/${name}`);
       }
@@ -201,7 +209,8 @@ function verifyManifest(
   locked: typeof LockedPackage.Type
 ) {
   if (
-    archive.archiveBytes !== locked.source.size ||
+    (!("kind" in locked.source) &&
+      archive.archiveBytes !== locked.source.size) ||
     archive.manifestDigest !== locked.manifestDigest ||
     canonical(encode(ExtensionManifest, locked.manifest)) !==
       canonical(encode(ExtensionManifest, archive.manifest))
@@ -407,7 +416,8 @@ function wireDependencies(repository: string, lock: typeof ExtensionLock.Type) {
 /** Offline cache hits do not contact GitHub or resolve mutable tags. */
 export function restoreCache(
   repository: string,
-  snapshot: typeof ExtensionLock.Type
+  snapshot: typeof ExtensionLock.Type,
+  options: { readonly trust?: boolean } = {}
 ) {
   return Effect.gen(function* () {
     const lease = yield* RepositoryLease;
@@ -430,6 +440,13 @@ export function restoreCache(
       });
       if (cached) {
         continue;
+      }
+      if ("kind" in locked.source && options.trust !== true) {
+        return yield* new OperationError({
+          code: "Unauthorized",
+          message:
+            "Rebuilding missing Git sources requires extension restore --trust",
+        });
       }
       const bytes = yield* source.download(locked.source);
       yield* Effect.try({

@@ -1794,8 +1794,9 @@ const extension = Command.make("extension").pipe(
       "add",
       {
         ...extensionMutationFlags,
-        assetName: Flag.String("asset").pipe(Flag.withDefault("effectory.tgz")),
+        assetName: Flag.String("asset").pipe(Flag.optional),
         bindingName: Flag.String("as").pipe(Flag.optional),
+        extensionPath: Flag.String("path").pipe(Flag.optional),
         source: Argument.String("github-source"),
         trust: trustFlag,
       },
@@ -1807,9 +1808,21 @@ const extension = Command.make("extension").pipe(
                 new OperationError({
                   code: "InvalidInput",
                   message:
-                    "Use github:owner/repository@release-tag with a valid asset name",
+                    "Use github:owner/repository@ref, with --path for source or --asset for an archive",
                 }),
-              try: () => parseSource(config.source, config.assetName),
+              try: () => {
+                if (
+                  Option.isSome(config.assetName) &&
+                  Option.isSome(config.extensionPath)
+                ) {
+                  throw new Error("Choose --asset or --path");
+                }
+                return parseSource(
+                  config.source,
+                  Option.getOrUndefined(config.assetName),
+                  Option.getOrUndefined(config.extensionPath)
+                );
+              },
             });
             return yield* client.ExtensionAdd({
               ...identity,

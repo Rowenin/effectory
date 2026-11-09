@@ -1,5 +1,5 @@
 import {
-  GitHubSource,
+  ExtensionSelector,
   LockedPackage,
   extensionLimits,
 } from "@effectory/runtime/extension-protocol";
@@ -30,16 +30,8 @@ const boundary = <A>(evaluate: () => A) =>
           }),
     try: evaluate,
   });
-const sourceKey = (source: typeof GitHubSource.Type) =>
-  digest(
-    canonical(
-      encode(GitHubSource, {
-        assetName: source.assetName,
-        ref: source.ref,
-        repository: source.repository,
-      })
-    )
-  );
+const sourceKey = (source: typeof ExtensionSelector.Type) =>
+  digest(canonical(encode(ExtensionSelector, source)));
 
 /** Resolve only changed roots; retain the exact dependency closures of unchanged packages. */
 export function resolveExtensionChange(
@@ -116,7 +108,7 @@ export function resolveExtensionChange(
       }
     });
     const visit = (
-      selector: typeof GitHubSource.Type,
+      selector: typeof ExtensionSelector.Type,
       force = false
     ): Effect.Effect<string, OperationError> =>
       Effect.gen(function* () {
@@ -140,13 +132,22 @@ export function resolveExtensionChange(
         if (resolved === undefined) {
           resolved = yield* source.resolve(selector);
           resolutions[key] = resolved;
-          // Pin the release/asset identity before downloading it; restart never re-resolves this tag.
+          // Pin the resolved source identity before downloading it; restart never re-resolves this tag.
           yield* checkpoint({ ...resolutions });
         }
         if (sourceKey(resolved) !== key) {
           return yield* fail(
-            "Saved release resolution disagrees with the requested source"
+            "Saved source resolution disagrees with the requested source"
           );
+        }
+        if (
+          "kind" in resolved &&
+          (request.kind === "Remove" || !request.trust)
+        ) {
+          return yield* new OperationError({
+            code: "Unauthorized",
+            message: "Building Git source requires --trust",
+          });
         }
         const bytes = yield* source.download(resolved);
         downloaded += bytes.length;

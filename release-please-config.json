@@ -40,7 +40,24 @@
           "path": "extensions/aws-vault/package.json",
           "jsonpath": "$.peerDependencies['@offtree/effectory-sdk']"
         },
-        { "type": "generic", "path": "extensions/aws-vault/src/contracts.ts" }
+        {
+          "type": "generic",
+          "path": "extensions/aws-vault/src/contracts.ts"
+        },
+        {
+          "type": "json",
+          "path": "extensions/agent-runner/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "extensions/agent-runner/package.json",
+          "jsonpath": "$.peerDependencies['@offtree/effectory-sdk']"
+        },
+        {
+          "type": "generic",
+          "path": "extensions/agent-runner/src/contracts.ts"
+        }
       ]
     }
   }

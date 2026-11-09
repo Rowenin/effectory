@@ -1,7 +1,12 @@
+import type {
+  ExtensionSelector,
+  ResolvedExtensionSource,
+} from "@effectory/runtime/extension-protocol";
 import {
   GitHubSource,
   ResolvedSource,
   extensionLimits,
+  GitRepositorySource,
 } from "@effectory/runtime/extension-protocol";
 import { OperationError } from "@effectory/runtime/protocol";
 import { Context, Effect, Layer, Schema } from "effect";
@@ -17,10 +22,10 @@ export const GhCommand = Context.Service<{
 }>("effectory/GhCommand");
 export const ExtensionSource = Context.Service<{
   readonly resolve: (
-    source: typeof GitHubSource.Type
-  ) => Effect.Effect<typeof ResolvedSource.Type, OperationError>;
+    source: typeof ExtensionSelector.Type
+  ) => Effect.Effect<typeof ResolvedExtensionSource.Type, OperationError>;
   readonly download: (
-    source: typeof ResolvedSource.Type
+    source: typeof ResolvedExtensionSource.Type
   ) => Effect.Effect<Uint8Array, OperationError>;
 }>("effectory/ExtensionSource");
 const unavailable = () =>
@@ -32,10 +37,25 @@ const unavailable = () =>
 const invalid = (message: string) =>
   new OperationError({ code: "InvalidInput", message });
 
-export function parseSource(source: string, assetName = "effectory.tgz") {
+export function parseSource(
+  source: string,
+  assetName?: string,
+  extensionPath?: string
+) {
   const match = /^github:(?<repository>[^@]+)@(?<ref>.+)$/u.exec(source);
   if (!match) {
-    throw invalid("Use github:owner/repository@release-tag");
+    throw invalid("Use github:owner/repository@ref");
+  }
+  if (assetName === undefined) {
+    return Schema.decodeUnknownSync(GitRepositorySource)({
+      kind: "git",
+      path: extensionPath ?? ".",
+      ref: match.groups?.ref,
+      repository: match.groups?.repository,
+    });
+  }
+  if (extensionPath !== undefined) {
+    throw invalid("Choose a source path or a release asset");
   }
   return Schema.decodeUnknownSync(GitHubSource)({
     assetName,
@@ -109,6 +129,12 @@ export const gitHubSourceLayer = Layer.effect(
     return {
       download: (source) =>
         Effect.gen(function* () {
+          if ("kind" in source) {
+            const git = yield* Effect.promise(
+              async () => await import("./extension-git.ts")
+            );
+            return yield* git.download(source);
+          }
           const checked = yield* Schema.decodeEffect(ResolvedSource)(
             source
           ).pipe(
@@ -137,6 +163,12 @@ export const gitHubSourceLayer = Layer.effect(
         }),
       resolve: (source) =>
         Effect.gen(function* () {
+          if ("kind" in source) {
+            const git = yield* Effect.promise(
+              async () => await import("./extension-git.ts")
+            );
+            return yield* git.resolve(source);
+          }
           const checked = yield* Schema.decodeEffect(GitHubSource)(source).pipe(
             Effect.mapError(() => invalid("Invalid GitHub extension source"))
           );
@@ -203,8 +235,15 @@ export const gitHubSourceLayer = Layer.effect(
 export const GitHubSourceLive = gitHubSourceLayer.pipe(Layer.provide(ghLayer));
 
 /** Metadata-only discovery; GitHub's latest release is not a semantic-version comparison. */
-export const latestRelease = (source: typeof GitHubSource.Type) =>
+export const latestRelease = (source: typeof ExtensionSelector.Type) =>
   Effect.gen(function* () {
+    if ("kind" in source) {
+      const git = yield* Effect.promise(
+        async () => await import("./extension-git.ts")
+      );
+      const resolved = yield* git.resolve(source);
+      return { ...source, ref: resolved.commit };
+    }
     const gh = yield* GhCommand;
     const release = yield* decodeJson(
       Release,

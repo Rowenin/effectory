@@ -41,6 +41,9 @@ function sourceFixture(archives: ReadonlyMap<string, Uint8Array>) {
     layer: Layer.succeed(ExtensionSource, {
       download: (source) =>
         Effect.sync(() => {
+          if ("kind" in source) {
+            throw new Error("Expected release source");
+          }
           downloads.push(source.assetId);
           const bytes = entries[source.assetId - 1]?.[1];
           if (!bytes) {
@@ -50,6 +53,9 @@ function sourceFixture(archives: ReadonlyMap<string, Uint8Array>) {
         }),
       resolve: (source) =>
         Effect.sync(() => {
+          if ("kind" in source) {
+            throw new Error("Expected release source");
+          }
           const key = `${source.repository}@${source.ref}`;
           resolutions.push(key);
           const index = entries.findIndex(([name]) => name === key);
@@ -282,7 +288,9 @@ test("an interrupted download resumes the saved asset identity without resolving
             resolve: () => Effect.die("Must not resolve the tag twice"),
           })
         );
-        expect(lock.packages["acme/tools"]?.source.assetId).toBe(1);
+        expect(lock.packages["acme/tools"]?.source).toMatchObject({
+          assetId: 1,
+        });
         expect(source.resolutions).toEqual(["acme/tools@v1"]);
       }).pipe(
         Effect.provide(

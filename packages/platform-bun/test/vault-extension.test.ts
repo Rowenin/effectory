@@ -150,6 +150,8 @@ export const make = (spec:Vault.ImplementationSpec,filename:string) => Effect.ge
         "extension",
         "add",
         "github:fixture/vault@v1",
+        "--asset",
+        "effectory.tgz",
         "--as",
         "Secrets",
         "--trust",
